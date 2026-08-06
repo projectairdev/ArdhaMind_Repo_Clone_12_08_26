@@ -10,8 +10,11 @@ compatibility serializer and analytical semantics are unchanged. Remaining
 compatibility debt consists of `broker/compat`, historical dashboard serializers,
 and isolated paper/execution fixtures retained for later extraction.
 
-`server_bridge.py` fell from 1,130 to 981 lines in this phase. Final verification
-and tag identity are recorded after the final run.
+`server_bridge.py` fell from 1,130 to 988 lines in this phase. Final verification:
+274 Python tests passed with 108 warnings, 43 focused Phase 1–4 tests passed,
+TypeScript and the production build passed, both bridge launch modes passed, and
+disconnected analytics returned structured `blocked`. Retired execution commands
+return `Unknown action` and cannot reach a broker. No real broker action occurred.
 Rollback safely with `git switch --detach v0.9-canonical-runtime`, or create a
 branch using `git switch -c rollback/phase3 v0.9-canonical-runtime`.
 

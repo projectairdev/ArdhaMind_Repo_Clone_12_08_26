@@ -5,7 +5,7 @@ execution/mode command registration, execution CLI arguments, and obsolete
 parameter extraction. The bridge retains daemon/CLI entry, read-only login/logout
 compatibility, feed refresh, canonical pipeline/state assembly and transport.
 
-The final bridge is 981 lines, a reduction of 149 lines in Phase 4 and 996 lines
+The final bridge is 988 lines, a reduction of 142 lines in Phase 4 and 989 lines
 across Phases 3–4. HTTP execution endpoints remain
 410 tombstones in the Express server so old clients fail explicitly; no request
 can reach Python broker execution.
