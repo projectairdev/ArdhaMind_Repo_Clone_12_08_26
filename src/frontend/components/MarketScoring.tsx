@@ -1,6 +1,6 @@
 // src/frontend/components/MarketScoring.tsx
 import React from "react";
-import { useWorkstationState } from "../context/WorkstationStateContext";
+import { useWorkstationState, useMarketScore } from "../context/WorkstationStateContext";
 import { AlertTriangle, BarChart3, CheckSquare, Zap, Activity } from "lucide-react";
 import {
   safeNumber,
@@ -9,7 +9,8 @@ import {
 } from "../utils/safeHelpers";
 
 export function MarketScoring() {
-  const { marketScore: score, loading, error, syncBroker } = useWorkstationState();
+  const { loading, error, syncBroker } = useWorkstationState();
+  const { data: score } = useMarketScore();
 
   if (loading && !score) {
     return (

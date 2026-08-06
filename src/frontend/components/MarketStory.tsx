@@ -12,16 +12,16 @@ import {
   HelpCircle
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
-import { useWorkstationState } from "../context/WorkstationStateContext";
+import { useWorkstationState, useMarketData, useOptionIntelligence, useNewsIntelligence } from "../context/WorkstationStateContext";
 
 export function MarketStory() {
   const { themeClasses, accentClasses, fontClasses, densityClasses } = useTheme();
   const {
-    marketContext: mc,
-    optionContext: oc,
-    newsSentiment: news,
     syncing: loading
   } = useWorkstationState();
+  const { data: mc } = useMarketData();
+  const { data: oc } = useOptionIntelligence();
+  const { data: news } = useNewsIntelligence();
 
   const spot = mc?.current_spot || 0;
   const vwap = mc?.vwap || 0;

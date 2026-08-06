@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
+from uuid import uuid4
 
 from src.application.data_quality_service import DataQualityService
 from src.models.canonical_workstation_state import CanonicalWorkstationState, sanitize_read_only
@@ -14,6 +15,7 @@ class WorkstationStateService:
     SCHEMA_VERSION = "2.0.0"
     _sequence = 0
     _lock = Lock()
+    _runtime_id = str(uuid4())
 
     @classmethod
     def _next_sequence(cls) -> int:
@@ -73,7 +75,7 @@ class WorkstationStateService:
                 return {**value, "status": status.value}
             return {"status": status.value, "value": value}
         return CanonicalWorkstationState(
-            cls.SCHEMA_VERSION, cls._next_sequence(), generated,
+            cls.SCHEMA_VERSION, cls._next_sequence(), generated, cls._runtime_id,
             {"status": "closed" if market_closed else str(market_state).lower(), "is_closed": market_closed},
             {"status": "degraded" if expired else "ready", "read_only": True},
             {"status": "session_expired" if expired else str(broker_state).lower(),
@@ -87,6 +89,11 @@ class WorkstationStateService:
             sanitize_read_only(payload.get("decisionReport") or support.to_dict()), section("explanationReport", assistant_status),
             section("newsSentiment", news_status), None, section("operationsReport", SectionStatus.READY),
             readiness, {"market_data": market_meta.to_dict(), "option_intelligence": option_meta.to_dict()},
+            sanitize_read_only(payload.get("eveningReport") or {}),
+            sanitize_read_only(payload.get("intradayReport") or {}),
+            sanitize_read_only(payload.get("validationReport") or {}),
+            sanitize_read_only(payload.get("optimizationReport") or {}),
+            sanitize_read_only(payload.get("analyticsReport") or {}),
             warnings=support.warnings, errors=[],
         )
 

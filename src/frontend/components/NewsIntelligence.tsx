@@ -1,5 +1,5 @@
 import React from "react";
-import { useWorkstationState } from "../context/WorkstationStateContext";
+import { useWorkstationState, useNewsIntelligence } from "../context/WorkstationStateContext";
 import { NewsSentimentContext } from "../types";
 import { AlertCircle, TrendingUp, TrendingDown, BookOpen, Clock, Activity } from "lucide-react";
 import {
@@ -11,7 +11,8 @@ import {
 } from "../utils/safeHelpers";
 
 export function NewsIntelligence() {
-  const { newsSentiment: news, syncing: loading, error } = useWorkstationState();
+  const { syncing: loading, error } = useWorkstationState();
+  const { data: news } = useNewsIntelligence();
 
   if (loading) {
     return (

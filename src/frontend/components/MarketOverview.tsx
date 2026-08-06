@@ -1,6 +1,6 @@
 // src/frontend/components/MarketOverview.tsx
 import React from "react";
-import { useWorkstationState } from "../context/WorkstationStateContext";
+import { useWorkstationState, useMarketData, useOptionIntelligence } from "../context/WorkstationStateContext";
 import { AlertTriangle, Compass, TrendingUp, HelpCircle, Table, Activity, Newspaper } from "lucide-react";
 import {
   safeArray,
@@ -12,13 +12,13 @@ import {
 
 export function MarketOverview() {
   const {
-    marketContext: market,
-    optionContext: option,
     eveningReport: planner,
     loading,
     error,
     syncBroker
   } = useWorkstationState();
+  const { data: market } = useMarketData();
+  const { data: option } = useOptionIntelligence();
 
   if (loading && !market) {
     return (

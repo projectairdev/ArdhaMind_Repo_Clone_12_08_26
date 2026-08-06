@@ -39,7 +39,8 @@ import {
   ValidationReport,
   OptimizationReport,
   AnalyticsReport,
-  NewsSentimentContext
+  NewsSentimentContext,
+  CanonicalWorkstationState
 } from "../types";
 
 export type ConnectionState =
@@ -89,6 +90,10 @@ export interface WorkstationStateContextProps {
   logoutBroker: () => Promise<void>;
   setAllowLiveTrading: (enabled: boolean) => Promise<void>;
   setPreferredTradingStyle: (style: "Intraday" | "Swing" | "Positional") => Promise<void>;
+  canonicalState: CanonicalWorkstationState | null;
+  lastValidState: CanonicalWorkstationState | null;
+  diagnosticsError: string | null;
+  diagnosticsDetails: string;
   setError: (err: string | null) => void;
 }
 
@@ -738,28 +743,169 @@ const WorkstationStateContext = createContext<WorkstationStateContextProps | und
 
 export function WorkstationStateProvider({ children }: { children: React.ReactNode }) {
   const [workspaceMode, setWorkspaceModeState] = useState<WorkspaceMode>(workspaceService.getMode());
-  const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContext>(defaultWorkspaceContext);
-  const [brokerAccount, setBrokerAccount] = useState<BrokerAccount>(defaultBrokerAccount);
-  const [operationsReport, setOperationsReport] = useState<OperationsReport>(defaultOperationsReport);
-  const [configurationReport, setConfigurationReport] = useState<ConfigurationReport>(defaultConfigurationReport);
-  const [explanationReport, setExplanationReport] = useState<ExplanationReport>(defaultExplanationReport);
-  const [intradayReport, setIntradayReport] = useState<IntradayReport>(defaultIntradayReport);
-  const [validationReport, setValidationReport] = useState<ValidationReport>(defaultValidationReport);
-  const [optimizationReport, setOptimizationReport] = useState<OptimizationReport>(defaultOptimizationReport);
-  const [brokerFunds, setBrokerFunds] = useState<BrokerFunds>(defaultBrokerFunds);
-  const [portfolioReport, setPortfolioReport] = useState<LivePortfolioReport>(defaultPortfolioReport);
-  const [marketContext, setMarketContext] = useState<MarketContext>(defaultMarketContext);
-  const [optionContext, setOptionContext] = useState<OptionContext>(defaultOptionContext);
-  const [eveningReport, setEveningReport] = useState<EveningReport>(defaultEveningReport);
-  const [analyticsReport, setAnalyticsReport] = useState<AnalyticsReport>(defaultAnalyticsReport);
-  const [newsSentiment, setNewsSentiment] = useState<NewsSentimentContext>(defaultNewsSentimentContext);
-  const [marketScore, setMarketScore] = useState<MarketScore>(defaultMarketScore);
-  const [opportunityContext, setOpportunityContext] = useState<OpportunityContext>(defaultOpportunityContext);
-  const [strategyEvaluation, setStrategyEvaluation] = useState<StrategyEvaluation>(defaultStrategyEvaluation);
-  const [confidenceReport, setConfidenceReport] = useState<ConfidenceReport>(defaultConfidenceReport);
-  const [riskReport, setRiskReport] = useState<RiskReport>(defaultRiskReport);
-  const [decisionReport, setDecisionReport] = useState<DecisionReport>(defaultDecisionReport);
-  const [tradePlan, setTradePlan] = useState<TradePlan>(defaultTradePlan);
+  const [canonicalState, setCanonicalState] = useState<CanonicalWorkstationState | null>(null);
+  const [lastValidState, setLastValidState] = useState<CanonicalWorkstationState | null>(null);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+  const [diagnosticsDetails, setDiagnosticsDetails] = useState<string>("");
+  const [liveTickPrice, setLiveTickPrice] = useState<number | null>(null);
+
+  const workspaceContext = useMemo<WorkspaceContext>(() => {
+    const state = canonicalState ?? lastValidState;
+    if (!state) return defaultWorkspaceContext;
+    const bStatus = state.broker_status?.status;
+    const mStatus = state.market_session?.status;
+    return {
+      ...defaultWorkspaceContext,
+      brokerState: bStatus === "connected" ? "CONNECTED" : bStatus === "session_expired" ? "TOKEN_EXPIRED" : "DISCONNECTED",
+      marketState: mStatus === "open" ? "OPEN" : mStatus === "holiday" ? "HOLIDAY" : "CLOSED",
+      timestamp: state.generated_at
+    };
+  }, [canonicalState, lastValidState]);
+
+  const brokerAccount = useMemo<BrokerAccount>(() => {
+    const state = canonicalState ?? lastValidState;
+    if (!state || !state.read_only_account_summary) return defaultBrokerAccount;
+    return {
+      client_id: state.read_only_account_summary.client_id,
+      name: state.read_only_account_summary.name,
+      email: state.read_only_account_summary.email,
+      broker: state.read_only_account_summary.broker
+    };
+  }, [canonicalState, lastValidState]);
+
+  const brokerFunds = useMemo<BrokerFunds>(() => defaultBrokerFunds, []);
+  const portfolioReport = useMemo<LivePortfolioReport>(() => defaultPortfolioReport, []);
+
+  const marketContext = useMemo<MarketContext>(() => {
+    const state = canonicalState ?? lastValidState;
+    const raw = state?.market_data;
+    if (!raw) return defaultMarketContext;
+    const feedHealth = state?.market_feed_status?.status?.toUpperCase() ?? "OFFLINE";
+    const feedLatency = state?.data_quality?.market_data?.age_seconds ? state.data_quality.market_data.age_seconds * 1000 : 0;
+    const lastTickTime = state?.data_quality?.market_data?.observed_at ?? "";
+    const currentSpot = liveTickPrice ?? raw.current_spot ?? 0;
+    return {
+      ...defaultMarketContext,
+      ...raw,
+      current_spot: currentSpot,
+      ltp: currentSpot,
+      feed_health: feedHealth as any,
+      feed_latency_ms: feedLatency,
+      last_tick_time: lastTickTime
+    };
+  }, [canonicalState, lastValidState, liveTickPrice]);
+
+  const optionContext = useMemo<OptionContext>(() => {
+    const state = canonicalState ?? lastValidState;
+    const raw = state?.option_intelligence;
+    if (!raw) return defaultOptionContext;
+    const currentSpot = liveTickPrice ?? state?.market_data?.current_spot ?? 0;
+    return {
+      ...defaultOptionContext,
+      ...raw,
+      underlying_spot: currentSpot,
+      atm_strike: Math.round(currentSpot / 50.0) * 50.0
+    };
+  }, [canonicalState, lastValidState, liveTickPrice]);
+
+  const eveningReport = useMemo<EveningReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.evening_report ?? defaultEveningReport;
+  }, [canonicalState, lastValidState]);
+
+  const marketScore = useMemo<MarketScore>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.market_score ?? defaultMarketScore;
+  }, [canonicalState, lastValidState]);
+
+  const opportunityContext = useMemo<OpportunityContext>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.opportunity ?? defaultOpportunityContext;
+  }, [canonicalState, lastValidState]);
+
+  const strategyEvaluation = useMemo<StrategyEvaluation>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.strategy_suitability ?? defaultStrategyEvaluation;
+  }, [canonicalState, lastValidState]);
+
+  const confidenceReport = useMemo<ConfidenceReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.confidence ?? defaultConfidenceReport;
+  }, [canonicalState, lastValidState]);
+
+  const riskReport = useMemo<RiskReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.deterministic_risk ?? defaultRiskReport;
+  }, [canonicalState, lastValidState]);
+
+  const decisionReport = useMemo<DecisionReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    const raw = state?.decision_support;
+    if (!raw) return defaultDecisionReport;
+    const overallAction = (raw.blockers?.length > 0 || raw.missing_confirmations?.length > 0) ? "HOLD" : "MONITOR";
+    return {
+      report_id: "N/A",
+      risk_report_id: "N/A",
+      candidate_decisions: [],
+      priority_ranking: [],
+      summary: {
+        overall_action: overallAction as any,
+        highest_priority_candidate_id: "NONE",
+        portfolio_status_message: raw.market_interpretation || "",
+        conclusions: raw.warnings || []
+      },
+      stats: {
+        total_candidates_evaluated: state?.trade_scenarios?.length ?? 0,
+        buy_count: 0,
+        sell_count: 0,
+        watch_count: 0,
+        reject_count: 0,
+        no_trade_count: 0,
+        total_allocated_capital: 0
+      },
+      timestamp: state?.generated_at || "",
+      schema_version: "2.0.0",
+      engine_version: "2.0.0"
+    };
+  }, [canonicalState, lastValidState]);
+
+  const tradePlan = useMemo<TradePlan>(() => defaultTradePlan, []);
+  
+  const operationsReport = useMemo<OperationsReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.operations_health ?? defaultOperationsReport;
+  }, [canonicalState, lastValidState]);
+
+  const configurationReport = useMemo<ConfigurationReport>(() => defaultConfigurationReport, []);
+  const explanationReport = useMemo<ExplanationReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.explanation ?? defaultExplanationReport;
+  }, [canonicalState, lastValidState]);
+
+  const intradayReport = useMemo<IntradayReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.intraday_report ?? defaultIntradayReport;
+  }, [canonicalState, lastValidState]);
+
+  const validationReport = useMemo<ValidationReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.validation_report ?? defaultValidationReport;
+  }, [canonicalState, lastValidState]);
+
+  const optimizationReport = useMemo<OptimizationReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.optimization_report ?? defaultOptimizationReport;
+  }, [canonicalState, lastValidState]);
+
+  const analyticsReport = useMemo<AnalyticsReport>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.analytics_report ?? defaultAnalyticsReport;
+  }, [canonicalState, lastValidState]);
+
+  const newsSentiment = useMemo<NewsSentimentContext>(() => {
+    const state = canonicalState ?? lastValidState;
+    return state?.news_intelligence ?? defaultNewsSentimentContext;
+  }, [canonicalState, lastValidState]);
   const [marketConnection, setMarketConnection] = useState<"DISCONNECTED" | "CONNECTING" | "CONNECTED" | "ERROR">("DISCONNECTED");
   const [loading, setLoading] = useState<boolean>(true);
   const [syncing, setSyncing] = useState<boolean>(false);
@@ -835,21 +981,9 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
     setSyncing(true);
     try {
       await fetch("/api/broker/logout", { method: "POST" });
-      setBrokerAccount(defaultBrokerAccount);
-      setBrokerFunds(defaultBrokerFunds);
-      setPortfolioReport(defaultPortfolioReport);
-      setMarketContext(defaultMarketContext);
-      setOptionContext(defaultOptionContext);
-      setEveningReport(defaultEveningReport);
-      setAnalyticsReport(defaultAnalyticsReport);
-      setNewsSentiment(defaultNewsSentimentContext);
-      setMarketScore(defaultMarketScore);
-      setOpportunityContext(defaultOpportunityContext);
-      setStrategyEvaluation(defaultStrategyEvaluation);
-      setConfidenceReport(defaultConfidenceReport);
-      setRiskReport(defaultRiskReport);
-      setDecisionReport(defaultDecisionReport);
-      setTradePlan(defaultTradePlan);
+      setCanonicalState(null);
+      setLastValidState(null);
+      setLiveTickPrice(null);
       await syncBroker(true);
     } catch (err: any) {
       setErrorState(err.message || "Logout failed.");
@@ -922,49 +1056,77 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === "state") {
-            const data = msg.data;
-            
-            if (data.workspaceContext) setWorkspaceContext(data.workspaceContext);
-            if (data.workspaceContext?.currentMode) setWorkspaceModeState(data.workspaceContext.currentMode);
-            if (data.brokerAccount) setBrokerAccount(data.brokerAccount);
-            if (data.brokerFunds) setBrokerFunds(data.brokerFunds);
-            if (data.portfolioReport) setPortfolioReport(data.portfolioReport);
-            if (data.marketScore) setMarketScore(data.marketScore);
-            if (data.opportunityContext) setOpportunityContext(data.opportunityContext);
-            if (data.strategyEvaluation) setStrategyEvaluation(data.strategyEvaluation);
-            if (data.tradePlan) setTradePlan(data.tradePlan);
-            if (data.confidenceReport) setConfidenceReport(data.confidenceReport);
-            if (data.riskReport) setRiskReport(data.riskReport);
-            if (data.decisionReport) setDecisionReport(data.decisionReport);
-            if (data.operationsReport) setOperationsReport(data.operationsReport);
-            if (data.configurationReport) setConfigurationReport(data.configurationReport);
-            if (data.explanationReport) setExplanationReport(data.explanationReport);
-            if (data.intradayReport) setIntradayReport(data.intradayReport);
-            if (data.validationReport) setValidationReport(data.validationReport);
-            if (data.optimizationReport) setOptimizationReport(data.optimizationReport);
-            if (data.optionContext) setOptionContext(data.optionContext);
-            if (data.marketContext) setMarketContext(data.marketContext);
-            if (data.eveningReport) setEveningReport(data.eveningReport);
-            if (data.analyticsReport) setAnalyticsReport(data.analyticsReport);
-            if (data.newsSentiment) setNewsSentiment(data.newsSentiment);
-            
-            setLastSyncTime(new Date().toLocaleTimeString());
+            const rawData = msg.data;
+
+            // 1. Structural runtime checks for mandatory properties
+            if (
+              !rawData ||
+              typeof rawData !== "object" ||
+              typeof rawData.schema_version !== "string" ||
+              typeof rawData.state_sequence !== "number" ||
+              typeof rawData.runtime_id !== "string" ||
+              typeof rawData.generated_at !== "string" ||
+              !rawData.market_session ||
+              !rawData.application_status ||
+              !rawData.workspace_readiness ||
+              !rawData.data_quality
+            ) {
+              setDiagnosticsError("invalid_payload");
+              setDiagnosticsDetails("Payload is missing mandatory canonical fields.");
+              console.error("Malformed state payload rejected.");
+              return;
+            }
+
+            // 2. Schema version validation
+            if (rawData.schema_version !== "2.0.0") {
+              setDiagnosticsError("schema_incompatible");
+              setDiagnosticsDetails(`Expected schema version 2.0.0, received ${rawData.schema_version}`);
+              console.error(`Incompatible schema version: ${rawData.schema_version}`);
+              return;
+            }
+
+            // 3. Session-aware sequence checking
+            setCanonicalState(prev => {
+              if (prev && prev.runtime_id === rawData.runtime_id) {
+                if (rawData.state_sequence <= prev.state_sequence) {
+                  console.warn(`Out-of-order sequence rejected: ${rawData.state_sequence} <= ${prev.state_sequence}`);
+                  return prev;
+                }
+              } else if (prev) {
+                console.log(`Runtime identity changed from ${prev.runtime_id} to ${rawData.runtime_id}. Resetting sequence tracking.`);
+              }
+
+              // Accept new state
+              setLastValidState(rawData);
+              setDiagnosticsError(null);
+              setDiagnosticsDetails("");
+              setLiveTickPrice(null); // Clear fast-path ticks on fresh state frame
+              setLastSyncTime(new Date().toLocaleTimeString());
+              return rawData;
+            });
           } else if (msg.type === "auth_event") {
-            // [V1.3.1 FIX] Fast-path for broker auth state changes.
-            // Broadcast by server.ts immediately after login/logout — arrives in <100ms.
-            // This fires BEFORE the next 3-second daemon state cycle, so the entire
-            // workstation (Header, Dashboard, Portfolio, Market, etc.) updates instantly.
-            setWorkspaceContext(prev => ({
-              ...prev,
-              brokerState: msg.brokerState,
-              timestamp: msg.timestamp || new Date().toISOString()
-            }));
+            const bState = msg.brokerState;
+            const bStatus = bState === "CONNECTED" ? "connected" : bState === "TOKEN_EXPIRED" ? "session_expired" : "disconnected";
+            const updateBroker = (prev: any) => {
+              if (!prev) return null;
+              return {
+                ...prev,
+                broker_status: {
+                  ...prev.broker_status,
+                  status: bStatus,
+                  reconnect_required: bStatus === "session_expired",
+                  last_successful_update: msg.timestamp || prev.broker_status.last_successful_update
+                }
+              };
+            };
+            setCanonicalState(prev => updateBroker(prev));
+            setLastValidState(prev => updateBroker(prev));
             setLastSyncTime(new Date().toLocaleTimeString());
             console.log("[AUTH_EVENT] brokerState updated to:", msg.brokerState);
           } else if (msg.type === "tick") {
             const symbol = msg.symbol;
             const tick = msg.data;
-            
+
             if (tick.backend_forward_timestamp) {
               try {
                 const t_now = Date.now();
@@ -976,25 +1138,8 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
               }
             }
 
-            setMarketContext((prev) => {
-              if (symbol === "NSE:NIFTY 50") {
-                return {
-                  ...prev,
-                  current_spot: tick.last_price,
-                  ltp: tick.last_price,
-                  timestamp: new Date().toISOString()
-                };
-              }
-              return prev;
-            });
-
             if (symbol === "NSE:NIFTY 50") {
-              setOptionContext((prev) => ({
-                ...prev,
-                underlying_spot: tick.last_price,
-                atm_strike: Math.round(tick.last_price / 50.0) * 50.0,
-                timestamp: new Date().toISOString()
-              }));
+              setLiveTickPrice(tick.last_price);
             }
           }
         } catch (err) {
@@ -1010,6 +1155,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
       ws.onclose = () => {
         console.log("Workstation WebSocket closed. Reconnecting...");
         setMarketConnection("DISCONNECTED");
+        setCanonicalState(null); // Keep lastValidState as stale snapshot
         if (!isUnmounted) {
           reconnectTimeout = setTimeout(connect, 3000);
         }
@@ -1071,6 +1217,10 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
         logoutBroker,
         setAllowLiveTrading,
         setPreferredTradingStyle,
+        canonicalState,
+        lastValidState,
+        diagnosticsError,
+        diagnosticsDetails,
         setError,
       }}
     >
@@ -1086,3 +1236,77 @@ export function useWorkstationState() {
   }
   return context;
 }
+
+export function useMarketData() {
+  const context = useWorkstationState();
+  const isLive = context.marketConnection === "CONNECTED" && !context.error;
+  const raw = isLive ? context.canonicalState?.market_data : context.lastValidState?.market_data;
+  return {
+    data: raw || null,
+    isStale: !isLive || !context.canonicalState,
+    observedAt: context.canonicalState?.data_quality?.market_data?.observed_at ?? context.lastValidState?.data_quality?.market_data?.observed_at ?? null,
+  };
+}
+
+export function useOptionIntelligence() {
+  const context = useWorkstationState();
+  const isLive = context.marketConnection === "CONNECTED" && !context.error;
+  const raw = isLive ? context.canonicalState?.option_intelligence : context.lastValidState?.option_intelligence;
+  return {
+    data: raw || null,
+    isStale: !isLive || !context.canonicalState,
+  };
+}
+
+export function useBrokerStatus() {
+  const context = useWorkstationState();
+  const isLive = context.marketConnection === "CONNECTED" && !context.error;
+  const raw = isLive ? context.canonicalState?.broker_status : context.lastValidState?.broker_status;
+  return {
+    data: raw || { status: "disconnected", reconnect_required: true, last_successful_update: null },
+    isStale: !isLive || !context.canonicalState,
+  };
+}
+
+export function useWorkspaceReadiness() {
+  const context = useWorkstationState();
+  const isLive = context.marketConnection === "CONNECTED" && !context.error;
+  const raw = isLive ? context.canonicalState?.workspace_readiness : context.lastValidState?.workspace_readiness;
+  return {
+    data: raw || {},
+    isStale: !isLive || !context.canonicalState,
+  };
+}
+
+export function useDataQuality() {
+  const context = useWorkstationState();
+  const isLive = context.marketConnection === "CONNECTED" && !context.error;
+  const raw = isLive ? context.canonicalState?.data_quality : context.lastValidState?.data_quality;
+  return {
+    data: raw || null,
+    isStale: !isLive || !context.canonicalState,
+  };
+}
+
+export function useMarketScore() {
+  const context = useWorkstationState();
+  const isLive = context.marketConnection === "CONNECTED" && !context.error;
+  const raw = isLive ? context.canonicalState?.market_score : context.lastValidState?.market_score;
+  return {
+    data: raw || null,
+    isStale: !isLive || !context.canonicalState,
+  };
+}
+
+export function useNewsIntelligence() {
+  const context = useWorkstationState();
+  const isLive = context.marketConnection === "CONNECTED" && !context.error;
+  const raw = isLive ? context.canonicalState?.news_intelligence : context.lastValidState?.news_intelligence;
+  return {
+    data: raw || null,
+    isStale: !isLive || !context.canonicalState,
+  };
+}
+
+
+

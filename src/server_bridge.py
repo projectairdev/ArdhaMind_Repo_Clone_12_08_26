@@ -676,7 +676,7 @@ def run_daemon(wm, bs):
             )
             state_payload = {
                 "type": "state",
-                "data": CompatibilitySerializer.to_phase1_payload(canonical_state, legacy_data)
+                "data": canonical_state.to_dict()
             }
             print(json.dumps(state_payload), flush=True)
         except Exception as err:

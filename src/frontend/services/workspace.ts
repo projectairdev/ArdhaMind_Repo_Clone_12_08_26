@@ -79,17 +79,21 @@ function syncConfig(data: any) {
 
 function mapBackendContext(data: any): WorkspaceContext {
   syncConfig(data);
+  const bStatus = data.broker_status?.status || data.brokerState || data.broker_state || "DISCONNECTED";
+  const brokerState = bStatus === "connected" ? "CONNECTED" : bStatus === "session_expired" ? "TOKEN_EXPIRED" : bStatus;
+  const mStatus = data.market_session?.status || data.marketState || data.market_state || "CLOSED";
+  const marketState = mStatus === "open" ? "OPEN" : mStatus === "holiday" ? "HOLIDAY" : mStatus;
   return {
     currentMode: data.current_mode || data.currentMode || "LIVE_PRACTICE",
-    brokerState: data.brokerState || data.broker_state || "DISCONNECTED",
-    marketState: data.marketState || data.market_state || "CLOSED",
+    brokerState: brokerState,
+    marketState: marketState,
     brokerType: "ZERODHA",
     marketDataSource: "LIVE",
     executionMode: data.execution_mode || data.executionMode || "PAPER_EXECUTION",
     portfolioSource: "BROKER",
     analyticsMode: data.analytics_mode || data.analyticsMode || "ENABLED",
     notificationMode: data.notification_mode || data.notificationMode || "ENABLED",
-    timestamp: data.timestamp || new Date().toISOString()
+    timestamp: data.generated_at || data.timestamp || new Date().toISOString()
   };
 }
 

@@ -192,7 +192,7 @@ function sendDaemonRequest(action: string, params: any = {}): Promise<any> {
 
 // REST API Endpoints (Return cached state instantly to support legacy fetches with 0ms latency)
 app.get("/api/workspace", (req, res) => {
-  res.json(workstationState.workspaceContext);
+  res.json(workstationState);
 });
 
 app.post("/api/workspace/mode", (_req, res) => {
@@ -336,43 +336,43 @@ app.get("/api/market", async (req, res) => {
 });
 
 app.get("/api/evening-report", (req, res) => {
-  res.json(workstationState.eveningReport || {});
+  res.json(workstationState.evening_report || {});
 });
 
 app.get("/api/news", (req, res) => {
-  res.json(workstationState.newsSentiment || {});
+  res.json(workstationState.news_intelligence || {});
 });
 
 app.get("/api/analytics", (req, res) => {
-  res.json(workstationState.analyticsReport || {});
+  res.json(workstationState.analytics_report || {});
 });
 
 app.get("/api/dashboard/market-score", (req, res) => {
-  res.json(workstationState.marketScore || {});
+  res.json(workstationState.market_score || {});
 });
 
 app.get("/api/dashboard/opportunity-context", (req, res) => {
-  res.json(workstationState.opportunityContext || {});
+  res.json(workstationState.opportunity || {});
 });
 
 app.get("/api/dashboard/strategy-evaluation", (req, res) => {
-  res.json(workstationState.strategyEvaluation || {});
+  res.json(workstationState.strategy_suitability || {});
 });
 
 app.get("/api/dashboard/confidence-report", (req, res) => {
-  res.json(workstationState.confidenceReport || {});
+  res.json(workstationState.confidence || {});
 });
 
 app.get("/api/dashboard/risk-report", (req, res) => {
-  res.json(workstationState.riskReport || {});
+  res.json(workstationState.deterministic_risk || {});
 });
 
 app.get("/api/dashboard/decision-report", (req, res) => {
-  res.json(workstationState.decisionReport || {});
+  res.json(workstationState.decision_support || {});
 });
 
 app.get("/api/dashboard/operations-report", (req, res) => {
-  res.json(workstationState.operationsReport || {});
+  res.json(workstationState.operations_health || {});
 });
 
 app.get("/api/dashboard/configuration-report", (req, res) => {
@@ -380,7 +380,7 @@ app.get("/api/dashboard/configuration-report", (req, res) => {
 });
 
 app.get("/api/dashboard/explanation-report", (req, res) => {
-  res.json(workstationState.explanationReport || {});
+  res.json(workstationState.explanation || {});
 });
 
 app.get("/api/planner/trade-plan", (req, res) => {
@@ -388,15 +388,15 @@ app.get("/api/planner/trade-plan", (req, res) => {
 });
 
 app.get("/api/planner/intraday-report", (req, res) => {
-  res.json(workstationState.intradayReport || {});
+  res.json(workstationState.intraday_report || {});
 });
 
 app.get("/api/planner/validation-report", (req, res) => {
-  res.json(workstationState.validationReport || {});
+  res.json(workstationState.validation_report || {});
 });
 
 app.get("/api/planner/optimization-report", (req, res) => {
-  res.json(workstationState.optimizationReport || {});
+  res.json(workstationState.optimization_report || {});
 });
 
 app.post("/api/orders/place", (_req, res) => {

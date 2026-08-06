@@ -6,7 +6,9 @@ from src.models.canonical_workstation_state import CanonicalWorkstationState
 
 
 class CompatibilitySerializer:
-    """The single Phase 2 boundary from canonical snake_case state to Phase 1 payload."""
+    """DEPRECATED: CompatibilitySerializer is deprecated since Phase 5.1
+    and is retained only for backward-compatibility in legacy unit tests.
+    """
 
     FIELD_MAP = {
         "market_data": "marketContext", "option_intelligence": "optionContext",

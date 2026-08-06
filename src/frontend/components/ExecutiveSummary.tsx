@@ -1,5 +1,5 @@
 import React from "react";
-import { useWorkstationState } from "../context/WorkstationStateContext";
+import { useWorkstationState, useMarketData, useOptionIntelligence } from "../context/WorkstationStateContext";
 import { MarketContext, OptionContext, DecisionReport } from "../types";
 import { AlertCircle, ArrowUpRight, TrendingUp, Cpu, Landmark, Clock, RefreshCw } from "lucide-react";
 import {
@@ -12,12 +12,15 @@ import {
 
 export function ExecutiveSummary() {
   const {
-    marketContext: market,
-    optionContext: option,
-    decisionReport: decision,
+    canonicalState,
+    lastValidState,
     syncing: loading,
     error
   } = useWorkstationState();
+  const { data: market } = useMarketData();
+  const { data: option } = useOptionIntelligence();
+
+  const stateObj = canonicalState ?? lastValidState;
 
   if (loading) {
     return (
@@ -32,7 +35,7 @@ export function ExecutiveSummary() {
     );
   }
 
-  if (error || !market || !option || !decision) {
+  if (error || !market || !option || !stateObj) {
     return (
       <div id="exec-summary-error" className="p-6 bg-slate-950 rounded-xl border border-rose-950 space-y-3 text-left">
         <div className="flex items-center gap-2 text-rose-400">
@@ -47,9 +50,16 @@ export function ExecutiveSummary() {
     );
   }
 
-  const bestCandidate = (safeArray(decision?.candidate_decisions) as any[]).find(
-    (c) => c.candidate_id === decision?.summary?.highest_priority_candidate_id
-  );
+  const decisionSupport = stateObj.decision_support;
+  const scenarios = stateObj.trade_scenarios || [];
+  const bestCandidate = null;
+
+  const overallAction = (decisionSupport?.blockers?.length > 0 || decisionSupport?.missing_confirmations?.length > 0)
+    ? "HOLD"
+    : "MONITOR";
+  const totalCandidates = scenarios.length;
+  const statusMessage = decisionSupport?.market_interpretation || "No status loaded";
+  const conclusions = decisionSupport?.warnings || [];
 
   return (
     <div id="executive-summary" className="p-6 bg-slate-950 rounded-xl border border-slate-800 space-y-6 text-left">
@@ -60,7 +70,7 @@ export function ExecutiveSummary() {
           <h3 className="font-bold text-white text-base">Terminal Executive Summary</h3>
         </div>
         <span className="text-[10px] font-mono text-slate-500 font-bold uppercase">
-          REPORT ID: {safeString(decision?.summary?.highest_priority_candidate_id, "NONE")}
+          REPORT ID: NONE
         </span>
       </div>
 
@@ -102,11 +112,11 @@ export function ExecutiveSummary() {
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold tracking-tight text-white">
-              {safeString(decision.summary?.overall_action, "STANDBY")}
+              {overallAction}
             </span>
-            <span className="text-xs text-cyan-400 font-mono">Run: {safeNumber(decision.stats?.total_candidates_evaluated)} Checked</span>
+            <span className="text-xs text-cyan-400 font-mono">Run: {totalCandidates} Checked</span>
           </div>
-          <p className="text-xs text-slate-400 truncate">{safeString(decision.summary?.portfolio_status_message, "No status loaded")}</p>
+          <p className="text-xs text-slate-400 truncate">{statusMessage}</p>
         </div>
 
         {/* Top Lot Recommended Candidate */}
@@ -118,14 +128,14 @@ export function ExecutiveSummary() {
           {bestCandidate ? (
             <>
               <div className="flex items-center justify-between">
-                <span className="text-sm font-mono font-semibold text-white">{safeString(bestCandidate.tradingsymbol)}</span>
+                <span className="text-sm font-mono font-semibold text-white">{(bestCandidate as any).tradingsymbol}</span>
                 <span className="px-1.5 py-0.5 text-[10px] font-mono bg-emerald-950/40 text-emerald-400 rounded">
                   BUY
                 </span>
               </div>
               <div className="flex justify-between text-[11px] font-mono text-slate-400">
-                <span>Lots: {safeNumber(bestCandidate.allocated_lots)}</span>
-                <span>Margin: {formatCurrency(bestCandidate.allocated_capital)}</span>
+                <span>Lots: {safeNumber((bestCandidate as any).allocated_lots)}</span>
+                <span>Margin: {formatCurrency((bestCandidate as any).allocated_capital)}</span>
               </div>
             </>
           ) : (
@@ -138,7 +148,7 @@ export function ExecutiveSummary() {
       <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-lg space-y-2">
         <h4 className="text-xs font-mono font-semibold text-slate-300 tracking-wider uppercase">Active Dispatch Protocols</h4>
         <ul className="space-y-1.5">
-          {safeArray(decision.summary?.conclusions).map((c, i) => (
+          {safeArray(conclusions).map((c, i) => (
             <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
               <span className="mt-1 flex-shrink-0 h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
               <span>{safeString(c)}</span>

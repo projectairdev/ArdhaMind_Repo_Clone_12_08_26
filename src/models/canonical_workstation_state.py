@@ -26,6 +26,7 @@ class CanonicalWorkstationState:
     schema_version: str
     state_sequence: int
     generated_at: str
+    runtime_id: str
     market_session: dict[str, Any]
     application_status: dict[str, Any]
     broker_status: dict[str, Any]
@@ -46,6 +47,11 @@ class CanonicalWorkstationState:
     operations_health: dict[str, Any]
     workspace_readiness: dict[str, Any]
     data_quality: dict[str, Any]
+    evening_report: dict[str, Any]
+    intraday_report: dict[str, Any]
+    validation_report: dict[str, Any]
+    optimization_report: dict[str, Any]
+    analytics_report: dict[str, Any]
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 

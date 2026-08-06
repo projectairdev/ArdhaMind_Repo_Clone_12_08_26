@@ -9,18 +9,19 @@ import {
 } from "../utils/safeHelpers";
 
 export function DecisionEngine() {
-  const { decisionReport: report, syncing: loading, error } = useWorkstationState();
+  const { canonicalState, lastValidState, syncing: loading, error } = useWorkstationState();
+  const stateObj = canonicalState ?? lastValidState;
 
   if (loading) {
     return (
       <div id="decision-loading" className="p-6 bg-slate-950 rounded-xl border border-slate-800 animate-pulse space-y-4">
-        <div className="h-6 w-1/4 bg-slate-800 rounded"></div>
-        <div className="h-44 bg-slate-900 rounded"></div>
+          <div className="h-6 w-1/4 bg-slate-800 rounded"></div>
+          <div className="h-44 bg-slate-900 rounded"></div>
       </div>
     );
   }
 
-  if (error || !report) {
+  if (error || !stateObj) {
     return (
       <div id="decision-error" className="p-6 bg-slate-950 rounded-xl border border-rose-950 space-y-3">
         <div className="flex items-center gap-2 text-rose-400">
@@ -35,7 +36,28 @@ export function DecisionEngine() {
     );
   }
 
-  const candidateDecisions = safeArray(report?.candidate_decisions) as any[];
+  const scenarios = stateObj?.trade_scenarios || [];
+
+  const candidateDecisions = scenarios.map((sc, idx) => ({
+    execution_priority: idx + 1,
+    tradingsymbol: sc.scenario_name,
+    decision: sc.direction === "BULLISH" ? "BUY" : sc.direction === "BEARISH" ? "SELL" : "WATCH",
+    explanation: sc.activation_condition,
+    supporting_evidence: safeArray(sc.confirmation_conditions).map(cond => ({
+      metric_name: "Confirm",
+      metric_value: "",
+      message: cond
+    })),
+    blocking_factors: sc.invalidation_condition ? [{
+      metric_name: "Invalidation",
+      metric_value: "",
+      message: sc.invalidation_condition
+    }] : []
+  }));
+
+  const overallAction = (stateObj?.decision_support?.blockers?.length > 0 || stateObj?.decision_support?.missing_confirmations?.length > 0)
+    ? "HOLD"
+    : "MONITOR";
 
   return (
     <div id="decision-engine" className="p-6 bg-slate-950 rounded-xl border border-slate-800 space-y-6 text-left">
@@ -48,7 +70,7 @@ export function DecisionEngine() {
         <div className="flex items-center gap-4">
           <div className="text-right">
             <span className="text-[10px] font-mono text-slate-500 uppercase block">Active Routing Protocol</span>
-            <span className="text-lg font-mono font-bold text-cyan-400">{safeString(report.summary?.overall_action, "STANDBY")}</span>
+            <span className="text-lg font-mono font-bold text-cyan-400">{overallAction}</span>
           </div>
         </div>
       </div>
