@@ -7,7 +7,7 @@ from src.broker.interfaces.broker_interface import IBrokerGateway
 from src.broker.models.health import BrokerHealth
 from src.broker.services.authentication import AuthenticationManager, KiteConnect
 from src.broker.services.session_manager import SessionManager
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.broker.utils.errors import (
     BrokerError,
     SessionMissingError,

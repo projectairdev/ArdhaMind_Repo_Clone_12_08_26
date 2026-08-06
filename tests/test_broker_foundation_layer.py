@@ -8,7 +8,7 @@ from typing import Dict, Any
 from src.broker.models.trading_mode import TradingMode, BrokerType
 from src.broker.models.health import BrokerHealth
 from src.broker.utils.cache_manager import InstrumentCacheManager
-from src.broker.adapters.mock_broker import MockBrokerGateway
+from tests.support.mock_broker_gateway import MockBrokerGateway
 from tests.support.fake_kiteconnect import FakeKiteConnect
 from src.broker.adapters.kite_broker import KiteBrokerGateway
 from src.broker.services.broker_service import BrokerService
@@ -24,7 +24,7 @@ from src.broker.utils.errors import (
     SessionMissingError,
     AuthenticationFailureError,
 )
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 
 
 class TestBrokerFoundationLayer(unittest.TestCase):
@@ -216,7 +216,7 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         """Verifies MockBrokerGateway adapter wrapping ConnectionManager."""
         gateway = MockBrokerGateway()
         # Explicit test-only client: production resolution remains the official package.
-        import src.broker_engine.connection as connection_module
+        import src.broker.compat.connection as connection_module
         original = connection_module.KiteConnect
         connection_module.KiteConnect = FakeKiteConnect
         
@@ -247,9 +247,9 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         service2 = BrokerService.get_instance()
         self.assertEqual(id(service), id(service2))
 
-        # Default Mode should be PAPER_TRADING
-        self.assertEqual(service.trading_mode, TradingMode.PAPER_TRADING)
-        self.assertIsInstance(service.get_gateway(), MockBrokerGateway)
+        # Product runtime is permanently read-only Zerodha.
+        self.assertEqual(service.trading_mode, TradingMode.LIVE_ZERODHA)
+        self.assertIsInstance(service.get_gateway(), KiteBrokerGateway)
 
         # Dynamic mode switching
         service.set_mode(TradingMode.LIVE_ZERODHA)
@@ -259,10 +259,10 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         # Verify delegated login URL call
         self.assertIn("https://", service.get_login_url())
 
-        # Revert back to Paper Trading
-        service.set_mode(TradingMode.PAPER_TRADING)
-        self.assertEqual(service.trading_mode, TradingMode.PAPER_TRADING)
-        self.assertIsInstance(service.get_gateway(), MockBrokerGateway)
+        with self.assertRaises(ValueError):
+            service.set_mode(TradingMode.PAPER_TRADING)
+        with self.assertRaises(PermissionError):
+            service.place_order(tradingsymbol="NIFTY", quantity=1)
 
 
 if __name__ == "__main__":

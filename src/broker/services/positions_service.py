@@ -98,34 +98,4 @@ class PositionsService:
             if p:
                 parsed_day.append(p)
                 
-        # Merge Virtual Positions for simulated modes
-        try:
-            from src.workspace.workspace_mode import WorkspaceMode
-            from src.workspace.workspace_manager import WorkspaceManager
-            wm = WorkspaceManager.get_instance()
-            if wm.current_mode == WorkspaceMode.LIVE_PRACTICE:
-                from src.broker.services.virtual_execution import VirtualExecutionManager
-                vem = VirtualExecutionManager.get_instance()
-                vem.update_market_prices(gateway)
-                for v_pos in vem.open_positions.values():
-                    vp = PositionItem(
-                        symbol=v_pos["symbol"],
-                        product=v_pos["product"],
-                        exchange=v_pos["exchange"],
-                        quantity=int(v_pos["quantity"]),
-                        buy_qty=int(v_pos["buy_qty"]),
-                        sell_qty=int(v_pos["sell_qty"]),
-                        average_price=float(v_pos["average_price"]),
-                        last_price=float(v_pos["last_price"]),
-                        mtm=float(v_pos["mtm"]),
-                        realized_pnl=float(v_pos["realized_pnl"]),
-                        unrealized_pnl=float(v_pos["unrealized_pnl"]),
-                        is_virtual=True
-                    )
-                    parsed_net.append(vp)
-                    parsed_day.append(vp)
-        except Exception as e:
-            logger = logging.getLogger("PositionsService")
-            logger.error(f"Failed to merge virtual positions: {e}")
-
         return AccountPositions(net=parsed_net, day=parsed_day)

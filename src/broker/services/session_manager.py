@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.broker.utils.errors import SessionMissingError, ExpiredAccessTokenError
 
 logger = logging.getLogger("SessionManager")

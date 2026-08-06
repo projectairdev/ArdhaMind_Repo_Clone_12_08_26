@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Dict, Any, Optional
 
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.broker.utils.errors import (
     BrokerError,
     InvalidAPIKeyError,

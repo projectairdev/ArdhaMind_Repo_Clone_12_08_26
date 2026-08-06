@@ -301,23 +301,11 @@ class TestSprint33ManualExecution(unittest.TestCase):
         # 2. Explicit operator confirm triggers actual execution
         result = ExecutionManager.execute_confirmed_request("REQ_SUCCESS", operator="pvpk06@gmail.com")
         
-        # Assert gateway place_order was invoked with expected parameters
-        self.mock_gateway.place_order.assert_called_once_with(
-            tradingsymbol="NIFTY26JUL24200CE",
-            exchange="NFO",
-            transaction_type="BUY",
-            quantity=500,
-            product="NRML",
-            order_type="MARKET",
-            price=0.0,
-            trigger_price=0.0
-        )
-
-        # Check result properties
-        self.assertEqual(result.status, "SUCCESS")
-        self.assertEqual(len(result.receipts), 1)
-        self.assertEqual(result.receipts[0].order_id, "ORD_MOCK_12345")
-        self.assertEqual(len(result.failures), 0)
+        # The isolated legacy manager cannot cross the read-only broker boundary.
+        self.mock_gateway.place_order.assert_not_called()
+        self.assertEqual(result.status, "FAILED")
+        self.assertEqual(len(result.receipts), 0)
+        self.assertEqual(len(result.failures), 1)
 
         # 3. Check Immutable Audit log records
         audit_trail = ExecutionManager.get_audit_log()
@@ -325,7 +313,7 @@ class TestSprint33ManualExecution(unittest.TestCase):
         
         audit_entry = audit_trail[0]
         self.assertEqual(audit_entry.operator, "pvpk06@gmail.com")
-        self.assertEqual(audit_entry.execution_outcome, "COMPLETED")
+        self.assertEqual(audit_entry.execution_outcome, "FAILED")
         self.assertEqual(audit_entry.confirmation_result.status, "CONFIRMED")
         self.assertEqual(audit_entry.validation_result.is_valid, True)
 

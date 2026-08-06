@@ -4,9 +4,8 @@ from typing import List, Dict, Any, Optional
 
 from src.broker.interfaces.broker_interface import IBrokerGateway
 from src.broker.models.trading_mode import TradingMode
-from src.broker.adapters.mock_broker import MockBrokerGateway
 from src.broker.adapters.kite_broker import KiteBrokerGateway
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 
 logger = logging.getLogger("BrokerService")
 
@@ -31,12 +30,7 @@ class BrokerService(IBrokerGateway):
         if getattr(self, "_initialized", False):
             return
         
-        # Load trading mode from Config or fallback to PAPER_TRADING
-        mode_str = getattr(Config, "TRADING_MODE", "PAPER_TRADING")
-        try:
-            self.trading_mode = TradingMode(mode_str)
-        except ValueError:
-            self.trading_mode = TradingMode.PAPER_TRADING
+        self.trading_mode = TradingMode.LIVE_ZERODHA
 
         self._init_gateway()
         self._initialized = True
@@ -44,12 +38,11 @@ class BrokerService(IBrokerGateway):
     def _init_gateway(self) -> None:
         """Dynamically instantiates the adapter based on the active trading mode."""
         logger.info(f"Initializing BrokerService with mode: {self.trading_mode.value}")
-        if self.trading_mode == TradingMode.LIVE_ZERODHA:
-            self._gateway = KiteBrokerGateway()
-        else:
-            self._gateway = MockBrokerGateway()
+        if self.trading_mode != TradingMode.LIVE_ZERODHA:
+            raise ValueError("AIR ArdhaMind supports only the read-only Zerodha gateway")
+        self._gateway = KiteBrokerGateway()
         
-        class_name = "LiveKiteBroker" if self.trading_mode == TradingMode.LIVE_ZERODHA else "MockBroker"
+        class_name = "LiveKiteBroker"
         import sys
         print(f"BrokerService initialized:\nClass:\n{class_name}", file=sys.stderr, flush=True)
 
@@ -59,7 +52,9 @@ class BrokerService(IBrokerGateway):
         return cls()
 
     def set_mode(self, mode: TradingMode) -> None:
-        """Allows dynamic switching of the trading mode (primarily for testing)."""
+        """Retained compatibility method; non-canonical broker modes are rejected."""
+        if mode != TradingMode.LIVE_ZERODHA:
+            raise ValueError("Paper and alternate broker modes are unavailable")
         self.trading_mode = mode
         self._init_gateway()
 
@@ -126,66 +121,19 @@ class BrokerService(IBrokerGateway):
         return self._gateway.get_instruments(exchange)
 
     def place_order(self, **kwargs) -> Any:
-        from src.workspace.workspace_mode import WorkspaceMode
-        from src.workspace.workspace_manager import WorkspaceManager
-        wm = WorkspaceManager.get_instance()
-        if wm.current_mode == WorkspaceMode.LIVE_PRACTICE:
-            logger.info("Virtual Execution: Simulating order placement")
-            from src.broker.services.virtual_execution import VirtualExecutionManager
-            return VirtualExecutionManager.get_instance().place_order(self, **kwargs)
-        return self._gateway.place_order(**kwargs)
+        raise PermissionError("AIR ArdhaMind is read only; order placement is unavailable")
 
     def modify_order(self, **kwargs) -> Any:
-        from src.workspace.workspace_mode import WorkspaceMode
-        from src.workspace.workspace_manager import WorkspaceManager
-        wm = WorkspaceManager.get_instance()
-        if wm.current_mode == WorkspaceMode.LIVE_PRACTICE:
-            logger.info("Virtual Execution: Simulating order modification")
-            from src.broker.services.virtual_execution import VirtualExecutionManager
-            return VirtualExecutionManager.get_instance().modify_order(**kwargs)
-        return self._gateway.modify_order(**kwargs)
+        raise PermissionError("AIR ArdhaMind is read only; order modification is unavailable")
 
     def cancel_order(self, **kwargs) -> Any:
-        from src.workspace.workspace_mode import WorkspaceMode
-        from src.workspace.workspace_manager import WorkspaceManager
-        wm = WorkspaceManager.get_instance()
-        if wm.current_mode == WorkspaceMode.LIVE_PRACTICE:
-            logger.info("Virtual Execution: Simulating order cancellation")
-            from src.broker.services.virtual_execution import VirtualExecutionManager
-            return VirtualExecutionManager.get_instance().cancel_order(**kwargs)
-        return self._gateway.cancel_order(**kwargs)
+        raise PermissionError("AIR ArdhaMind is read only; order cancellation is unavailable")
 
     def exit_position(self, tradingsymbol: str, product: str) -> Optional[str]:
         """
         Exits an active position for the given symbol and product by placing an offsetting market order.
         """
-        positions = self.get_positions()
-        for pos in positions:
-            symbol = pos.tradingsymbol if hasattr(pos, "tradingsymbol") else (pos.get("tradingsymbol") if isinstance(pos, dict) else None)
-            prod = pos.product if hasattr(pos, "product") else (pos.get("product") if isinstance(pos, dict) else None)
-            qty = pos.quantity if hasattr(pos, "quantity") else (pos.get("quantity", 0) if isinstance(pos, dict) else 0)
-            exchange = pos.exchange if hasattr(pos, "exchange") else (pos.get("exchange", "NSE") if isinstance(pos, dict) else "NSE")
-            
-            if symbol == tradingsymbol and prod == product:
-                if qty == 0:
-                    logger.warning(f"Position for {tradingsymbol} ({product}) is already closed (qty=0).")
-                    return None
-                
-                transaction_type = "SELL" if qty > 0 else "BUY"
-                abs_qty = abs(qty)
-                
-                order_id = self.place_order(
-                    tradingsymbol=tradingsymbol,
-                    exchange=exchange,
-                    transaction_type=transaction_type,
-                    quantity=abs_qty,
-                    product=product,
-                    order_type="MARKET"
-                )
-                logger.info(f"Exited position for {tradingsymbol} with order {order_id} ({transaction_type} {abs_qty})")
-                return order_id
-        logger.warning(f"No active position found for {tradingsymbol} ({product})")
-        return None
+        raise PermissionError("AIR ArdhaMind is read only; position exit is unavailable")
 
 
     def health(self) -> Any:
@@ -317,5 +265,4 @@ class BrokerService(IBrokerGateway):
     def get_stream_health(self) -> Any:
         """Returns the current immutable StreamHealthReport."""
         return self._get_orchestrator().get_health_report()
-
 

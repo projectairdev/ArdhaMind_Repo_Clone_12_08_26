@@ -96,38 +96,6 @@ class OrdersService:
                 is_virtual=False
             ))
 
-        # Merge Virtual Orders for simulated modes
-        try:
-            from src.workspace.workspace_mode import WorkspaceMode
-            from src.workspace.workspace_manager import WorkspaceManager
-            wm = WorkspaceManager.get_instance()
-            if wm.current_mode == WorkspaceMode.LIVE_PRACTICE:
-                from src.broker.services.virtual_execution import VirtualExecutionManager
-                vem = VirtualExecutionManager.get_instance()
-                for v_order in vem.orders:
-                    vo = OrderItem(
-                        order_id=v_order["order_id"],
-                        exchange_order_id=v_order["exchange_order_id"],
-                        symbol=v_order["symbol"],
-                        exchange=v_order["exchange"],
-                        transaction_type=v_order["transaction_type"],
-                        quantity=int(v_order["quantity"]),
-                        filled_quantity=int(v_order["filled_quantity"]),
-                        product=v_order["product"],
-                        order_type=v_order["order_type"],
-                        status=v_order["status"],
-                        price=float(v_order["price"]),
-                        average_price=float(v_order["average_price"]),
-                        order_timestamp=v_order["order_timestamp"],
-                        validity=v_order["validity"],
-                        status_message=v_order["status_message"],
-                        is_virtual=True
-                    )
-                    all_orders.append(vo)
-        except Exception as e:
-            logger = logging.getLogger("OrdersService")
-            logger.error(f"Failed to merge virtual orders: {e}")
-            
         pending = [o for o in all_orders if o.status in ("TRIGGER PENDING", "PENDING", "PUT ORDER REQ RECEIVED")]
         open_list = [o for o in all_orders if o.status in ("OPEN", "MODIFY PENDING", "VALIDATION PENDING")]
         cancelled = [o for o in all_orders if o.status == "CANCELLED"]

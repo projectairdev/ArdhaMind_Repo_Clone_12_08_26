@@ -16,14 +16,14 @@ from src.models import (
     ExecutionReport,
     ExecutionStatus,
 )
-from src.broker_engine.connection import ConnectionManager, BrokerConnectionError
-from src.broker_engine.account import AccountManager
-from src.broker_engine.funds import FundsManager
-from src.broker_engine.positions import PositionsManager
-from src.broker_engine.holdings import HoldingsManager
-from src.broker_engine.orders import OrdersManager
-from src.broker_engine.validator import BrokerValidator
-from src.broker_engine.execution_builder import ExecutionBuilder
+from src.broker.compat.connection import ConnectionManager, BrokerConnectionError
+from src.broker.compat.account import AccountManager
+from src.broker.compat.funds import FundsManager
+from src.broker.compat.positions import PositionsManager
+from src.broker.compat.holdings import HoldingsManager
+from src.broker.compat.orders import OrdersManager
+from src.broker.compat.validator import BrokerValidator
+from src.broker.compat.execution_builder import ExecutionBuilder
 from src.dashboard.broker_panel import BrokerPanel
 
 
@@ -37,7 +37,7 @@ class TestBrokerIntegration(unittest.TestCase):
         # Reset ConnectionManager singleton for isolation
         ConnectionManager._instance = None
 
-    @patch("src.broker_engine.connection.KiteConnect")
+    @patch("src.broker.compat.connection.KiteConnect")
     def test_connection_manager_singleton_and_init(self, mock_kite_class):
         mock_kite_instance = MagicMock()
         mock_kite_instance.generate_session.return_value = {"access_token": "mock_token"}
@@ -65,7 +65,7 @@ class TestBrokerIntegration(unittest.TestCase):
         with self.assertRaises(BrokerConnectionError):
             cm.get_client()
 
-    @patch("src.broker_engine.connection.ConnectionManager.get_client")
+    @patch("src.broker.compat.connection.ConnectionManager.get_client")
     def test_account_manager_success(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -81,7 +81,7 @@ class TestBrokerIntegration(unittest.TestCase):
         self.assertEqual(acc.email, "operator@terminal.local")
         self.assertEqual(acc.broker, "Zerodha")
 
-    @patch("src.broker_engine.connection.ConnectionManager.get_client")
+    @patch("src.broker.compat.connection.ConnectionManager.get_client")
     def test_account_manager_error_handling(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -91,7 +91,7 @@ class TestBrokerIntegration(unittest.TestCase):
         self.assertEqual(acc.client_id, "ERROR")
         self.assertEqual(acc.name, "ERROR")
 
-    @patch("src.broker_engine.connection.ConnectionManager.get_client")
+    @patch("src.broker.compat.connection.ConnectionManager.get_client")
     def test_funds_manager_parsing(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -113,7 +113,7 @@ class TestBrokerIntegration(unittest.TestCase):
         self.assertEqual(funds.utilized_margin, 25000.0)
         self.assertEqual(funds.available_margin, 100000.0)
 
-    @patch("src.broker_engine.connection.ConnectionManager.get_client")
+    @patch("src.broker.compat.connection.ConnectionManager.get_client")
     def test_positions_manager(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -150,7 +150,7 @@ class TestBrokerIntegration(unittest.TestCase):
         total_mtm = PositionsManager.get_today_mtm()
         self.assertEqual(total_mtm, 300.0)
 
-    @patch("src.broker_engine.connection.ConnectionManager.get_client")
+    @patch("src.broker.compat.connection.ConnectionManager.get_client")
     def test_holdings_manager(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -171,7 +171,7 @@ class TestBrokerIntegration(unittest.TestCase):
         self.assertEqual(holdings[0].tradingsymbol, "TCS")
         self.assertEqual(holdings[0].pnl, 3000.0)
 
-    @patch("src.broker_engine.connection.ConnectionManager.get_client")
+    @patch("src.broker.compat.connection.ConnectionManager.get_client")
     def test_orders_manager_retrieval(self, mock_get_client):
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
@@ -254,7 +254,7 @@ class TestBrokerIntegration(unittest.TestCase):
         self.assertEqual(order.exchange, "NFO")  # Deduced correctly as it's an option symbol
         self.assertEqual(order.quantity, 50)  # 2 lots * 25 lot_size
 
-    @patch("src.broker_engine.connection.ConnectionManager.is_connected")
+    @patch("src.broker.compat.connection.ConnectionManager.is_connected")
     def test_orders_manager_requires_manual_confirmation(self, mock_is_connected):
         mock_is_connected.return_value = True
         
@@ -283,9 +283,9 @@ class TestBrokerIntegration(unittest.TestCase):
         self.assertEqual(report.status, "FAILED")
         self.assertIn("MANUAL_CONFIRMATION_REQUIRED", report.failure_reason)
 
-    @patch("src.broker_engine.connection.ConnectionManager.is_connected")
-    @patch("src.broker_engine.connection.ConnectionManager.get_client")
-    @patch("src.broker_engine.funds.FundsManager.get_funds_info")
+    @patch("src.broker.compat.connection.ConnectionManager.is_connected")
+    @patch("src.broker.compat.connection.ConnectionManager.get_client")
+    @patch("src.broker.compat.funds.FundsManager.get_funds_info")
     def test_orders_manager_successful_placement_with_confirmation(
         self, mock_get_funds, mock_get_client, mock_is_connected
     ):
