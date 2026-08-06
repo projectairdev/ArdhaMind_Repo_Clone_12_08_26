@@ -1575,7 +1575,10 @@ def run_daemon(wm, bs):
                 try:
                     from src.pipeline.news_pipeline import NewsPipeline
                     from src.dashboard.news_panel import NewsIntelligencePanel
-                    pipeline = NewsPipeline()
+                    # Phase 1 production shell: hardcoded demo providers are not
+                    # permitted to appear as live news. Real provider integration
+                    # will replace this explicit unavailable context later.
+                    pipeline = NewsPipeline(providers=[])
                     news_ctx = pipeline.run()
                     cached_news_sentiment = NewsIntelligencePanel(news_ctx).to_dict()
                     last_news_fetch_time = time.time()
