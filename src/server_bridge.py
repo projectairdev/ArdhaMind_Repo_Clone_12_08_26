@@ -8,6 +8,9 @@ import logging
 import time
 from datetime import datetime
 
+from src.application.compatibility_serializer import CompatibilitySerializer
+from src.application.workstation_state_service import WorkstationStateService
+
 # Disable verbose logging to stdout to preserve clean JSON output
 logging.basicConfig(level=logging.ERROR)
 
@@ -1585,17 +1588,13 @@ def run_daemon(wm, bs):
                 except Exception as e:
                     logger.error(f"Failed to compile news sentiment: {e}")
 
-            state_payload = {
-                "type": "state",
-                "data": {
+            legacy_data = {
                     "workspaceContext": {
                         "currentMode": current_mode.value,
                         "brokerState": broker_state,
                         "marketState": market_state,
                         "brokerType": "ZERODHA",
                         "marketDataSource": "LIVE",
-                        "executionMode": "LIVE_BROKER" if current_mode == WorkspaceMode.LIVE_TRADING else "PAPER_EXECUTION",
-                        "portfolioSource": "BROKER",
                         "analyticsMode": "ENABLED",
                         "notificationMode": "ENABLED",
                         "timestamp": datetime.utcnow().isoformat() + "Z"
@@ -1622,7 +1621,13 @@ def run_daemon(wm, bs):
                     "eveningReport": evening_report,
                     "analyticsReport": analytics_report,
                     "newsSentiment": cached_news_sentiment
-                }
+            }
+            canonical_state = WorkstationStateService.build_from_legacy(
+                legacy_data, broker_state=broker_state, market_state=market_state
+            )
+            state_payload = {
+                "type": "state",
+                "data": CompatibilitySerializer.to_phase1_payload(canonical_state, legacy_data)
             }
             print(json.dumps(state_payload), flush=True)
         except Exception as err:
