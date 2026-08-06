@@ -41,8 +41,7 @@ class OptionIntelligencePipeline:
             try:
                 spot_price = fetch_nifty_spot(kite)
             except Exception as exc:
-                logger.warning(f"Failed to fetch NIFTY spot price from Kite. Using default. Error: {exc}")
-                spot_price = 24000.0  # Safe robust fallback
+                raise RuntimeError("NIFTY spot is unavailable; option intelligence is blocked.") from exc
 
         # 2. Expiry Resolution
         expiries = InstrumentManager.get_option_expiries(instruments_df, "NIFTY")
