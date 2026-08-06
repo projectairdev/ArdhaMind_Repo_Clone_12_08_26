@@ -270,6 +270,10 @@ from src.broker.services.positions_service import AccountPositions, PositionItem
 from src.broker.services.orders_service import AccountOrders, OrderItem
 from src.broker.services.trades_service import TradeItem
 
+# Phase 2 canonical read-only contracts.
+from src.models.data_quality import FreshnessStatus, QualityStatus, SectionStatus, ValueClassification, ValueMetadata
+from src.models.canonical_workstation_state import CanonicalWorkstationState
+from src.models.decision_support import DecisionSupportReport
 
 
 
