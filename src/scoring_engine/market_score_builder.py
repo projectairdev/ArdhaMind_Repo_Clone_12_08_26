@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.models import MarketScore, TradeContext
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.scoring_engine.trend_score import evaluate_trend_score
 from src.scoring_engine.option_score import evaluate_option_score
 from src.scoring_engine.volatility_score import evaluate_volatility_score

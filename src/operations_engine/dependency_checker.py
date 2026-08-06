@@ -76,7 +76,7 @@ class DependencyValidator:
         config_details: Dict[str, bool] = {}
 
         # Scoring config
-        scoring_path = os.path.join(root_dir, "src", "config_engine", "scoring.yaml")
+        scoring_path = os.path.join(root_dir, "src", "configuration_engine", "scoring.yaml")
         scoring_valid = os.path.isfile(scoring_path)
         config_details["scoring_configuration"] = scoring_valid
 

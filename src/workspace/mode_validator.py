@@ -2,7 +2,7 @@ from __future__ import annotations
 import logging
 from typing import Optional, Dict, Any
 
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.workspace.workspace_mode import WorkspaceMode
 from src.broker.services.broker_service import BrokerService
 

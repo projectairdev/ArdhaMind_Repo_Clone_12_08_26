@@ -24,7 +24,7 @@ class StartupDiagnosticManager:
         
         # Paths to check
         root_dir = os.getcwd()
-        scoring_yaml_path = custom_paths.get("scoring_yaml") if custom_paths else os.path.join(root_dir, "src", "config_engine", "scoring.yaml")
+        scoring_yaml_path = custom_paths.get("scoring_yaml") if custom_paths else os.path.join(root_dir, "src", "configuration_engine", "scoring.yaml")
         log_dir = custom_paths.get("log_dir") if custom_paths else os.path.join(root_dir, "logs")
         cache_dir = custom_paths.get("cache_dir") if custom_paths else os.path.join(root_dir, "cache")
         instrument_db_path = custom_paths.get("instrument_db") if custom_paths else os.path.join(cache_dir, "instruments.db")

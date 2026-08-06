@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from typing import Any, Callable
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 
 
 def call_with_retry(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:

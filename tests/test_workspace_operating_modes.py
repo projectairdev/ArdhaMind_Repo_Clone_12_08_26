@@ -2,7 +2,7 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock, patch
 
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.workspace import (
     WorkspaceMode,
     WorkspaceContext,

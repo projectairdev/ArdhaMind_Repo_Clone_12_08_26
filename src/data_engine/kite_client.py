@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from kiteconnect import KiteConnect
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.utils import setup_logger
 
 logger = setup_logger("KiteClient")

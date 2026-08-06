@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.models import TradeContext, OptionScore
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 
 
 def evaluate_option_score(context: TradeContext) -> OptionScore:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 
 
 def compute_option_quality_score(

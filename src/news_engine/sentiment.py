@@ -9,7 +9,7 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
 
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.models import NewsHeadline, NewsContext
 from src.utils import setup_logger, now_str
 

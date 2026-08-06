@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Optional, Dict, Any
 
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.workspace.workspace_mode import WorkspaceMode
 from src.workspace.workspace_context import WorkspaceContext
 from src.workspace.modes import (

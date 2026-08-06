@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, Tuple, Any
 import pandas as pd
 from kiteconnect import KiteConnect
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.utils import call_with_retry, setup_logger
 
 logger = setup_logger("HistoricalData")

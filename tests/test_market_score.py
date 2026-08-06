@@ -12,7 +12,7 @@ from src.models import (
     ConfluenceContext,
     MarketScore,
 )
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 from src.scoring_engine import MarketScoreBuilder
 from src.scoring_engine.trend_score import evaluate_trend_score
 from src.scoring_engine.option_score import evaluate_option_score

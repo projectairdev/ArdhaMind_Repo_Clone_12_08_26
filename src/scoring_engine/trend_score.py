@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.models import TradeContext, TrendScore
-from src.config_engine import Config
+from src.configuration_engine.runtime import Config
 
 
 def evaluate_trend_score(context: TradeContext) -> TrendScore:
