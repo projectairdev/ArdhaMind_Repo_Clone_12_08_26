@@ -10,6 +10,12 @@ from src.broker.services.stream_health_monitor import StreamHealthMonitor
 from src.broker.services.streaming_orchestrator import StreamingOrchestrator
 from src.broker.models.tick import TickModel
 from src.broker.models.stream_health import StreamHealthReport
+from tests.support.fake_kiteconnect import FakeKiteTicker
+
+
+@pytest.fixture(autouse=True)
+def explicit_test_ticker(monkeypatch):
+    monkeypatch.setattr("src.broker.adapters.kite_ticker_adapter.KiteTicker", FakeKiteTicker)
 
 
 def test_kite_ticker_adapter_lifecycle():
