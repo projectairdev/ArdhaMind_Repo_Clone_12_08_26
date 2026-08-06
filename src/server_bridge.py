@@ -29,120 +29,7 @@ cached_news_sentiment = None
 last_news_fetch_time = 0.0
 
 
-class MockKiteConnectClient:
-    def __init__(self, *args, **kwargs):
-        self.api_key = kwargs.get("api_key", "MOCK_API_KEY")
-        self.access_token = None
-
-    def generate_session(self, request_token, api_secret):
-        return {"access_token": "MOCK_ACCESS_TOKEN"}
-
-    def set_access_token(self, token):
-        self.access_token = token
-
-    def profile(self):
-        return {
-            "client_id": "MOCK_CLIENT",
-            "user_name": "Mock User",
-            "email": "mock@example.com"
-        }
-
-    def margins(self):
-        return {
-            "equity": {
-                "net": 1000000.0,
-                "available": {"cash": 1000000.0},
-                "utilised": {"debits": 0.0}
-            },
-            "commodity": {
-                "net": 0.0,
-                "available": {"cash": 0.0},
-                "utilised": {"debits": 0.0}
-            }
-        }
-
-    def holdings(self):
-        return [
-            {
-                "tradingsymbol": "SBIN",
-                "exchange": "NSE",
-                "instrument_token": 12345,
-                "isin": "INE062A01020",
-                "product": "CNC",
-                "quantity": 100,
-                "t1_quantity": 0,
-                "realised_quantity": 100,
-                "average_price": 550.0,
-                "last_price": 560.0,
-                "pnl": 1000.0,
-                "unrealised_pnl": 1000.0,
-                "value": 56000.0,
-                "price": 560.0
-            }
-        ]
-
-    def positions(self):
-        return {
-            "net": [
-                {
-                    "tradingsymbol": "NIFTY2671624200CE",
-                    "exchange": "NFO",
-                    "instrument_token": 54321,
-                    "product": "NRML",
-                    "quantity": 500,
-                    "buy_quantity": 500,
-                    "sell_quantity": 0,
-                    "average_price": 155.40,
-                    "last_price": 160.0,
-                    "pnl": 2300.0,
-                    "m2m": 2300.0,
-                    "realised": 0.0,
-                    "unrealised": 2300.0,
-                    "buy_value": 77700.0,
-                    "sell_value": 0.0
-                }
-            ],
-            "day": []
-        }
-
-    def orders(self):
-        return [
-            {
-                "order_id": "O10001",
-                "exchange_order_id": "E10001",
-                "tradingsymbol": "NIFTY2671624200CE",
-                "exchange": "NFO",
-                "transaction_type": "BUY",
-                "quantity": 500,
-                "product": "NRML",
-                "order_type": "MARKET",
-                "status": "COMPLETE",
-                "price": 155.40,
-                "filled_quantity": 500,
-                "pending_quantity": 0,
-                "order_timestamp": "2026-07-12 10:15:30",
-                "status_message": "ORDER PLACED AND FILLED",
-                "average_price": 155.40,
-                "tag": ""
-            }
-        ]
-
-    def historical_data(self, *args, **kwargs):
-        return []
-
-    def instruments(self, *args, **kwargs):
-        return []
-
-    def place_order(self, *args, **kwargs):
-        return "MOCK_ORDER_ID_123"
-
-    def modify_order(self, *args, **kwargs):
-        return "MOCK_ORDER_ID_123"
-
-    def cancel_order(self, *args, **kwargs):
-        return "MOCK_ORDER_ID_123"
-
-from src.config_engine.config import Config
+from src.configuration_engine.runtime import Config
 from src.workspace.workspace_manager import WorkspaceManager
 from src.workspace.workspace_mode import WorkspaceMode
 from src.broker.services.broker_service import BrokerService
@@ -174,17 +61,6 @@ def handle_daemon_command(action, params, bs, wm):
     
     # Extract params
     mode_str = params.get("mode")
-    symbol = params.get("symbol")
-    transaction_type = params.get("transaction_type")
-    quantity = params.get("quantity")
-    product = params.get("product")
-    order_type = params.get("order_type")
-    price = params.get("price")
-    exchange = params.get("exchange")
-    
-    if action in {"place_order", "modify_order", "cancel_order", "exit_position", "set_mode"}:
-        raise PermissionError("AIR ArdhaMind Phase 1 is read only; execution and mode-changing commands are unavailable.")
-
     if action == "get_context":
         ctx = wm.get_context()
         payload = serialize(ctx)
@@ -804,20 +680,12 @@ def run_daemon(wm, bs):
 def main():
     parser = argparse.ArgumentParser(description="Python Backend Gateway Bridge")
     parser.add_argument("--action", required=True, help="Action to perform")
-    parser.add_argument("--mode", help="Workspace Mode to transition to")
-    parser.add_argument("--symbol", help="Trading symbol for exit_position")
-    parser.add_argument("--product", help="Product type for exit_position")
     parser.add_argument("--api_key", help="Kite API key supplied from the broker tab")
     parser.add_argument("--api_secret", help="Kite API secret supplied from the broker tab")
     parser.add_argument("--request_token", help="Zerodha request token for login exchange")
     parser.add_argument("--access_token", help="Zerodha access token for direct connection")
     parser.add_argument("--persist_key", help="Whether to persist the API Key (True/False)")
     parser.add_argument("--persist_token", help="Whether to persist the Access Token (True/False)")
-    parser.add_argument("--transaction_type", help="BUY or SELL")
-    parser.add_argument("--quantity", type=int, help="Quantity for placing order")
-    parser.add_argument("--price", type=float, help="Price for order placement")
-    parser.add_argument("--order_type", default="MARKET", help="Order type")
-    parser.add_argument("--exchange", default="NSE", help="Exchange")
 
     args = parser.parse_args()
 
@@ -853,20 +721,6 @@ def main():
                 "auto_fallback_to_development": Config.AUTO_FALLBACK_TO_DEVELOPMENT,
             })
             print(json.dumps(payload))
-
-        elif args.action == "set_mode":
-            if not args.mode:
-                print(json.dumps({"error": "Missing mode parameter"}), file=sys.stderr)
-                sys.exit(1)
-            try:
-                new_mode = WorkspaceMode(args.mode)
-                wm.set_mode(new_mode, operator_confirmed=True)
-                # Re-fetch context
-                ctx = wm.get_context()
-                print(json.dumps(serialize(ctx)))
-            except Exception as e:
-                print(json.dumps({"error": f"Failed to set mode: {str(e)}"}), file=sys.stderr)
-                sys.exit(1)
 
         elif args.action in [
             "get_market_score", "get_opportunity_context", "get_strategy_evaluation",
@@ -1113,9 +967,6 @@ def main():
                 "success": True,
                 "context": serialize(ctx)
             }))
-
-        elif args.action in {"place_order", "modify_order", "cancel_order", "exit_position", "set_mode"}:
-            print(json.dumps({"error": "AIR ArdhaMind Phase 1 is read only; execution and mode-changing commands are unavailable."}))
 
         else:
             print(json.dumps({"error": f"Unknown action: {args.action}"}))

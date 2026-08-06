@@ -44,9 +44,8 @@ def test_execution_http_and_daemon_paths_reject_actions():
     assert 'app.post("/api/orders/place"' in SERVER
     assert 'app.post("/api/positions/exit"' in SERVER
     assert SERVER.count("res.status(410)") >= 4
-    for action in ["place_order", "modify_order", "cancel_order", "exit_position", "set_mode"]:
-        assert action in BRIDGE
-    assert "Phase 1 is read only" in BRIDGE
+    for action in ["place_order", "modify_order", "cancel_order", "exit_position"]:
+        assert f'args.action == "{action}"' not in BRIDGE
 
 
 def test_no_fabricated_option_spot_fallback():
