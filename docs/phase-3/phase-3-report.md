@@ -24,3 +24,8 @@ the companion reports.
 Rollback safely with `git switch --detach v0.8-canonical-state`, or create a branch
 using `git switch -c rollback/phase2 v0.8-canonical-state`. Do not reset over
 uncommitted work.
+
+Verification completed with 262 passing Python tests (109 unchanged warnings),
+31 focused shell/contract/integration tests, passing TypeScript, passing production
+build, and passing direct/module bridge smokes. The disconnected analytical smoke
+returned `blocked` rather than a fabricated market score.

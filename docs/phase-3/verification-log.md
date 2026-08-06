@@ -6,4 +6,8 @@ with 109 existing warnings; Phase 1/2 tests, TypeScript, production build, and
 direct/module `get_context` smoke launches passed. No credentials or broker action
 were used.
 
-Final results are recorded in `phase-3-report.md` after implementation verification.
+Final: 262 Python tests passed with the same 109 warnings. The combined Phase
+1/2/3 focused run passed 31 tests. TypeScript and the Vite/esbuild production
+build passed. Direct and module `get_context` smoke launches passed. A module
+`get_market_score` smoke with no connected feed returned a structured canonical
+blocked result, with no fallback number. No credentials or broker action were used.
