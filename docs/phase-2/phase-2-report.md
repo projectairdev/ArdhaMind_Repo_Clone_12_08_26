@@ -15,8 +15,9 @@ contracts. Market-closed and session-expired contracts are explicit. The root
 Kite shim was removed; test behavior lives under `tests/support`, and runtime
 resolution is the installed `kiteconnect/__init__.py`.
 
-Bridge size was 1,966 lines immediately before extraction. The final count is
-reported below after verification. Remaining duplicates are retained with Phase
+Bridge size was 1,966 lines immediately before extraction and is 1,977 lines
+after the thin integration (the extraction added an adapter call without moving
+legacy command handling). Remaining duplicates are retained with Phase
 3/4 migration gates in `canonical-module-decisions.md`. Remaining direct bridge
 synthesis includes acquisition/caching of market, option, account, analytics and
 news legacy reports; canonical assembly and compatibility mapping no longer live

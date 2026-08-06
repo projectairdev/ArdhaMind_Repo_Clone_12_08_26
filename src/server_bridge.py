@@ -6,7 +6,13 @@ import argparse
 import dataclasses
 import logging
 import time
+from pathlib import Path
 from datetime import datetime
+
+# Support the documented direct launch (`python src/server_bridge.py`) as well as
+# module launch without changing application imports.
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.application.compatibility_serializer import CompatibilitySerializer
 from src.application.workstation_state_service import WorkstationStateService
