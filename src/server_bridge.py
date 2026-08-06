@@ -54,18 +54,25 @@ def serialize(obj):
     else:
         return obj
 
+
+def serialize_read_only_context(ctx):
+    """Compatibility context without retired product-mode or execution state."""
+    payload = serialize(ctx)
+    for key in ("current_mode", "execution_mode", "trading_mode", "allow_live_trading"):
+        payload.pop(key, None)
+    payload["product_mode"] = "READ_ONLY"
+    return payload
+
 def handle_daemon_command(action, params, bs, wm):
     global cached_market_context, cached_option_context
     from datetime import datetime
     ws_mode = wm.current_mode
     
-    # Extract params
-    mode_str = params.get("mode")
     if action == "get_context":
         ctx = wm.get_context()
-        payload = serialize(ctx)
+        payload = serialize_read_only_context(ctx)
         payload.update({
-            "allow_live_trading": Config.ALLOW_LIVE_TRADING,
+            "allow_live_trading": False,
             "require_confirmation": Config.REQUIRE_CONFIRMATION,
             "show_mode_warning": Config.SHOW_MODE_WARNING,
             "auto_fallback_to_development": Config.AUTO_FALLBACK_TO_DEVELOPMENT,
@@ -639,7 +646,7 @@ def run_daemon(wm, bs):
 
             legacy_data = {
                     "workspaceContext": {
-                        "currentMode": current_mode.value,
+                        "currentMode": "READ_ONLY",
                         "brokerState": broker_state,
                         "marketState": market_state,
                         "brokerType": "ZERODHA",
@@ -713,9 +720,9 @@ def main():
             run_daemon(wm, bs)
         elif args.action == "get_context":
             ctx = wm.get_context()
-            payload = serialize(ctx)
+            payload = serialize_read_only_context(ctx)
             payload.update({
-                "allow_live_trading": Config.ALLOW_LIVE_TRADING,
+                "allow_live_trading": False,
                 "require_confirmation": Config.REQUIRE_CONFIRMATION,
                 "show_mode_warning": Config.SHOW_MODE_WARNING,
                 "auto_fallback_to_development": Config.AUTO_FALLBACK_TO_DEVELOPMENT,
