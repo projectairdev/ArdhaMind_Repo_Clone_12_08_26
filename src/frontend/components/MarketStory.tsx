@@ -82,7 +82,7 @@ export function MarketStory() {
           </span>
           <h2 className="text-2xl font-extrabold tracking-tight mt-1 flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-cyan-400" />
-            Market Story Workspace
+            Today’s Analysis
           </h2>
           <p className={`text-xs ${themeClasses.textMuted} mt-1`}>
             Deconstruct session mechanics, capital rotation flow, and technical sentiment anchors.
@@ -199,7 +199,7 @@ export function MarketStory() {
                 <div className="space-y-1">
                   <p className="text-sm font-bold text-neutral-300">No live news streams active</p>
                   <p className="text-xs text-neutral-500 max-w-md">
-                    Waiting for matching economic headlines or news sentiment pipeline execution events.
+                    Waiting for matching verified economic headlines or market events.
                   </p>
                 </div>
               </div>

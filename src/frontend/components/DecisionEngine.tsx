@@ -70,7 +70,7 @@ export function DecisionEngine() {
                 {/* Card top */}
                 <div className="flex justify-between items-start gap-4">
                   <div className="space-y-1">
-                    <span className="text-xs font-mono text-slate-500 uppercase block">PRIORITY #{safeNumber(cand?.execution_priority)}</span>
+                    <span className="text-xs font-mono text-slate-500 uppercase block">SCENARIO PRIORITY #{safeNumber(cand?.execution_priority)}</span>
                     <h5 className="text-sm font-mono font-bold text-white leading-none">{safeString(cand?.tradingsymbol)}</h5>
                   </div>
                   <div className="flex gap-2">

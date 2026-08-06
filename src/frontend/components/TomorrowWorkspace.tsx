@@ -74,7 +74,7 @@ export function TomorrowWorkspace() {
           </span>
           <h2 className="text-xl sm:text-2xl font-black tracking-tight mt-1 flex items-center gap-2">
             <Calendar className="h-5.5 w-5.5 text-cyan-400" />
-            Tomorrow's Outlook & Evening Planner
+            Pre-Market Planner · Evening Outlook
           </h2>
           <p className={`text-xs ${themeClasses.textMuted} mt-0.5`}>
             Construct tactical bias, configure watchlist parameters, and establish tomorrow's risk limits.
@@ -106,7 +106,7 @@ export function TomorrowWorkspace() {
             <div className="flex items-center gap-2 border-b border-neutral-900 pb-2">
               <Compass className="h-4 w-4 text-cyan-400" />
               <h3 className="font-mono text-xs font-extrabold uppercase tracking-wider text-neutral-200">
-                Tomorrow Overview
+                Next-Session Overview
               </h3>
             </div>
 
@@ -248,7 +248,7 @@ export function TomorrowWorkspace() {
             {/* Outlook */}
             <div className="space-y-1 text-left">
               <span className="text-[9px] font-mono font-extrabold text-cyan-400 uppercase tracking-widest block">
-                Tomorrow Outlook Summary
+                Pre-Market Outlook Summary
               </span>
               <p className="text-xs text-neutral-300 leading-relaxed bg-cyan-950/5 border border-cyan-900/10 p-3 rounded-lg font-mono">
                 {safeString(report?.tomorrow_outlook?.description, "No outlook description loaded.")}
@@ -271,7 +271,7 @@ export function TomorrowWorkspace() {
                 ) : (
                   <li className="flex gap-1.5 items-start">
                     <span className="text-cyan-400 font-black">•</span>
-                    <span>Configure strict pre-trade ATR parameters prior to open.</span>
+                    <span>Review deterministic ATR and invalidation conditions before the open.</span>
                   </li>
                 )}
               </ul>
