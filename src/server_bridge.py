@@ -1008,6 +1008,9 @@ def handle_daemon_command(action, params, bs, wm):
     price = params.get("price")
     exchange = params.get("exchange")
     
+    if action in {"place_order", "modify_order", "cancel_order", "exit_position", "set_mode"}:
+        raise PermissionError("AIR ArdhaMind Phase 1 is read only; execution and mode-changing commands are unavailable.")
+
     if action == "get_context":
         ctx = wm.get_context()
         payload = serialize(ctx)
@@ -1019,13 +1022,6 @@ def handle_daemon_command(action, params, bs, wm):
         })
         return payload
         
-    elif action == "set_mode":
-        if not mode_str:
-            raise ValueError("Missing mode parameter")
-        new_mode = WorkspaceMode(mode_str)
-        wm.set_mode(new_mode, operator_confirmed=True)
-        return serialize(wm.get_context())
-
     elif action == "login":
         api_key = params.get("api_key")
         access_token = params.get("access_token")
@@ -1068,22 +1064,6 @@ def handle_daemon_command(action, params, bs, wm):
     elif action == "get_broker_health":
         return serialize(bs.get_stream_health())
         
-    elif action == "place_order":
-        order_id = bs.place_order(
-            tradingsymbol=symbol,
-            exchange=exchange or "NSE",
-            transaction_type=transaction_type,
-            quantity=int(quantity) if quantity else 0,
-            product=product or "NRML",
-            order_type=order_type or "MARKET",
-            price=float(price) if price else None
-        )
-        return {"status": "SUCCESS", "order_id": order_id}
-        
-    elif action == "exit_position":
-        order_id = bs.exit_position(tradingsymbol=symbol, product=product)
-        return {"status": "SUCCESS", "order_id": order_id}
-
     elif action in [
         "get_market_score", "get_opportunity_context", "get_strategy_evaluation",
         "get_confidence_report", "get_risk_report", "get_decision_report",
@@ -1967,27 +1947,8 @@ def main():
                 "context": serialize(ctx)
             }))
 
-        elif args.action == "place_order":
-            if not args.symbol or not args.transaction_type or not args.quantity:
-                print(json.dumps({"error": "Missing order placement parameters"}))
-                sys.exit(0)
-            order_id = bs.place_order(
-                tradingsymbol=args.symbol,
-                exchange=args.exchange,
-                transaction_type=args.transaction_type,
-                quantity=args.quantity,
-                product=args.product or "NRML",
-                order_type=args.order_type or "MARKET",
-                price=args.price
-            )
-            print(json.dumps({"status": "SUCCESS", "order_id": order_id}))
-
-        elif args.action == "exit_position":
-            if not args.symbol or not args.product:
-                print(json.dumps({"error": "Missing symbol or product parameter"}))
-                sys.exit(0)
-            order_id = bs.exit_position(tradingsymbol=args.symbol, product=args.product)
-            print(json.dumps({"status": "SUCCESS", "order_id": order_id}))
+        elif args.action in {"place_order", "modify_order", "cancel_order", "exit_position", "set_mode"}:
+            print(json.dumps({"error": "AIR ArdhaMind Phase 1 is read only; execution and mode-changing commands are unavailable."}))
 
         else:
             print(json.dumps({"error": f"Unknown action: {args.action}"}))

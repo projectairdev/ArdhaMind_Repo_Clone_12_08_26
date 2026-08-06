@@ -195,29 +195,13 @@ app.get("/api/workspace", (req, res) => {
   res.json(workstationState.workspaceContext);
 });
 
-app.post("/api/workspace/mode", async (req, res) => {
-  const { mode } = req.body;
-  if (!mode) {
-    res.status(400).json({ error: "Missing mode in request body" });
-    return;
-  }
-  try {
-    const result = await sendDaemonRequest("set_mode", { mode });
-    if (result && result.current_mode) {
-      activeWorkspaceMode = result.current_mode;
-    }
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+app.post("/api/workspace/mode", (_req, res) => {
+  res.status(410).json({ error: "AIR ArdhaMind Phase 1 has one fixed LIVE INTELLIGENCE — READ ONLY profile." });
 });
 
-app.post("/api/workspace/runtime-flags", async (req, res) => {
-  const { allowLiveTrading } = req.body;
-  if (allowLiveTrading !== undefined) {
-    process.env.ALLOW_LIVE_TRADING = allowLiveTrading ? "True" : "False";
-  }
-  res.json({ allowLiveTrading: process.env.ALLOW_LIVE_TRADING === "True" });
+app.post("/api/workspace/runtime-flags", (_req, res) => {
+  process.env.ALLOW_LIVE_TRADING = "False";
+  res.status(410).json({ allowLiveTrading: false, error: "Live execution is unavailable in AIR ArdhaMind Phase 1." });
 });
 
 app.get("/api/workspace/trading-preferences", async (req, res) => {
@@ -415,32 +399,12 @@ app.get("/api/planner/optimization-report", (req, res) => {
   res.json(workstationState.optimizationReport || {});
 });
 
-app.post("/api/orders/place", async (req, res) => {
-  const { symbol, transaction_type, quantity, product, order_type, price, exchange } = req.body;
-  try {
-    const result = await sendDaemonRequest("place_order", {
-      symbol,
-      transaction_type,
-      quantity,
-      product,
-      order_type,
-      price,
-      exchange
-    });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+app.post("/api/orders/place", (_req, res) => {
+  res.status(410).json({ error: "Order placement is unavailable: AIR ArdhaMind is read only." });
 });
 
-app.post("/api/positions/exit", async (req, res) => {
-  const { symbol, product } = req.body;
-  try {
-    const result = await sendDaemonRequest("exit_position", { symbol, product });
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
+app.post("/api/positions/exit", (_req, res) => {
+  res.status(410).json({ error: "Position exits are unavailable: AIR ArdhaMind is read only." });
 });
 
 // Vite middleware setup for development, or static serving for production
