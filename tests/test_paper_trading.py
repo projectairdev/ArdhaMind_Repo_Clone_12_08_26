@@ -27,7 +27,7 @@ from src.paper_trading.exit_manager import PaperExitManager
 from src.paper_trading.journal_manager import PaperJournalManager
 from src.paper_trading.performance_builder import PaperPerformanceBuilder
 from src.paper_trading.portfolio_manager import PaperPortfolioManager
-from src.pipeline.paper_trading_pipeline import PaperTradingPipeline
+from tests.support.paper_trading_pipeline import PaperTradingPipeline
 from src.dashboard.paper_trading_panel import PaperTradingPanel
 
 
