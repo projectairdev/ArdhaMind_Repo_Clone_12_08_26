@@ -1,0 +1,7 @@
+{
+  "name": "NIFTY Option Finder & Market Intelligence",
+  "description": "A modular, reliable NIFTY market intelligence scanner and option analysis system.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
