@@ -10,7 +10,7 @@ import { GlobalMarketsDashboard } from "./visualizations/GlobalMarketsDashboard"
 import { HistoricalTelemetryCharts } from "./visualizations/HistoricalTelemetryCharts";
 import { AIInterpretationCard } from "./AIInterpretationCard";
 import { ParticipantPositioningWidget, VolatilityContextWidget } from "./SpecializedIntelligence";
-import { UnifiedIntelligencePanel } from "./UnifiedIntelligencePanel";
+import { NiftyIntelligenceStrip } from "./UnifiedIntelligencePanel";
 import { ProvenanceLine, SemanticBadge } from "./intelligence/CanonicalPresentation";
 
 export type NiftyLiveView = "overview" | "price-trend" | "options";
@@ -130,7 +130,7 @@ function OptionsPanel() {
 
 export function NiftyLiveWorkspace({ view = "overview" }: { view?: NiftyLiveView }) {
   return <div className="space-y-5">
-    <UnifiedIntelligencePanel workspace="NIFTY_LIVE" />
+    {view === "overview" && <NiftyIntelligenceStrip />}
     {view === "price-trend" ? <PriceTrendPanel /> : view === "options" ? <OptionsPanel /> : <OverviewPanel />}
   </div>;
 }

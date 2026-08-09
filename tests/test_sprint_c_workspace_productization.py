@@ -35,7 +35,7 @@ def test_scenario_cards_are_conditional_not_predictions():
 
 def test_nifty_live_is_a_canonical_command_center():
     text = source("NiftyLiveWorkspace.tsx")
-    assert '<UnifiedIntelligencePanel workspace="NIFTY_LIVE"' in text
+    assert 'view === "overview" && <NiftyIntelligenceStrip' in text
     assert all(term in text for term in ("SpotSummary", "breadth", "top_gainers", "top_losers", "PCR / Max Pain", "ATM Option IV"))
 
 
@@ -52,14 +52,14 @@ def test_unified_panel_uses_only_canonical_state():
     assert "BREADTH_MIN_COVERAGE" not in text and "pcr >" not in text.lower()
 
 
-def test_all_decision_workspaces_share_one_panel():
+def test_all_decision_workspaces_share_canonical_primitives_but_not_one_experience():
     phase = source("PhaseOneWorkspaces.tsx")
     premarket = source("PreMarketPlannerWorkspace.tsx")
     nifty = source("NiftyLiveWorkspace.tsx")
-    assert '<UnifiedIntelligencePanel workspace="PRE_MARKET"' in premarket
-    assert '<UnifiedIntelligencePanel workspace="TODAYS_ANALYSIS"' in phase
-    assert '<UnifiedIntelligencePanel workspace="LIVE_ASSISTANT"' in phase
-    assert '<UnifiedIntelligencePanel workspace="NIFTY_LIVE"' in nifty
+    assert '<PreMarketIntelligenceView' in premarket
+    assert '<TodaysAnalysisSynthesis' in phase
+    assert '<LiveAssistantExplanationView' in phase
+    assert '<NiftyIntelligenceStrip' in nifty
 
 
 def test_live_assistant_is_structured_canonical_explanation_not_chatbot():

@@ -39,15 +39,15 @@ def test_provider_health_is_bounded_and_responsive():
 def test_four_workspaces_use_distinct_views_over_one_canonical_source():
     text = read("frontend/components/UnifiedIntelligencePanel.tsx")
     assert "canonicalState?.unified_intelligence" in text
-    for view in ("compact-command-center", "opening-preparation", "session-interpretation", "explanation-console"):
+    for view in ("compact-command-center", "next-session-setup", "full-session-synthesis", "explanation-console"):
         assert f'data-intelligence-view="{view}"' in text
     assert "fetch(" not in text and "new WebSocket" not in text
 
 
 def test_nifty_live_is_compact_and_premarket_is_opening_focused():
     text = read("frontend/components/UnifiedIntelligencePanel.tsx")
-    assert "Compact current/session summary" in text
-    for label in ("Opening readiness", "Opening context", "Global context", "Institutional context", "Opening confirmation"):
+    assert "Market intelligence" in text
+    for label in ("Pre-market readiness", "Opening Context", "Global Context", "Institutional Context", "Confirmation"):
         assert label in text
 
 
@@ -73,7 +73,7 @@ def test_grid_is_quieter_and_c5_motion_survives():
 
 def test_notifications_are_derived_and_not_accumulated_on_refresh():
     text = read("frontend/components/WorkstationTopBar.tsx")
-    assert 'id: `provider-${name}`' in text and 'key={alert.id}' in text
+    assert 'id: "provider-summary"' in text and 'key={alert.id}' in text
     assert "setAlerts" not in text and "Math.random" not in text
     assert "await syncBroker(true)" in text and "fetch(" not in text
 

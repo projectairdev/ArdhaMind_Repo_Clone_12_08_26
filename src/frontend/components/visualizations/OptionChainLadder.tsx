@@ -33,21 +33,21 @@ export function OptionChainLadder() {
 
   return (
     <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-4 text-left font-sans">
-      <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+      <div className="flex flex-col gap-2 border-b border-slate-800 pb-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex items-center gap-2">
           <Layers size={16} className="text-emerald-400" />
           <h3 className="font-bold text-white text-xs uppercase tracking-wider font-mono">Option Chain Matrix & OI Ladder</h3>
         </div>
-        <div className="flex items-center gap-3 text-xs font-mono">
-          <span className="text-slate-400">{quality?.freshness_status === "market_closed" ? "LAST_VALID_SNAPSHOT" : String(quality?.freshness_status).toUpperCase()} · {expiry}</span>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono">
+          <span className="text-slate-400">{quality?.freshness_status === "market_closed" ? "Last Valid Snapshot" : safeString(quality?.freshness_status || "UNAVAILABLE").replaceAll("_", " ")} · {expiry}</span>
           <span className="text-emerald-400 font-bold">PCR: {pcr != null ? formatNumber(pcr, 2) : "--"}</span>
           <span className="text-cyan-400 font-bold">Max Pain: {maxPain != null ? maxPain : "--"}</span>
           <span className="text-amber-400 font-bold">IV: {safeString(optionContext?.iv_status).toUpperCase() === "AVAILABLE" ? `${formatNumber(optionContext?.atm_iv, 2)}% ATM` : "UNAVAILABLE"}</span>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs font-mono border-collapse">
+      <div className="overflow-x-auto" tabIndex={0} aria-label="Scrollable NIFTY option chain">
+        <table className="min-w-[52rem] w-full text-xs font-mono border-collapse">
           <thead>
             <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 text-[10px] uppercase">
               <th className="p-2 text-right text-rose-400">CALL OI</th>

@@ -280,7 +280,7 @@ export function SettingsDashboard() {
             </span>
           </div>
 
-          <div data-provider-health-scroll className="max-h-[28rem] space-y-1 overflow-y-auto overflow-x-hidden pr-2 text-xs font-mono sm:max-h-[32rem]">
+          <div data-provider-health-scroll tabIndex={0} aria-label="Scrollable news and macro provider health" className="max-h-[28rem] space-y-1 overflow-y-auto overflow-x-hidden pr-2 text-xs font-mono sm:max-h-[32rem]">
             {Object.entries({ ...providerHealth, ...macroHealth }).map(([name, value]: [string, any]) => (
               <div key={name} className="flex min-w-0 flex-col gap-1 border-b border-slate-900 py-1.5 sm:flex-row sm:items-center sm:justify-between">
                 <div><span className="text-slate-300 font-bold block">{safeString(value.provider_name || name)}</span><span className="text-[9px] text-slate-500 block">Success: {value.last_successful_fetch ? formatDate(value.last_successful_fetch) : "Never"} · Attempt: {value.last_attempted_fetch ? formatDate(value.last_attempted_fetch) : "Never"}</span>{value.operational_error_reason && <span className="text-[9px] text-rose-400 block">Reason: {safeString(value.operational_error_reason)}</span>}</div>

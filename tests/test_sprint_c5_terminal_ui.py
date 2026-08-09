@@ -37,12 +37,12 @@ def test_global_refresh_reuses_existing_canonical_sync():
     text = read("frontend/components/WorkstationTopBar.tsx")
     assert "await syncBroker(true)" in text
     assert "fetch(" not in text
-    assert "if (syncing) return" in text
+    assert "if (syncing || refreshing) return" in text
 
 
 def test_refresh_toasts_cover_started_completed_and_failed():
     text = read("frontend/components/WorkstationTopBar.tsx")
-    for message in ("Canonical refresh started", "Canonical workstation refreshed", "Refresh failed"):
+    for message in ("Checking canonical stream", "Canonical stream current", "Refresh failed"):
         assert message in text
     assert 'role="status"' in text
 
@@ -51,7 +51,7 @@ def test_notification_center_uses_current_canonical_states_and_deduplicated_ids(
     text = read("frontend/components/WorkstationTopBar.tsx")
     assert "news_intelligence?.provider_health" in text
     assert "macro_intelligence?.provider_health" in text
-    assert 'id: `provider-${name}`' in text and 'key={alert.id}' in text
+    assert 'id: "provider-summary"' in text and 'key={alert.id}' in text
     assert "fake" not in text.lower()
 
 

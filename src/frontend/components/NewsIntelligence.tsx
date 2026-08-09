@@ -29,7 +29,7 @@ export function NewsIntelligence() {
   const [watchQuery, setWatchQuery] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
-  const [eventWindow, setEventWindow] = useState<"TODAY" | "TOMORROW" | "THIS WEEK">("TODAY");
+  const [eventWindow, setEventWindow] = useState<"TODAY" | "TOMORROW" | "THIS WEEK" | "ALL">("TODAY");
   const [eventFilter, setEventFilter] = useState("ALL");
 
   const state = canonicalState ?? lastValidState;
@@ -117,7 +117,7 @@ export function NewsIntelligence() {
   const filteredEvents = events.filter(event => {
     const eventDate = new Date(event.scheduled_at_ist || event.scheduled_at);
     const key = istDateKey(eventDate);
-    const inWindow = eventWindow === "TODAY" ? key === todayKey : eventWindow === "TOMORROW" ? key === tomorrowKey : eventDate >= new Date(`${todayKey}T00:00:00+05:30`) && eventDate <= weekEnd;
+    const inWindow = eventWindow === "ALL" || (eventWindow === "TODAY" ? key === todayKey : eventWindow === "TOMORROW" ? key === tomorrowKey : eventDate >= new Date(`${todayKey}T00:00:00+05:30`) && eventDate <= weekEnd);
     const region = safeString(event.region).toUpperCase();
     const impact = safeString(event.impact_level).toUpperCase();
     const matches = eventFilter === "ALL" || eventFilter === region || (eventFilter === "HIGH IMPACT" && ["HIGH", "CRITICAL"].includes(impact)) || (eventFilter === "NIFTY RELEVANT" && safeNumber(event.nifty_relevance) >= 7);
@@ -196,7 +196,7 @@ export function NewsIntelligence() {
         </div>
       </div>
 
-      {degradedProviders.length > 0 && <div className="rounded-lg border border-amber-900/50 bg-amber-950/20 p-3 text-xs text-amber-300">Partial provider coverage: {degradedProviders.map(p => `${safeString(p.provider_name)} (${safeString(p.operational_error_reason || p.status)})`).join(" · ")}. Healthy-provider items remain available below.</div>}
+      {degradedProviders.length > 0 && <details className="rounded-lg border border-amber-900/40 bg-amber-950/10 px-3 py-2 text-xs text-amber-300"><summary className="cursor-pointer font-semibold">Partial provider coverage · {degradedProviders.length} provider{degradedProviders.length === 1 ? "" : "s"} degraded</summary><div className="mt-2 space-y-1 text-[10px] text-amber-200">{degradedProviders.map(provider => <div key={safeString(provider.provider_name)}>{safeString(provider.provider_name)} · {safeString(provider.operational_error_reason || provider.status)}</div>)}<div className="text-slate-500">Healthy-provider items remain available.</div></div></details>}
 
       {/* Tabs list */}
       <div className="flex flex-wrap gap-1 border-b border-slate-900 pb-1">
@@ -359,9 +359,9 @@ export function NewsIntelligence() {
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2" data-calendar-filters>
-              {["TODAY", "TOMORROW", "THIS WEEK"].map(value => <button key={value} onClick={() => setEventWindow(value as any)} className={`rounded border px-2.5 py-1 text-[10px] font-bold ${eventWindow === value ? "border-cyan-600 bg-cyan-950/40 text-cyan-300" : "border-slate-800 text-slate-400"}`}>{value}</button>)}
-              {["ALL", "INDIA", "US", "EUROPE", "ASIA", "HIGH IMPACT", "NIFTY RELEVANT"].map(value => <button key={value} onClick={() => setEventFilter(value)} className={`rounded border px-2.5 py-1 text-[10px] font-bold ${eventFilter === value ? "border-emerald-600 bg-emerald-950/40 text-emerald-300" : "border-slate-800 text-slate-400"}`}>{value}</button>)}
+            <div className="grid gap-2 lg:grid-cols-[auto_1fr]" data-calendar-filters>
+              <div className="flex flex-wrap gap-1.5" aria-label="Event date window">{["TODAY", "TOMORROW", "THIS WEEK", "ALL"].map(value => <button key={value} aria-pressed={eventWindow === value} onClick={() => setEventWindow(value as any)} className={`rounded border px-2.5 py-1 text-[10px] font-bold ${eventWindow === value ? "border-cyan-600 bg-cyan-950/40 text-cyan-300" : "border-slate-800 text-slate-400"}`}>{value}</button>)}</div>
+              <div className="flex flex-wrap gap-1.5 lg:justify-end" aria-label="Event region and relevance filters">{["ALL", "INDIA", "US", "EUROPE", "ASIA", "HIGH IMPACT", "NIFTY RELEVANT"].map(value => <button key={value} aria-pressed={eventFilter === value} onClick={() => setEventFilter(value)} className={`rounded border px-2.5 py-1 text-[10px] font-bold ${eventFilter === value ? "border-emerald-600 bg-emerald-950/40 text-emerald-300" : "border-slate-800 text-slate-400"}`}>{value}</button>)}</div>
             </div>
 
             {filteredEvents.length === 0 ? (
