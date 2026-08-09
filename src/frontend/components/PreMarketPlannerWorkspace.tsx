@@ -4,6 +4,7 @@ import { formatDate, formatDateTimeIST, formatNumber, safeArray, safeString } fr
 import { GlobalCuesWidget, InstitutionalFlowWidget } from "./MacroIntelligence";
 import { ParticipantPositioningWidget, VolatilityContextWidget } from "./SpecializedIntelligence";
 import { PreMarketIntelligenceView } from "./UnifiedIntelligencePanel";
+import { TomorrowsOutlookCard } from "./intelligence/TomorrowsOutlookCard";
 
 function TabButton({ value, active, onClick }: { key?: string; value: string; active: boolean; onClick: () => void }) {
   return <button onClick={onClick} className={`rounded-lg border px-3 py-1.5 text-xs font-bold ${active ? "border-cyan-700 bg-cyan-950/30 text-cyan-300" : "border-neutral-800 bg-neutral-900 text-neutral-400"}`}>{value}</button>;
@@ -53,6 +54,7 @@ export function PreMarketPlannerWorkspace() {
 
   return <div className="space-y-5">
     <div className="text-left"><div className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-400">Next session</div><h2 className="mt-1 text-xl font-bold text-white">Pre-Market Planner</h2><p className="mt-1 text-xs text-neutral-500">Prepare for the next NIFTY session.</p></div>
+    <TomorrowsOutlookCard intelligence={canonicalState?.unified_intelligence} macro={macro} />
     <PreMarketIntelligenceView />
     <div className="flex flex-wrap gap-2 border-b border-neutral-800 pb-3">{["Evening Outlook", "8:50 AM Briefing", "Opening Checklist"].map(value => <TabButton key={value} value={value} active={tab === value} onClick={() => setTab(value)}/>)}</div>
 

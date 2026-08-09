@@ -45,6 +45,7 @@ class UnifiedNiftyIntelligenceBuilder:
         scenarios = cls._scenarios(signals, levels, session)
         invalidations = cls._invalidations(alignment, signals, levels)
         explanation = cls._explanation(session, alignment, signals, regime, risk)
+        outlook = cls._outlook(session, alignment, confidence, risk, signals, scenarios, levels, current)
         readiness = "READY" if confidence == "HIGH" else "PARTIAL" if eligible else "BLOCKED"
         mode = {"PRE_OPEN": "PRE_MARKET_INTELLIGENCE", "MARKET_OPEN": "LIVE_MARKET_INTELLIGENCE",
                 "POST_CLOSE": "SESSION_REVIEW"}.get(session, "NEXT_SESSION_CONTEXT")
@@ -58,6 +59,11 @@ class UnifiedNiftyIntelligenceBuilder:
             "neutral_signals": alignment["neutral"], "unavailable_or_ineligible_signals": ineligible,
             "market_regime": regime, "key_levels": levels, "scenarios": scenarios,
             "invalidation_conditions": invalidations, "risk": risk, "confidence": confidence,
+            "outlook": outlook,
+            "premarket_view_validation": {
+                "status": "PENDING",
+                "reason": "No prior pre-market synthesis snapshot is retained in current session state."
+            },
             "change_intelligence": {"status": "UNAVAILABLE", "transitions": [],
                                     "reason": "No prior canonical synthesis snapshot is available in this refresh."},
             "evidence_completeness": {"state": confidence, "eligible": len(eligible),
@@ -274,3 +280,116 @@ class UnifiedNiftyIntelligenceBuilder:
         opposing=", ".join(alignment["opposing"]) or "no eligible opposing family"
         prefix={"PRE_OPEN":"Pre-market context","MARKET_OPEN":"Live market context","POST_CLOSE":"Completed-session review"}.get(session,"Next-session context")
         return f"{prefix} is {label}. Confirming evidence: {confirming}. Opposing evidence: {opposing}. Market regime is {regime.lower().replace('_',' ')}; analytical risk is {risk['state'].lower()}."
+
+    @classmethod
+    def _outlook(cls, session: str, alignment: dict[str, Any], confidence: str, risk: dict[str, Any],
+                 signals: dict[str, Any], scenarios: list[dict[str, Any]], levels: list[dict[str, Any]],
+                 now: datetime) -> dict[str, Any]:
+        current_utc = now.astimezone(timezone.utc)
+        weekday = current_utc.strftime("%a")
+
+        if session == "WEEKEND":
+            relation = "NEXT_TRADING_SESSION"
+            date_str = None
+            verified = False
+        elif session == "HOLIDAY":
+            relation = "NEXT_TRADING_SESSION"
+            date_str = None
+            verified = False
+        elif session == "PRE_OPEN":
+            relation = "TODAY"
+            date_str = current_utc.strftime("%Y-%m-%d")
+            verified = True
+        else:
+            relation = "TOMORROW"
+            date_str = None
+            verified = False
+
+        align_state = str(alignment.get("state") or "").upper()
+        if align_state == "STRONG_BULLISH_ALIGNMENT":
+            overall_view = "Strongly Positive"
+        elif align_state == "BULLISH_ALIGNMENT":
+            overall_view = "Cautiously Positive"
+        elif align_state == "MIXED":
+            overall_view = "Mixed Setup"
+        elif align_state == "CONFLICTED":
+            overall_view = "Conflicting Signals"
+        elif align_state == "BEARISH_ALIGNMENT":
+            overall_view = "Cautiously Negative"
+        elif align_state == "STRONG_BEARISH_ALIGNMENT":
+            overall_view = "Strongly Negative"
+        else:
+            overall_view = "No Clear Setup"
+
+        op_signal = signals.get("opening") or {}
+        if op_signal.get("eligible") and op_signal.get("evidence"):
+            expected_opening = op_signal["evidence"][0]
+        else:
+            expected_opening = "Opening Indication Unavailable"
+
+        conviction = "High Conviction" if confidence == "HIGH" else "Moderate Conviction" if confidence == "MODERATE" else "Low Conviction" if confidence == "LOW" else "Insufficient Conviction"
+        risk_label = "High Risk" if risk.get("state") == "HIGH" else "Higher Risk" if risk.get("state") == "ELEVATED" else "Normal Risk"
+
+        primary_scenario = scenarios[0] if scenarios else None
+        primary_id = primary_scenario.get("name") if primary_scenario else None
+
+        if "BULLISH" in align_state:
+            pref_title = "Bullish Continuation"
+            pref_desc = "Bullish continuation if opening range holds and market breadth confirms."
+        elif "BEARISH" in align_state:
+            pref_title = "Bearish Continuation"
+            pref_desc = "Bearish continuation after support failure and breadth deterioration."
+        elif align_state == "CONFLICTED":
+            pref_title = "No Clear Preferred Setup"
+            pref_desc = "Conflicting signals between options, breadth, and global cues. Wait for opening range and breadth confirmation."
+        elif align_state == "MIXED":
+            pref_title = "No Clear Preferred Setup"
+            pref_desc = "Mixed indicator signals. Wait for opening range and breadth confirmation."
+        else:
+            pref_title = "No Clear Setup"
+            pref_desc = "Insufficient canonical evidence to determine a preferred market setup."
+
+        preferred_setup = {
+            "scenario_id": primary_id,
+            "title": pref_title,
+            "description": pref_desc,
+        }
+
+        reasons = risk.get("reasons") or []
+        key_concerns = [str(r) for r in reasons] if reasons else ["No major concern reported."]
+
+        confirming_ev = []
+        for name in alignment.get("confirming") or []:
+            sig = signals.get(name) or {}
+            confirming_ev.extend(sig.get("evidence") or [])
+        if not confirming_ev and op_signal.get("eligible"):
+            confirming_ev.extend(op_signal.get("evidence") or [])
+
+        opposing_ev = []
+        for name in alignment.get("opposing") or []:
+            sig = signals.get(name) or {}
+            opposing_ev.extend(sig.get("evidence") or [])
+
+        at_the_open = [
+            {"item": "Does the opening gap hold or fill quickly?", "source_rule": "signals.opening"},
+            {"item": "Does market breadth confirm the move (min 40/50 constituents)?", "source_rule": "signals.breadth"},
+            {"item": "Does price remain above key support / below resistance?", "source_rule": "key_levels"},
+            {"item": "Does option PCR & IV positioning align with price movement?", "source_rule": "signals.options"},
+            {"item": "Is there any sudden volatility expansion or scheduled event risk?", "source_rule": "signals.volatility"}
+        ]
+
+        return {
+            "target_session_date": date_str,
+            "target_session_relation": relation,
+            "target_session_verified": verified,
+            "overall_view": overall_view,
+            "expected_opening": expected_opening,
+            "conviction": conviction,
+            "risk_label": risk_label,
+            "preferred_setup": preferred_setup,
+            "key_concerns": key_concerns,
+            "supports": confirming_ev,
+            "caution": key_concerns,
+            "opposes": opposing_ev,
+            "at_the_open": at_the_open,
+        }

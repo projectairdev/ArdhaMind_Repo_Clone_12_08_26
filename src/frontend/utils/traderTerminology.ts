@@ -83,6 +83,8 @@ export function mapTraderEnum(val: unknown, domain: TermDomain = "general"): str
 
     // Market Alignment / Bias
     "CONFLICTED": "Mixed Signals",
+    "MIXED": "Mixed Setup",
+    "INSUFFICIENT_EVIDENCE": "No Clear Setup",
     "UNCERTAIN": "No Clear Direction",
     "BULLISH": "Bullish Bias",
     "BEARISH": "Bearish Bias",
