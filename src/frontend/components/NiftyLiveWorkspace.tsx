@@ -63,7 +63,7 @@ function OverviewPanel() {
       <Metric label="Options Readiness" value={optionStatus} detail="Detailed options data is isolated to the Options tab."/>
     </div>
     <div className="grid gap-5 lg:grid-cols-2">
-      <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Top Constituent Movers</h3><div className="mt-2 text-xs text-slate-300">{gainers.length || losers.length ? <>{gainers.map((item, index) => <p key={`g-${index}`} className="text-emerald-400">{safeString(item.symbol)} +{formatNumber(item.change_pct, 2)}%</p>)}{losers.map((item, index) => <p key={`l-${index}`} className="text-rose-400">{safeString(item.symbol)} {formatNumber(item.change_pct, 2)}%</p>)}</> : <p>UNAVAILABLE — verified NIFTY 50 membership is not present in Kite's instrument master.</p>}</div></section>
+      <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Top Constituent Movers</h3><div className="mt-2 text-xs text-slate-300">{gainers.length || losers.length ? <>{gainers.map((item, index) => <p key={`g-${index}`} className="text-emerald-400">{safeString(item.symbol)} +{formatNumber(item.change_pct, 2)}%</p>)}{losers.map((item, index) => <p key={`l-${index}`} className="text-rose-400">{safeString(item.symbol)} {formatNumber(item.change_pct, 2)}%</p>)}</> : <p>UNAVAILABLE — insufficient validated constituent observations ({safeNumber(coverage?.valid, 0)}/50).</p>}</div></section>
       <SectorPerformanceChart />
     </div>
     <GlobalMarketsDashboard compact />

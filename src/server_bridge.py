@@ -751,7 +751,10 @@ def run_daemon(wm, bs):
                         # Build live MarketContext using MarketContextBuilder
                         from src.broker.services.market_context_builder import MarketContextBuilder
                         orch_instance = bs._get_orchestrator()
-                        cached_market_context = MarketContextBuilder.build(bs, orch_instance, india_vix)
+                        cached_market_context = MarketContextBuilder.build(
+                            bs, orch_instance, india_vix,
+                            (cached_macro_context or {}).get("constituent_metadata"),
+                        )
                 except Exception as ex:
                     logger.error(f"Error compiling live option/market context: {ex}")
 
@@ -1123,7 +1126,10 @@ def main():
 
             try:
                 from src.broker.services.market_context_builder import MarketContextBuilder
-                market_ctx = MarketContextBuilder.build(bs, orch, india_vix)
+                market_ctx = MarketContextBuilder.build(
+                    bs, orch, india_vix,
+                    (cached_macro_context or {}).get("constituent_metadata"),
+                )
             except Exception as e:
                 logger.error(f"MarketContextBuilder failed: {e}")
                 market_ctx = {
@@ -1167,7 +1173,10 @@ def main():
 
             try:
                 from src.broker.services.market_context_builder import MarketContextBuilder
-                mc = MarketContextBuilder.build(bs, orch, india_vix)
+                mc = MarketContextBuilder.build(
+                    bs, orch, india_vix,
+                    (cached_macro_context or {}).get("constituent_metadata"),
+                )
             except Exception:
                 mc = {}
 

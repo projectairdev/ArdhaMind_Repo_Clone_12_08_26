@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -70,13 +71,77 @@ def test_breadth_computation_and_insufficient_coverage():
     quotes = {f"NSE:S{i}": {"last_price": 101 if i < 30 else 99,
                               "ohlc": {"close": 100}, "timestamp": "2026-08-07T15:30:00+05:30"}
               for i in range(50)}
-    result = KiteIntelligenceService.compute_breadth(members, quotes)
+    observed_now = datetime(2026, 8, 7, 10, 5, tzinfo=timezone.utc)
+    result = KiteIntelligenceService.compute_breadth(members, quotes, now=observed_now)
     assert result["status"] == "READY"
     assert (result["advances"], result["declines"]) == (30, 20)
     assert result["advance_decline_ratio"] == 1.5
-    partial = KiteIntelligenceService.compute_breadth(members, dict(list(quotes.items())[:39]))
+    partial = KiteIntelligenceService.compute_breadth(members, dict(list(quotes.items())[:39]), now=observed_now)
     assert partial["status"] == "PARTIAL"
     assert partial["advances"] is None
+
+
+def test_e4c_resolution_is_exact_equity_only_and_duplicate_safe(instrument_service):
+    instruments = [
+        {**equity("AAA", 1), "instrument_type": "EQ"},
+        {**equity("DUP", 2), "instrument_type": "EQ"},
+        {**equity("DUP", 3), "instrument_type": "EQ"},
+        {**equity("NOT-EQ", 4), "instrument_type": "BE"},
+    ]
+    membership = [{"symbol": "NSE:AAA", "isin": "INE0001"}, {"symbol": "DUP"},
+                  {"symbol": "NOT-EQ"}, {"symbol": "UNKNOWN"}]
+    result = KiteIntelligenceService.resolve_constituents(instruments, membership)
+    assert result["membership_source"] == "NSE_INDICES_VERIFIED_CANONICAL"
+    assert result["membership_count"] == 4 and result["expected_count"] == 50
+    assert result["resolved_count"] == 1
+    assert result["members"][0]["isin"] == "INE0001"
+    assert result["members"][1]["resolution_reason"] == "DUPLICATE_NSE_EQ_SYMBOL_MATCH"
+    assert result["members"][2]["resolution_reason"] == "NO_EXACT_NSE_EQ_SYMBOL_MATCH"
+    assert all(row["resolution_status"] == "UNRESOLVED" for row in result["members"][1:])
+
+
+def test_e4c_closed_session_observations_breadth_and_movers_need_no_weights():
+    members = {"members": [{"symbol": f"S{i}", "trading_symbol": f"S{i}",
+                            "resolution_status": "RESOLVED"} for i in range(50)]}
+    quotes = {}
+    for i in range(50):
+        last = 102 if i < 20 else 98 if i < 40 else 100
+        quotes[f"NSE:S{i}"] = {"last_price": last, "ohlc": {"close": 100},
+                                "timestamp": "2026-08-07T15:30:00+05:30"}
+    result = KiteIntelligenceService.compute_breadth(members, quotes, market_closed=True)
+    assert result["status"] == "READY"
+    assert (result["advances"], result["declines"], result["unchanged"]) == (20, 20, 10)
+    assert result["coverage"] == {"valid": 50, "expected": 50, "minimum": 40}
+    assert result["freshness"] == result["observation_mode"] == "LAST_VALID_SESSION"
+    assert [row["symbol"] for row in result["top_gainers"]] == [f"S{i}" for i in range(5)]
+    assert [row["symbol"] for row in result["top_losers"]] == [f"S{i}" for i in range(20, 25)]
+    assert all(row["source"] == "Kite Quote API" for row in result["observations"])
+
+
+def test_e4c_missing_and_stale_quotes_are_not_zero_or_live():
+    members = {"members": [{"symbol": "AAA", "trading_symbol": "AAA", "resolution_status": "RESOLVED"},
+                           {"symbol": "BBB", "trading_symbol": "BBB", "resolution_status": "RESOLVED"}]}
+    quotes = {"NSE:AAA": {"last_price": 101, "ohlc": {"close": 100},
+                           "timestamp": "2026-08-07T15:30:00+05:30"}}
+    result = KiteIntelligenceService.compute_breadth(
+        members, quotes, now=datetime(2026, 8, 9, tzinfo=timezone.utc))
+    assert result["status"] == "UNAVAILABLE"
+    assert result["coverage"]["valid"] == 0
+    assert result["observations"] == []
+
+
+def test_e4c_market_extensions_joins_canonical_membership_to_quotes(instrument_service):
+    rows = [{**equity(f"S{i}", i + 1), "instrument_type": "EQ"} for i in range(50)]
+    instrument_service._build_indexes(rows)
+    quotes = {f"NSE:S{i}": {"last_price": 101, "ohlc": {"close": 100},
+                              "timestamp": "2026-08-07T15:30:00+05:30"} for i in range(50)}
+    metadata = {"is_available": True, "weights_status": "LICENSE_REQUIRED",
+                "constituents": [{"symbol": f"S{i}"} for i in range(50)]}
+    result = KiteIntelligenceService.build_market_extensions(FakeBroker(quotes), True, metadata)
+    assert result["constituent_instruments"]["resolved_count"] == 50
+    assert result["breadth"]["coverage"]["valid"] == 50
+    assert result["breadth"]["status"] == "READY"
+    assert len(result["breadth"]["observations"]) == 50
 
 
 def test_sector_index_resolution_and_quotes(instrument_service):

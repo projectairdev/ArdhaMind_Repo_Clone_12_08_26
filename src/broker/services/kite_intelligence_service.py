@@ -58,33 +58,52 @@ class KiteIntelligenceService:
     def resolve_constituents(
         cls,
         instruments: Iterable[Dict[str, Any]],
-        symbols: Optional[Iterable[str]] = None,
+        symbols: Optional[Iterable[Any]] = None,
     ) -> Dict[str, Any]:
         """Resolve a supplied *verified* membership list; Kite itself has no membership relation."""
-        verified_symbols = [str(symbol).upper() for symbol in (symbols or [])]
-        by_symbol = {
-            str(item.get("tradingsymbol", "")).upper(): item
-            for item in instruments
-            if item.get("exchange") == "NSE" and item.get("tradingsymbol")
-        }
+        verified_members = []
+        for value in symbols or []:
+            member = value if isinstance(value, dict) else {"symbol": value}
+            symbol = str(member.get("symbol") or "").strip().upper().removeprefix("NSE:")
+            if symbol:
+                verified_members.append({**member, "symbol": symbol})
+        candidates: Dict[str, List[Dict[str, Any]]] = {}
+        for item in instruments:
+            symbol = str(item.get("tradingsymbol") or "").strip().upper()
+            if (str(item.get("exchange") or "").upper() == "NSE" and symbol
+                    and str(item.get("instrument_type") or "EQ").upper() == "EQ"):
+                candidates.setdefault(symbol, []).append(item)
         resolved: List[Dict[str, Any]] = []
-        for symbol in verified_symbols:
-            item = by_symbol.get(symbol)
+        claimed_tokens: set[int] = set()
+        for member in verified_members:
+            symbol = member["symbol"]
+            matches = candidates.get(symbol, [])
+            item = matches[0] if len(matches) == 1 else None
+            reason = "NO_EXACT_NSE_EQ_SYMBOL_MATCH" if not matches else "DUPLICATE_NSE_EQ_SYMBOL_MATCH"
+            token = item.get("instrument_token") if item else None
+            if item and (token is None or int(token) in claimed_tokens):
+                reason = "MISSING_OR_DUPLICATE_INSTRUMENT_TOKEN"
+                item = None
+            if item:
+                claimed_tokens.add(int(token))
             resolved.append({
                 "symbol": symbol,
                 "trading_symbol": item.get("tradingsymbol") if item else None,
                 "exchange": item.get("exchange") if item else "NSE",
                 "instrument_token": item.get("instrument_token") if item else None,
-                "company_name": item.get("name") if item else None,
+                "company_name": member.get("company_name") or (item.get("name") if item else None),
+                "isin": member.get("isin"),
                 "resolution_status": "RESOLVED" if item else "UNRESOLVED",
+                "resolution_reason": "EXACT_NSE_EQ_TRADINGSYMBOL" if item else reason,
             })
         return {
             "version": cls.CONSTITUENT_MAP_VERSION,
             "members": resolved,
             "resolved_count": sum(row["resolution_status"] == "RESOLVED" for row in resolved),
             "expected_count": 50,
-            "membership_source": "VERIFIED_INPUT" if verified_symbols else "UNAVAILABLE",
-            "reason": None if verified_symbols else "kite_instrument_dump_does_not_include_index_membership",
+            "membership_count": len(verified_members),
+            "membership_source": "NSE_INDICES_VERIFIED_CANONICAL" if verified_members else "UNAVAILABLE",
+            "reason": None if verified_members else "kite_instrument_dump_does_not_include_index_membership",
         }
 
     @classmethod
@@ -93,6 +112,8 @@ class KiteIntelligenceService:
         resolved_map: Dict[str, Any],
         quotes: Dict[str, Dict[str, Any]],
         minimum_coverage: Optional[int] = None,
+        market_closed: bool = False,
+        now: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         minimum = minimum_coverage or cls.BREADTH_MINIMUM_COVERAGE
         observations: List[Dict[str, Any]] = []
@@ -103,7 +124,9 @@ class KiteIntelligenceService:
             quote = quotes.get(f"NSE:{symbol}") or quotes.get(symbol) or {}
             ltp = _number(quote.get("last_price"))
             previous = _number((quote.get("ohlc") or {}).get("close"))
-            if ltp is None or previous is None or previous <= 0:
+            observed_at = _timestamp(quote.get("timestamp") or quote.get("last_trade_time"))
+            freshness = cls._quote_freshness(observed_at, market_closed, now)
+            if ltp is None or previous is None or previous <= 0 or freshness in {"UNAVAILABLE", "STALE"}:
                 continue
             delta = ltp - previous
             observations.append({
@@ -112,6 +135,9 @@ class KiteIntelligenceService:
                 "previous_close": previous,
                 "change": delta,
                 "change_pct": delta / previous * 100.0,
+                "observation_timestamp": observed_at,
+                "source": "Kite Quote API",
+                "freshness": freshness,
             })
         valid = len(observations)
         base = {
@@ -119,6 +145,9 @@ class KiteIntelligenceService:
             "coverage": {"valid": valid, "expected": 50, "minimum": minimum},
             "source": "Kite Quote API",
             "quality": "VALIDATED" if valid >= minimum else "INSUFFICIENT_COVERAGE",
+            "freshness": "LAST_VALID_SESSION" if market_closed and valid else ("FRESH" if valid else "UNAVAILABLE"),
+            "observation_mode": "LAST_VALID_SESSION" if market_closed and valid else ("LIVE" if valid else "UNAVAILABLE"),
+            "observations": observations,
         }
         if valid < minimum:
             return {**base, "advances": None, "declines": None, "unchanged": None,
@@ -140,6 +169,24 @@ class KiteIntelligenceService:
             "top_losers": sorted(declines, key=lambda row: row["change_pct"])[:5],
             "timestamp": timestamp,
         }
+
+    @staticmethod
+    def _quote_freshness(value: Optional[str], market_closed: bool, now: Optional[datetime] = None) -> str:
+        if not value:
+            return "UNAVAILABLE"
+        if market_closed:
+            return "LAST_VALID_SESSION"
+        try:
+            observed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=timezone.utc)
+            current = now or datetime.now(timezone.utc)
+            if current.tzinfo is None:
+                current = current.replace(tzinfo=timezone.utc)
+            age = current - observed.astimezone(timezone.utc)
+            return "FRESH" if timedelta(0) <= age <= timedelta(minutes=15) else "STALE"
+        except (TypeError, ValueError):
+            return "UNAVAILABLE"
 
     @staticmethod
     def resolve_sector_indices(instrument_service: InstrumentService) -> List[Dict[str, Any]]:
@@ -194,11 +241,21 @@ class KiteIntelligenceService:
         }
 
     @classmethod
-    def build_market_extensions(cls, broker_service: Any, market_closed: bool = False) -> Dict[str, Any]:
+    def build_market_extensions(
+        cls, broker_service: Any, market_closed: bool = False,
+        constituent_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         instrument_service = InstrumentService.get_instance()
         instrument_service.load_instruments(broker_service)
-        universe = cls.resolve_constituents(instrument_service._instruments)
-        breadth = cls.compute_breadth(universe, {})
+        metadata = constituent_metadata or {}
+        members = (metadata.get("constituents") or []) if metadata.get("is_available") else []
+        universe = cls.resolve_constituents(instrument_service._instruments, members)
+        keys = [f"NSE:{row['trading_symbol']}" for row in universe["members"] if row["resolution_status"] == "RESOLVED"]
+        try:
+            quotes = broker_service.get_quote(keys) if keys else {}
+        except Exception:
+            quotes = {}
+        breadth = cls.compute_breadth(universe, quotes, market_closed=market_closed)
         sectors = cls.build_sector_snapshot(broker_service, market_closed)
         return {"constituent_instruments": universe, "breadth": breadth, **sectors}
 

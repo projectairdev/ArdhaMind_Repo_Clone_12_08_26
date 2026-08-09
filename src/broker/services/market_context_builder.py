@@ -191,7 +191,10 @@ class MarketContextBuilder:
     """
 
     @staticmethod
-    def build(bs: Any, orch: Any, india_vix: float) -> Dict[str, Any]:
+    def build(
+        bs: Any, orch: Any, india_vix: float,
+        constituent_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """
         Builds a fully live MarketContext.
 
@@ -365,7 +368,9 @@ class MarketContextBuilder:
         if bs.is_connected() and time.time() - _kite_extensions_last_fetch >= _KITE_EXTENSIONS_FETCH_INTERVAL_SECONDS:
             try:
                 from src.broker.services.kite_intelligence_service import KiteIntelligenceService
-                _kite_extensions = KiteIntelligenceService.build_market_extensions(bs, market_closed)
+                _kite_extensions = KiteIntelligenceService.build_market_extensions(
+                    bs, market_closed, constituent_metadata,
+                )
                 _kite_extensions_last_fetch = time.time()
             except Exception as exc:
                 logger.warning("Kite market extensions unavailable: %s", exc)
