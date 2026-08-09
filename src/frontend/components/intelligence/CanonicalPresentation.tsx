@@ -1,5 +1,6 @@
 import React from "react";
 import { safeArray, safeString, formatNumber } from "../../utils/safeHelpers";
+import { mapTraderEnum, mapTraderLabel } from "../../utils/traderTerminology";
 
 export type SemanticKind = "state" | "freshness" | "readiness" | "confidence" | "risk";
 
@@ -19,12 +20,16 @@ function tone(value: string, kind: SemanticKind) {
 
 export function SemanticBadge({ value, kind = "state" }: { value: unknown; kind?: SemanticKind }) {
   const text = safeString(value || "UNAVAILABLE").toUpperCase();
-  return <span data-semantic-kind={kind} data-semantic-state={text} className={`inline-flex rounded border px-2 py-1 text-[9px] font-bold tracking-wide ${tone(text, kind)}`}>{text.replaceAll("_", " ")}</span>;
+  const domain = kind === "confidence" ? "confidence" : kind === "risk" ? "risk" : kind === "freshness" ? "freshness" : kind === "readiness" ? "readiness" : "general";
+  const display = mapTraderEnum(text, domain);
+  return <span data-semantic-kind={kind} data-semantic-state={text} className={`inline-flex rounded border px-2 py-1 text-[9px] font-bold tracking-wide ${tone(text, kind)}`}>{display}</span>;
 }
 
 export function ProvenanceLine({ source, observedAt, freshness }: { source?: unknown; observedAt?: unknown; freshness?: unknown }) {
+  const srcStr = safeString(source || "UNAVAILABLE");
+  const displaySource = srcStr === "kite_historical_api" ? "Kite Historical API" : srcStr;
   return <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-500">
-    <span>Source: {safeString(source || "UNAVAILABLE")}</span>
+    <span>Source: {displaySource}</span>
     <span>Observed: {safeString(observedAt || "UNAVAILABLE")}</span>
     <SemanticBadge value={freshness} kind="freshness" />
   </div>;
@@ -32,13 +37,13 @@ export function ProvenanceLine({ source, observedAt, freshness }: { source?: unk
 
 export function EvidenceList({ title, items, toneClass = "text-slate-300" }: { title: string; items: unknown; toneClass?: string }) {
   const values = safeArray(items as any[]).map(item => safeString(item)).filter(Boolean);
-  return <div><div className="text-[9px] font-bold uppercase tracking-wide text-slate-500">{title}</div>{values.length ? <ul className={`mt-1 space-y-1 text-[10px] ${toneClass}`}>{values.map((item, index) => <li key={`${item}-${index}`}>• {item.replaceAll("_", " ")}</li>)}</ul> : <p className="mt-1 text-[10px] text-slate-600">No eligible evidence reported.</p>}</div>;
+  return <div><div className="text-[9px] font-bold uppercase tracking-wide text-slate-500">{mapTraderLabel(title)}</div>{values.length ? <ul className={`mt-1 space-y-1 text-[10px] ${toneClass}`}>{values.map((item, index) => <li key={`${item}-${index}`}>• {mapTraderEnum(item)}</li>)}</ul> : <p className="mt-1 text-[10px] text-slate-600">No active signals reported.</p>}</div>;
 }
 
 export function KeyLevelsPanel({ levels }: { levels: unknown }) {
   const rows = safeArray(levels as any[]) as any[];
   return <section data-canonical-levels className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-    <div className="text-[9px] font-bold uppercase text-slate-500">Genuine key levels</div>
+    <div className="text-[9px] font-bold uppercase text-slate-500">Key Levels to Watch</div>
     {rows.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{rows.map((level, index) => <div key={`${level.origin}-${level.value}-${index}`} className="flex items-center justify-between rounded border border-slate-800 px-2 py-1.5 text-[10px]"><span className="font-bold text-white">{formatNumber(level.value, 2)}</span><span className="text-slate-500">{safeString(level.role)} · {safeString(level.origin)}</span></div>)}</div> : <p className="mt-2 text-[10px] text-slate-500">UNAVAILABLE — no genuine canonical level is eligible.</p>}
   </section>;
 }
@@ -46,13 +51,13 @@ export function KeyLevelsPanel({ levels }: { levels: unknown }) {
 export function ScenarioCard({ scenario }: { key?: string; scenario: any }) {
   const primary = safeString(scenario?.priority).toUpperCase().includes("PRIMARY");
   return <article data-canonical-scenario={safeString(scenario?.name)} className={`rounded-lg border bg-slate-950/60 p-3 text-[10px] text-slate-300 ${primary ? "border-cyan-800/70" : "border-slate-800"}`}>
-    <div className="flex items-center justify-between gap-2"><strong className="text-cyan-300">{safeString(scenario?.name).replaceAll("_", " ")}</strong><SemanticBadge value={scenario?.priority} /></div>
-    <div className="mt-2"><b>Confirm:</b> {safeArray(scenario?.confirmation_conditions).join(" · ") || "UNAVAILABLE"}</div>
-    <div className="mt-1 text-rose-300"><b>Invalidate:</b> {safeArray(scenario?.invalidation_conditions).join(" · ") || "UNAVAILABLE"}</div>
+    <div className="flex items-center justify-between gap-2"><strong className="text-cyan-300">{mapTraderEnum(scenario?.name)}</strong><SemanticBadge value={scenario?.priority} /></div>
+    <div className="mt-2"><b>Supports:</b> {safeArray(scenario?.confirmation_conditions).map(v => mapTraderEnum(v)).join(" · ") || "UNAVAILABLE"}</div>
+    <div className="mt-1 text-rose-300"><b>Invalidates:</b> {safeArray(scenario?.invalidation_conditions).map(v => mapTraderEnum(v)).join(" · ") || "UNAVAILABLE"}</div>
     <div className="mt-2 text-[9px] text-slate-600">Conditional scenario only · Not a prediction · No execution instruction</div>
   </article>;
 }
 
 export function ExplicitState({ title, state, reason }: { key?: string; title: string; state: unknown; reason: unknown }) {
-  return <section className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"><div className="flex items-center justify-between gap-3"><strong className="text-[10px] text-white">{title}</strong><SemanticBadge value={state} kind="readiness" /></div><p className="mt-2 text-[10px] text-slate-500">{safeString(reason || "No additional detail is available.")}</p></section>;
+  return <section className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"><div className="flex items-center justify-between gap-3"><strong className="text-[10px] text-white">{mapTraderLabel(title)}</strong><SemanticBadge value={state} kind="readiness" /></div><p className="mt-2 text-[10px] text-slate-500">{safeString(reason || "No additional detail is available.")}</p></section>;
 }

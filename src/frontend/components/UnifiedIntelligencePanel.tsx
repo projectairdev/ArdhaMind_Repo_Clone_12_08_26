@@ -50,19 +50,19 @@ export function PreMarketIntelligenceView() {
   const volatility = canonicalState?.macro_intelligence?.india_vix;
   const news = canonicalState?.news_intelligence;
   const context = [
-    ["Opening Context", intelligence.signals?.opening?.state, signalEvidence(intelligence.signals?.opening)],
-    ["GIFT Nifty", gift ? "AVAILABLE" : "UNAVAILABLE", gift ? `${formatNumber(gift.value, 2)} · ${safeString(gift.freshness_status || gift.freshness)}` : "No eligible canonical GIFT observation."],
-    ["Global Context", intelligence.signals?.global?.state, signalEvidence(intelligence.signals?.global)],
-    ["Institutional Context", intelligence.signals?.institutional?.state, signalEvidence(intelligence.signals?.institutional)],
-    ["Breadth", breadth?.status, breadth?.coverage ? `${safeString(breadth.coverage.valid)} / ${safeString(breadth.coverage.expected)} constituents · ${safeString(breadth.freshness)}` : "Canonical breadth unavailable."],
-    ["Options", options?.status, options?.snapshot_timestamp ? `Observed ${safeString(options.snapshot_timestamp)}` : "Canonical options snapshot unavailable."],
-    ["Volatility", volatility?.status || (volatility?.value != null ? "AVAILABLE" : "UNAVAILABLE"), volatility?.value != null ? `India VIX ${formatNumber(volatility.value, 2)} · ${safeString(volatility.freshness)}` : "Canonical volatility context unavailable."],
-    ["News / Event Risk", news?.status, `${safeArray(news?.items).length} canonical items · ${safeString(news?.freshness || news?.coverage_status)}`],
+    ["Expected Opening", intelligence.signals?.opening?.state, signalEvidence(intelligence.signals?.opening)],
+    ["GIFT Nifty", gift ? "AVAILABLE" : "UNAVAILABLE", gift ? `${formatNumber(gift.value, 2)} · ${safeString(gift.freshness_status || gift.freshness)}` : "No eligible GIFT observation."],
+    ["Global Cues", intelligence.signals?.global?.state, signalEvidence(intelligence.signals?.global)],
+    ["FII / DII Positioning", intelligence.signals?.institutional?.state, signalEvidence(intelligence.signals?.institutional)],
+    ["Breadth", breadth?.status, breadth?.coverage ? `${safeString(breadth.coverage.valid)} / ${safeString(breadth.coverage.expected)} constituents` : "Breadth unavailable."],
+    ["Options", options?.status, options?.snapshot_timestamp ? `Observed ${safeString(options.snapshot_timestamp)}` : "Options snapshot unavailable."],
+    ["Volatility", volatility?.status || (volatility?.value != null ? "AVAILABLE" : "UNAVAILABLE"), volatility?.value != null ? `India VIX ${formatNumber(volatility.value, 2)}` : "Volatility context unavailable."],
+    ["News & Event Risk", news?.status, `${safeArray(news?.items).length} verified news items`],
   ];
   return <section data-unified-intelligence="PRE_MARKET" data-intelligence-view="next-session-setup" data-intelligence-engine={intelligence.engine} className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-left">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-400">Pre-market readiness</div><h3 className="mt-1 text-sm font-bold text-white">Next-session setup</h3></div><SemanticBadge value={intelligence.readiness} kind="readiness"/></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-400">Tomorrow's Market Setup</div><h3 className="mt-1 text-sm font-bold text-white">Pre-Market Setup</h3></div><SemanticBadge value={intelligence.readiness} kind="readiness"/></div>
     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{context.map(([title, state, reason]) => <ExplicitState key={String(title)} title={String(title)} state={state} reason={reason}/>)}</div>
-    <ScenarioGrid scenarios={scenarios}/><div className="grid gap-3 md:grid-cols-2"><EvidenceList title="Confirmation" items={intelligence.confirming_signals} toneClass="text-emerald-300"/><EvidenceList title="Invalidation / risk" items={[...safeArray(intelligence.opposing_signals), ...safeArray(intelligence.risk?.reasons)]} toneClass="text-rose-300"/></div><KeyLevelsPanel levels={levels}/>
+    <ScenarioGrid scenarios={scenarios}/><div className="grid gap-3 md:grid-cols-2"><EvidenceList title="What Supports the Setup" items={intelligence.confirming_signals} toneClass="text-emerald-300"/><EvidenceList title="What Could Break the Setup" items={[...safeArray(intelligence.opposing_signals), ...safeArray(intelligence.risk?.reasons)]} toneClass="text-rose-300"/></div><KeyLevelsPanel levels={levels}/>
   </section>;
 }
 
@@ -71,13 +71,13 @@ export function TodaysAnalysisSynthesis() {
   if (!intelligence) return <UnavailableView name="TODAYS_ANALYSIS"/>;
   const scenarios = safeArray(intelligence.scenarios) as any[];
   const change = intelligence.change_intelligence || {};
-  const riskReason = safeArray(intelligence.risk?.reasons).join(" · ") || "No elevated canonical risk reason reported.";
+  const riskReason = safeArray(intelligence.risk?.reasons).join(" · ") || "No elevated risk factors reported.";
   const session = canonicalState?.market_session?.status || intelligence.session?.status || intelligence.mode;
   return <section data-unified-intelligence="TODAYS_ANALYSIS" data-intelligence-view="full-session-synthesis" data-intelligence-engine={intelligence.engine} className="space-y-4 rounded-xl border border-cyan-900/50 bg-slate-950/70 p-5 text-left">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><div data-analysis-session-heading className="text-[10px] font-black uppercase tracking-[.2em] text-cyan-400">{analysisSessionHeading(session)}</div><h3 className="mt-1 text-sm font-bold text-white">NIFTY Decision Context</h3></div><div className="flex flex-wrap gap-2"><SemanticBadge value={intelligence.readiness} kind="readiness"/><SemanticBadge value={intelligence.alignment}/><SemanticBadge value={intelligence.market_regime}/><SemanticBadge value={intelligence.confidence} kind="confidence"/><SemanticBadge value={`${safeString(intelligence.risk?.state)}_RISK`} kind="risk"/></div></div>
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><div data-analysis-session-heading className="text-[10px] font-black uppercase tracking-[.2em] text-cyan-400">{analysisSessionHeading(session)}</div><h3 className="mt-1 text-sm font-bold text-white">TODAY'S NIFTY VIEW</h3></div><div className="flex flex-wrap gap-2"><SemanticBadge value={intelligence.readiness} kind="readiness"/><SemanticBadge value={intelligence.alignment}/><SemanticBadge value={intelligence.market_regime}/><SemanticBadge value={intelligence.confidence} kind="confidence"/><SemanticBadge value={`${safeString(intelligence.risk?.state)}_RISK`} kind="risk"/></div></div>
     <p className="text-xs leading-relaxed text-slate-300">{safeString(intelligence.explanation)}</p>
-    <div className="grid gap-3 md:grid-cols-3"><EvidenceList title="What confirms the view" items={intelligence.confirming_signals} toneClass="text-emerald-300"/><EvidenceList title="What contradicts it" items={intelligence.opposing_signals} toneClass="text-rose-300"/><ExplicitState title="What changed?" state={change.status || "UNAVAILABLE"} reason={change.reason || "Change intelligence is unavailable."}/></div>
-    <KeyLevelsPanel levels={intelligence.key_levels}/><ScenarioGrid scenarios={scenarios}/><ExplicitState title="Session risk and invalidation" state={intelligence.risk?.state} reason={riskReason}/>
+    <div className="grid gap-3 md:grid-cols-3"><EvidenceList title="What Supports This View" items={intelligence.confirming_signals} toneClass="text-emerald-300"/><EvidenceList title="What Goes Against It" items={intelligence.opposing_signals} toneClass="text-rose-300"/><ExplicitState title="What Changed Since the Previous View?" state={change.status || "UNAVAILABLE"} reason={change.reason || "Change intelligence is unavailable."}/></div>
+    <KeyLevelsPanel levels={intelligence.key_levels}/><ScenarioGrid scenarios={scenarios}/><ExplicitState title="What Could Change This View" state={intelligence.risk?.state} reason={riskReason}/>
   </section>;
 }
 
@@ -85,11 +85,11 @@ export function LiveAssistantExplanationView() {
   const { intelligence } = useCanonicalIntelligence();
   if (!intelligence) return <UnavailableView name="LIVE_ASSISTANT"/>;
   const change = intelligence.change_intelligence || {};
-  const riskReason = safeArray(intelligence.risk?.reasons).join(" · ") || "No elevated canonical risk reason reported.";
-  const missing = safeArray(intelligence.evidence_completeness?.critical_missing).join(" · ") || safeArray(intelligence.unavailable_or_ineligible_signals).join(" · ") || "No critical missing evidence reported for this session mode.";
+  const riskReason = safeArray(intelligence.risk?.reasons).join(" · ") || "No elevated risk factors reported.";
+  const missing = safeArray(intelligence.evidence_completeness?.critical_missing).join(" · ") || safeArray(intelligence.unavailable_or_ineligible_signals).join(" · ") || "No critical missing data reported for this session mode.";
   return <section data-unified-intelligence="LIVE_ASSISTANT" data-intelligence-view="explanation-console" data-intelligence-engine={intelligence.engine} className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-left">
-    <div><div className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-400">Explanation console</div><h3 className="mt-1 text-sm font-bold text-white">Why ArdhaMind is saying this</h3></div>
-    <div data-canonical-assistant-answers className="grid gap-3 md:grid-cols-2 lg:grid-cols-3"><ExplicitState title="What is the market state?" state={intelligence.alignment} reason={safeString(intelligence.market_regime).replaceAll("_", " ")}/><ExplicitState title="Why?" state={intelligence.confidence} reason={safeString(intelligence.explanation)}/><div className="p-2"><EvidenceList title="What confirms it?" items={intelligence.confirming_signals} toneClass="text-emerald-300"/></div><div className="p-2"><EvidenceList title="What contradicts it?" items={intelligence.opposing_signals} toneClass="text-rose-300"/></div><ExplicitState title="What is the current risk?" state={intelligence.risk?.state} reason={riskReason}/><ExplicitState title="What changed?" state={change.status || "UNAVAILABLE"} reason={change.reason || "Change intelligence is unavailable."}/><ExplicitState title="How complete is the evidence? What data is missing?" state={missing.startsWith("No critical") ? "READY" : "PARTIAL"} reason={missing}/></div>
-    <KeyLevelsPanel levels={intelligence.key_levels}/><ScenarioGrid scenarios={safeArray(intelligence.scenarios) as any[]}/><div className="text-[9px] text-slate-600">Invalidation conditions remain inside each canonical scenario · Human decision required · Read only</div>
+    <div><div className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-400">CURRENT MARKET VIEW</div><h3 className="mt-1 text-sm font-bold text-white">Understand ArdhaMind's View</h3></div>
+    <div data-canonical-assistant-answers className="grid gap-3 md:grid-cols-2 lg:grid-cols-3"><ExplicitState title="Current Market State" state={intelligence.alignment} reason={safeString(intelligence.market_regime).replaceAll("_", " ")}/><ExplicitState title="Why?" state={intelligence.confidence} reason={safeString(intelligence.explanation)}/><div className="p-2"><EvidenceList title="What Supports This View?" items={intelligence.confirming_signals} toneClass="text-emerald-300"/></div><div className="p-2"><EvidenceList title="What Goes Against It?" items={intelligence.opposing_signals} toneClass="text-rose-300"/></div><ExplicitState title="What is the Risk?" state={intelligence.risk?.state} reason={riskReason}/><ExplicitState title="What Changed?" state={change.status || "UNAVAILABLE"} reason={change.reason || "Change intelligence is unavailable."}/><ExplicitState title="What Data is Missing?" state={missing.startsWith("No critical") ? "READY" : "PARTIAL"} reason={missing}/></div>
+    <KeyLevelsPanel levels={intelligence.key_levels}/><ScenarioGrid scenarios={safeArray(intelligence.scenarios) as any[]}/><div className="text-[9px] text-slate-600">Invalidation conditions remain inside each scenario · Human decision required · Read only</div>
   </section>;
 }

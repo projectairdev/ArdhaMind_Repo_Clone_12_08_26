@@ -46,21 +46,20 @@ def test_four_workspaces_use_distinct_views_over_one_canonical_source():
 
 def test_nifty_live_is_compact_and_premarket_is_opening_focused():
     text = read("frontend/components/UnifiedIntelligencePanel.tsx")
-    assert "Market intelligence" in text
-    for label in ("Pre-market readiness", "Opening Context", "Global Context", "Institutional Context", "Confirmation"):
+    for label in ("Tomorrow's Market Setup", "Expected Opening", "Global Cues", "FII / DII Positioning", "What Supports the Setup"):
         assert label in text
 
 
 def test_analysis_and_assistant_are_question_specific():
     text = read("frontend/components/UnifiedIntelligencePanel.tsx")
-    for label in ("What confirms the view", "What contradicts it", "Session risk and invalidation", "What is the market state?", "Why?", "What is the current risk?", "What changed?", "What data is missing?"):
+    for label in ("What Supports This View", "What Goes Against It", "What Could Change This View", "Current Market State", "Why?", "What is the Risk?", "What Changed?", "What Data is Missing?"):
         assert label in text
     assert 'change.status || "UNAVAILABLE"' in text
 
 
 def test_visible_context_label_changes_without_internal_engine_rename():
     text = read("frontend/components/UnifiedIntelligencePanel.tsx")
-    assert ">NIFTY Decision Context<" in text
+    assert "TODAY'S NIFTY VIEW" in text
     assert "Canonical NIFTY Decision Context" not in text
     assert "data-intelligence-engine={intelligence.engine}" in text
 

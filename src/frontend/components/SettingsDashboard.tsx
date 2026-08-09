@@ -152,10 +152,10 @@ export function SettingsDashboard() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-slate-900/60 border border-slate-800 rounded-xl">
         <div>
           <h3 className="font-extrabold text-white text-sm uppercase tracking-wider font-mono">
-            System Operations & Canonical Diagnostics
+            System Status & Technical Diagnostics
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Monitor real-time gateway health, broker session parameters, and data provider states.
+            Connections, data sources, and system health status.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -177,6 +177,39 @@ export function SettingsDashboard() {
         </div>
       </div>
 
+      {/* Primary Trader-Facing Status Summary */}
+      <section data-settings-trader-summary className="rounded-xl border border-cyan-900/40 bg-slate-950/80 p-5">
+        <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400 mb-3">
+          Trader-Facing System Status
+        </h4>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs font-mono">
+          <div className="p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
+            <span className="text-[10px] text-slate-500 uppercase block font-bold">Kite Connection</span>
+            <span className={`font-bold mt-1 block ${isConnected ? "text-emerald-400" : "text-rose-400"}`}>
+              Kite: {isConnected ? "Connected" : "Disconnected"}
+            </span>
+          </div>
+          <div className="p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
+            <span className="text-[10px] text-slate-500 uppercase block font-bold">Market Data</span>
+            <span className="font-bold text-emerald-400 mt-1 block">
+              Market Data: {safeString(canonicalState?.data_quality?.market_data?.quality_status).toLowerCase() === "valid" ? "Ready" : "Partial"}
+            </span>
+          </div>
+          <div className="p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
+            <span className="text-[10px] text-slate-500 uppercase block font-bold">News & Events</span>
+            <span className="font-bold text-amber-400 mt-1 block">
+              News & Events: {safeString(newsObj.coverage_status).toLowerCase() === "ready" ? "Ready" : "Partial"}
+            </span>
+          </div>
+          <div className="p-3 bg-slate-900/50 border border-slate-800 rounded-lg">
+            <span className="text-[10px] text-slate-500 uppercase block font-bold">Options Data</span>
+            <span className="font-bold text-cyan-300 mt-1 block">
+              Options Data: {canonicalState?.market_session?.is_closed ? "Previous Session" : safeString(canonicalState?.option_intelligence?.status).toLowerCase() === "ready" ? "Ready" : "Unavailable"}
+            </span>
+          </div>
+        </div>
+      </section>
+
       {message && (
         <div className="p-3 bg-cyan-950/40 border border-cyan-800/60 rounded-lg text-xs font-mono text-cyan-300 flex items-center gap-2">
           <ShieldCheck size={15} />
@@ -184,7 +217,7 @@ export function SettingsDashboard() {
         </div>
       )}
 
-      {/* Grid Architecture */}
+      {/* Detailed Technical Diagnostics Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
         {/* SECTION 1: BROKER CONNECTION */}

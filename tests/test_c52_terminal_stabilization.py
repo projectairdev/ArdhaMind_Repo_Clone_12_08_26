@@ -11,9 +11,9 @@ def read(path: str) -> str:
 def test_nifty_summary_is_compact_overview_only_and_not_generic():
     nifty = read("components/NiftyLiveWorkspace.tsx")
     views = read("components/UnifiedIntelligencePanel.tsx")
-    assert 'view === "overview" && <NiftyIntelligenceStrip' in nifty
+    assert "<OverviewPanel />" in nifty
     assert 'data-intelligence-view="compact-command-center"' in views
-    assert views.count("NIFTY Decision Context") == 1
+    assert views.count("TODAY'S NIFTY VIEW") == 1
 
 
 def test_premarket_is_next_session_specific_without_session_review():
@@ -21,7 +21,7 @@ def test_premarket_is_next_session_specific_without_session_review():
     views = read("components/UnifiedIntelligencePanel.tsx")
     assert "<PreMarketIntelligenceView" in pre
     assert 'data-intelligence-view="next-session-setup"' in views
-    for label in ("Pre-market readiness", "GIFT Nifty", "Breadth", "Options", "Volatility", "News / Event Risk"):
+    for label in ("Tomorrow's Market Setup", "GIFT Nifty", "Breadth", "Options", "Volatility", "News & Event Risk"):
         assert label in views
 
 
@@ -36,8 +36,8 @@ def test_analysis_alone_has_full_synthesis_and_dynamic_session_heading():
 
 def test_live_assistant_is_an_explanation_console_not_generic_dashboard():
     views = read("components/UnifiedIntelligencePanel.tsx")
-    assert "Why ArdhaMind is saying this" in views
-    for question in ("What is the market state?", "Why?", "What confirms it?", "What contradicts it?", "What is the current risk?", "What changed?", "What data is missing?"):
+    assert "Understand ArdhaMind's View" in views
+    for question in ("Current Market State", "Why?", "What Supports This View?", "What Goes Against It?", "What is the Risk?", "What Changed?", "What Data is Missing?"):
         assert question in views
 
 

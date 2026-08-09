@@ -22,7 +22,7 @@ def test_shared_components_preserve_provenance_and_freshness():
 
 def test_key_levels_are_canonical_and_never_filled_with_defaults():
     text = source("intelligence/CanonicalPresentation.tsx")
-    assert "Genuine key levels" in text
+    assert "Key Levels to Watch" in text
     assert "no genuine canonical level is eligible" in text
     assert "PRICE_STRUCTURE" not in text and "OPTION_OI" not in text
 
@@ -35,7 +35,7 @@ def test_scenario_cards_are_conditional_not_predictions():
 
 def test_nifty_live_is_a_canonical_command_center():
     text = source("NiftyLiveWorkspace.tsx")
-    assert 'view === "overview" && <NiftyIntelligenceStrip' in text
+    assert '<NiftyIntelligenceStrip' not in text
     assert all(term in text for term in ("SpotSummary", "breadth", "top_gainers", "top_losers", "PCR / Max Pain", "ATM Option IV"))
 
 
@@ -59,18 +59,18 @@ def test_all_decision_workspaces_share_canonical_primitives_but_not_one_experien
     assert '<PreMarketIntelligenceView' in premarket
     assert '<TodaysAnalysisSynthesis' in phase
     assert '<LiveAssistantExplanationView' in phase
-    assert '<NiftyIntelligenceStrip' in nifty
+    assert '<NiftyIntelligenceStrip' not in nifty
 
 
 def test_live_assistant_is_structured_canonical_explanation_not_chatbot():
     text = source("UnifiedIntelligencePanel.tsx")
-    assert all(question in text for question in ("What is the market state?", "What is the current risk?", "How complete is the evidence?"))
+    assert all(question in text for question in ("Current Market State", "What is the Risk?", "What Data is Missing?"))
     assert "openai" not in text.lower() and "chatbot" not in text.lower()
 
 
 def test_change_intelligence_unavailable_is_explicit():
     text = source("UnifiedIntelligencePanel.tsx")
-    assert "What changed?" in text
+    assert "What Changed?" in text
     assert 'change.status || "UNAVAILABLE"' in text
 
 

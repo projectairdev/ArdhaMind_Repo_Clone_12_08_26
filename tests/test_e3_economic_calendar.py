@@ -160,7 +160,7 @@ def test_canonical_workspace_propagation_and_news_link():
 
 def test_workspace_ui_contains_required_calendar_surfaces():
     root = Path("src/frontend/components")
-    assert "Today's High-Impact Events" in (root / "PreMarketPlannerWorkspace.tsx").read_text(encoding="utf-8")
+    assert "Today's Key Scheduled Events" in (root / "PreMarketPlannerWorkspace.tsx").read_text(encoding="utf-8")
     assert "Event Risk Today" in (root / "PreMarketPlannerWorkspace.tsx").read_text(encoding="utf-8")
     news_ui = (root / "NewsIntelligence.tsx").read_text(encoding="utf-8")
     for label in ("TODAY", "TOMORROW", "THIS WEEK", "NIFTY RELEVANT"):
