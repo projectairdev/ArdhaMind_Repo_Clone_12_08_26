@@ -35,7 +35,9 @@ export function PreMarketPlannerWorkspace() {
   const high = candles.length ? Math.max(...candles.map(c => Number(c.h))) : null;
   const low = candles.length ? Math.min(...candles.map(c => Number(c.l))) : null;
   const readiness = canonicalState?.workspace_readiness?.pre_market_850_readiness || {};
-  const missing = Object.entries(readiness).filter(([key, value]) => key !== "is_full_premarket_ready" && value !== "READY").map(([key]) => key.replaceAll("_", " "));
+  const readinessMeta = new Set(["is_full_premarket_ready", "overall_state", "ready_inputs", "unavailable_inputs", "blocked_inputs"]);
+  const missing = Object.entries(readiness).filter(([key, value]) => !readinessMeta.has(key) && value !== "READY").map(([key]) => key.replaceAll("_", " "));
+  const openingGap = macro.opening_gap || {};
   const optionReady = safeString(canonicalState?.option_intelligence?.status).toLowerCase() === "ready";
   const marketReady = Boolean(market.current_spot && canonicalState?.data_quality?.market_data?.quality_status === "valid");
   const operationalState = marketReady && optionReady && news.length > 0 && Object.keys(quotes).length >= 10 && flows.length > 0 && events.length > 0 ? "Ready" : marketReady || news.length > 0 || Object.keys(quotes).length > 0 ? "Partial" : "Not Ready";
@@ -69,7 +71,7 @@ export function PreMarketPlannerWorkspace() {
       <Card title="Overnight News">{sinceClose.length ? sinceClose.slice(0, 5).map(item => safeString(item.headline)).join(" · ") : "No verified overnight news available."}</Card>
       <Card title="Today's High-Impact Events">{highImpactToday.length ? <div className="space-y-3">{highImpactToday.map(event => <div key={event.event_id} data-premarket-economic-event={event.event_id} className="border-b border-slate-800 pb-2 last:border-0"><div className="font-bold text-white">{formatDateTimeIST(event.scheduled_at_ist || event.scheduled_at)} · {safeString(event.country)} · {safeString(event.event_name)}</div><div className="mt-1 font-mono text-[10px]">{safeString(event.impact_level)} · Forecast: {event.forecast ?? "UNAVAILABLE"}{event.forecast != null ? safeString(event.unit) : ""} · Previous: {event.previous ?? "UNAVAILABLE"}{event.previous != null ? safeString(event.unit) : ""} · NIFTY {formatNumber(event.nifty_relevance, 1)}/10</div><div className="mt-1 text-cyan-200">Channels: {safeArray(event.affected_channels).join(", ") || "UNAVAILABLE"}</div></div>)}</div> : "No HIGH/CRITICAL canonical economic event is scheduled today."}</Card>
       <div className="grid gap-4 md:grid-cols-2"><Card title="Next High-Impact Event">{nextHigh ? `${safeString(nextHigh.country)} · ${safeString(nextHigh.event_name)} · ${formatDateTimeIST(nextHigh.scheduled_at_ist || nextHigh.scheduled_at)}` : "NONE"}</Card><Card title="Official Corporate Events">{corporate.length ? corporate.slice(0, 5).map(event => `${safeString(event.symbol)} · ${safeString(event.event_category)}`).join(" · ") : "UNAVAILABLE — no validated corporate events were returned."}</Card></div>
-      <Card title="Opening Gap Context & Deterministic Bias" tone="warning">UNAVAILABLE until a genuine GIFT Nifty observation, options snapshot, news, FII/DII and required calendars are all present.</Card>
+      <Card title="Opening Gap Context & Deterministic Indication" tone={openingGap.status === "READY" ? "default" : "warning"}>{openingGap.status === "READY" ? `${safeString(openingGap.classification)} · ${Number(openingGap.gap_points) >= 0 ? "+" : ""}${formatNumber(openingGap.gap_points, 2)} points (${Number(openingGap.gap_pct) >= 0 ? "+" : ""}${formatNumber(openingGap.gap_pct, 2)}%). ${safeString(openingGap.disclaimer)}` : "UNAVAILABLE until eligible genuine GIFT Nifty and validated NIFTY reference observations are present."}</Card>
     </div>}
 
     {tab === "Opening Checklist" && <div data-premarket-panel="opening-checklist" className="space-y-4">

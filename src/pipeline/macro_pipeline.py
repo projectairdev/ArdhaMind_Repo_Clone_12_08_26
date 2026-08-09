@@ -66,6 +66,7 @@ class MacroPipeline:
         participant_provider: Optional[NseParticipantDerivativesProvider] = None,
         risk_free_rate_provider: Optional[RbiRiskFreeRateProvider] = None,
         reconstitution_provider: Optional[NiftyReconstitutionProvider] = None,
+        gift_provider: Optional[GiftNiftyProvider] = None,
     ) -> None:
         self.cache_file = cache_file or CACHE_FILE_PATH
         self.persistence_enabled = providers is None or cache_file is not None
@@ -82,7 +83,10 @@ class MacroPipeline:
                 NseCorporateAnnouncementsProvider(),
                 NseBoardMeetingsProvider(),
                 NseFinancialResultsProvider(),
+                gift_provider or GiftNiftyProvider(),
             ]
+        if providers is not None and gift_provider is not None:
+            self.providers.append(gift_provider)
         self.metadata_provider = metadata_provider or NiftyMetadataProvider()
         self.participant_provider = participant_provider or NseParticipantDerivativesProvider()
         self.risk_free_rate_provider = risk_free_rate_provider or RbiRiskFreeRateProvider.get_instance()
@@ -170,6 +174,7 @@ class MacroPipeline:
         economic_events: List[EconomicCalendarEvent] = []
         corporate_actions: List[CorporateActionRecord] = []
         earnings_events: List[EarningsRecord] = []
+        financial_results: List[EarningsRecord] = []
         ipo_events: List[IpoRecord] = []
         corporate_announcements: List[Dict[str, Any]] = []
         board_meetings: List[Dict[str, Any]] = []
@@ -203,8 +208,12 @@ class MacroPipeline:
             institutional_derivatives = {"status": "UNAVAILABLE", "records": [], "positioning": {}, "dataset_health": {}}
             risk_free_rate = {"status": "UNAVAILABLE", "rate": None, "rate_pct": None, "source": "Reserve Bank of India"}
             reconstitution = {"status": "UNAVAILABLE", "index_name": "NIFTY 50", "source": "NSE Indices Limited"}
+        gift_provider = next((p for p in self.providers if isinstance(p, GiftNiftyProvider)), None)
         provider_contracts = {
-            "gift_nifty": GiftNiftyProvider.get_health(),
+            "gift_nifty": (gift_provider.get_health().to_dict() if gift_provider else {
+                "provider_name": "gift_nifty_provider", "status": "NOT_CONFIGURED",
+                "failure_reason": "GENUINE_PROVIDER_NOT_CONFIGURED", "is_enabled": False,
+            }),
             "nifty_weights": NiftyWeightsProvider.get_health(),
         }
 
@@ -310,6 +319,12 @@ class MacroPipeline:
                         observation_mode=str(item.get("observation_mode") or "LAST_VALID_SOURCE_OBSERVATION"),
                         cache_restored=bool(item.get("cache_restored")), status=assessment.status,
                         current_eligible=assessment.current_eligible, age_seconds=assessment.age_seconds,
+                        contract_expiry=str(item.get("contract_expiry") or ""),
+                        instrument_token=int(item["instrument_token"]) if item.get("instrument_token") is not None else None,
+                        volume_contracts=int(item["volume_contracts"]) if item.get("volume_contracts") is not None else None,
+                        source_url=str(item.get("source_url") or ""),
+                        source_authority=str(item.get("source_authority") or ""),
+                        source_session_detail=str(item.get("source_session_detail") or ""),
                     )
                     quotes[q.symbol] = q
                     quote_status[q.symbol] = {
@@ -387,7 +402,7 @@ class MacroPipeline:
                         elif cat == "BOARD_MEETING":
                             board_meetings.append(event)
                         elif cat == "EARNINGS":
-                            earnings_events.append(EarningsRecord(
+                            financial_results.append(EarningsRecord(
                                 id=str(event.get("id") or ""),
                                 symbol=str(event.get("symbol") or ""),
                                 company_name=str(event.get("company_name") or ""),
@@ -399,6 +414,15 @@ class MacroPipeline:
                                 retrieved_at=str(event.get("retrieved_at") or scanned_at),
                                 freshness_status="fresh",
                             ))
+
+        if gift_provider is not None:
+            provider_contracts["gift_nifty"] = {
+                **gift_provider.get_health().to_dict(),
+                "source": "NSE International Exchange",
+                "source_url": GiftNiftyProvider.SNAPSHOT_URL,
+                "instrument_identity": "NSEIX:NIFTY_NEAR_MONTH_FUTURE",
+                "failure_reason": gift_provider.operational_error_reason,
+            }
 
         for flow in institutional_flows:
             official_india_events.append({
@@ -475,7 +499,8 @@ class MacroPipeline:
             "institutional_flows": self._eval_domain_freshness(institutional_flows, now_dt, fresh_sec=86400, stale_sec=172800),
             "economic_calendar": self._eval_domain_freshness(economic_events, now_dt, fresh_sec=86400, stale_sec=172800),
             "corporate_actions": self._eval_domain_freshness(corporate_actions, now_dt, fresh_sec=86400, stale_sec=172800),
-            "earnings_calendar": self._eval_domain_freshness(earnings_events, now_dt, fresh_sec=86400, stale_sec=172800),
+            "earnings_calendar": "unavailable",
+            "financial_results": self._eval_domain_freshness(financial_results, now_dt, fresh_sec=86400, stale_sec=172800),
             "ipo_calendar": self._eval_domain_freshness(ipo_events, now_dt, fresh_sec=86400, stale_sec=172800),
             "constituent_metadata": "fresh" if constituent_meta and constituent_meta.is_available else "unavailable",
             "institutional_derivatives": "last_valid_session" if institutional_derivatives.get("records") else "unavailable",
@@ -492,7 +517,7 @@ class MacroPipeline:
             "corporate_calendar_provider": len(corporate_actions),
             "nse_corporate_announcements": len(corporate_announcements),
             "nse_board_meetings": len(board_meetings),
-            "nse_financial_results": len(earnings_events),
+            "nse_financial_results": len(financial_results),
             self.metadata_provider.provider_name: len(constituent_meta.constituents) if constituent_meta else 0,
             self.participant_provider.provider_name: len(institutional_derivatives.get("records") or []),
             self.risk_free_rate_provider.provider_name: 1 if risk_free_rate.get("rate") else 0,
@@ -548,6 +573,7 @@ class MacroPipeline:
             economic_events=economic_events,
             corporate_actions=corporate_actions,
             earnings_events=earnings_events,
+            financial_results=financial_results,
             ipo_events=ipo_events,
             constituent_metadata=constituent_meta,
             corporate_announcements=corporate_announcements,

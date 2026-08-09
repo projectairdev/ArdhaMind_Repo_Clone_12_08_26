@@ -364,6 +364,7 @@ export interface MacroContext {
   economic_events: EconomicCalendarEvent[];
   corporate_actions: CorporateActionRecord[];
   earnings_events: any[];
+  financial_results?: any[];
   ipo_events: any[];
   constituent_metadata?: NiftyConstituentMetadata;
   corporate_announcements?: any[];
@@ -374,6 +375,8 @@ export interface MacroContext {
   india_vix?: Record<string, any>;
   risk_free_rate?: Record<string, any>;
   provider_contracts?: Record<string, any>;
+  opening_gap?: Record<string, any>;
+  institutional_context?: Record<string, any>;
   dataset_health?: any[];
   provider_health: Record<string, any>;
   calendar_provider_health?: Record<string, any>;

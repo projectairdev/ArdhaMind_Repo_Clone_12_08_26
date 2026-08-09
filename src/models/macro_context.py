@@ -47,6 +47,12 @@ class MarketQuote:
     status: str = "UNAVAILABLE"
     current_eligible: bool = False
     age_seconds: Optional[int] = None
+    contract_expiry: str = ""
+    instrument_token: Optional[int] = None
+    volume_contracts: Optional[int] = None
+    source_url: str = ""
+    source_authority: str = ""
+    source_session_detail: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         result = asdict(self)
@@ -289,6 +295,7 @@ class MacroContext:
     economic_events: List[EconomicCalendarEvent] = field(default_factory=list)
     corporate_actions: List[CorporateActionRecord] = field(default_factory=list)
     earnings_events: List[EarningsRecord] = field(default_factory=list)
+    financial_results: List[EarningsRecord] = field(default_factory=list)
     ipo_events: List[IpoRecord] = field(default_factory=list)
     constituent_metadata: Optional[NiftyConstituentMetadata] = None
     corporate_announcements: List[Dict[str, Any]] = field(default_factory=list)
@@ -321,6 +328,7 @@ class MacroContext:
             "economic_events": [e.to_dict() if hasattr(e, "to_dict") else e for e in self.economic_events],
             "corporate_actions": [c.to_dict() if hasattr(c, "to_dict") else c for c in self.corporate_actions],
             "earnings_events": [e.to_dict() if hasattr(e, "to_dict") else e for e in self.earnings_events],
+            "financial_results": [e.to_dict() if hasattr(e, "to_dict") else e for e in self.financial_results],
             "ipo_events": [i.to_dict() if hasattr(i, "to_dict") else i for i in self.ipo_events],
             "constituent_metadata": self.constituent_metadata.to_dict() if self.constituent_metadata and hasattr(self.constituent_metadata, "to_dict") else None,
             "corporate_announcements": self.corporate_announcements,

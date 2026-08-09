@@ -27,6 +27,10 @@ class ProviderHealth:
     scheduled_record_count: int = 0
     released_record_count: int = 0
     next_scheduled_event: Optional[str] = None
+    latest_fetch_status: str = "NOT_ATTEMPTED"
+    serving_mode: str = "NO_DATA"
+    data_status: str = "UNAVAILABLE"
+    cached_last_valid: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

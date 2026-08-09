@@ -274,9 +274,10 @@ def test_membership_snapshot_is_versioned_and_persisted(tmp_path: Path) -> None:
     assert len(persisted[0]["constituents"]) == 50
 
 
-def test_gift_provider_is_disabled_and_makes_no_request() -> None:
-    health = GiftNiftyProvider.get_health()
-    assert health["status"] == "NOT_CONFIGURED" and health["last_attempted_fetch"] is None
+def test_gift_provider_contract_starts_without_data_before_first_attempt() -> None:
+    health = GiftNiftyProvider().get_health().to_dict()
+    assert health["latest_fetch_status"] == "NOT_ATTEMPTED"
+    assert health["serving_mode"] == "NO_DATA"
 
 
 def test_weights_provider_is_license_gated_and_makes_no_request() -> None:

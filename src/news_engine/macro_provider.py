@@ -174,6 +174,11 @@ class BaseMacroProvider(abc.ABC):
                 setattr(self, attr, state[attr])
 
     def get_health(self) -> ProviderHealth:
+        latest = "NOT_ATTEMPTED" if not self.last_attempted_fetch else (
+            "SUCCESS" if self.last_successful_fetch == self.last_attempted_fetch and not self.operational_error_reason
+            else "RATE_LIMITED" if self.operational_error_reason == "rate_limited" else "FAILED"
+        )
+        has_data = bool(self.cached_raw_data)
         return ProviderHealth(
             provider_name=self.provider_name,
             status=self.status,
@@ -185,6 +190,10 @@ class BaseMacroProvider(abc.ABC):
             failure_detail=self.failure_detail,
             next_retry_at=self.next_retry_at,
             is_enabled=self.is_enabled,
+            latest_fetch_status=latest,
+            serving_mode="CURRENT_DATA" if latest == "SUCCESS" and has_data else "LAST_VALID_DATA" if has_data else "NO_DATA",
+            data_status="READY" if self.status == "ready" and has_data else "DEGRADED" if has_data else "UNAVAILABLE",
+            cached_last_valid=has_data and latest != "SUCCESS",
         )
 
     @abc.abstractmethod

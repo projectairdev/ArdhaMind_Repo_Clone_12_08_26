@@ -414,19 +414,91 @@ class NiftyReconstitutionProvider(BaseMacroProvider):
         return [record] if record.get("status") in {"AVAILABLE", "DEGRADED"} else []
 
 
-class GiftNiftyProvider:
-    """Disabled future provider contract; deliberately makes no request."""
+class GiftNiftyProvider(BaseMacroProvider):
+    """Official NSE IX near-month GIFT NIFTY futures snapshot provider."""
 
-    provider_name = "gift_nifty_provider"
+    SNAPSHOT_URL = "https://www.nseix.com/api/market-rate?type=derivatives"
+    STATUS_URL = "https://www.nseix.com/api/derivatives-market-status"
+    CACHE_PATH = Path(".cache/gift_nifty_snapshot.json")
+
+    def __init__(self, cache_path: Optional[Path] = None, fixture_payload: Optional[Dict[str, Any]] = None,
+                 fixture_status: Optional[Dict[str, Any]] = None) -> None:
+        super().__init__("gift_nifty_provider", refresh_interval=60.0)
+        self.cache_path = cache_path or self.CACHE_PATH
+        self.fixture_payload = fixture_payload
+        self.fixture_status = fixture_status
 
     @staticmethod
-    def get_health() -> Dict[str, Any]:
+    def parse_snapshot(payload: Dict[str, Any], status_payload: Dict[str, Any], retrieved_at: str) -> Dict[str, Any]:
+        rows = payload.get("data") or []
+        unique: Dict[Tuple[str, str, int], Dict[str, Any]] = {}
+        for row in rows:
+            if str(row.get("INSTRUMENTTYPE") or "").upper() != "FUTIDX" or str(row.get("SYMBOL") or "").upper() != "NIFTY":
+                continue
+            try:
+                token = int(row.get("TOKEN_NMBR"))
+                expiry = datetime.strptime(str(row.get("EXPIRYDATE")), "%d-%b-%Y").date()
+                observed = datetime.strptime(str(row.get("TIMESTMP")), "%d-%b-%Y %H:%M:%S").replace(
+                    tzinfo=timezone(timedelta(hours=5, minutes=30)))
+                price = float(row.get("LASTPRICE"))
+                change = float(row.get("DAYCHANGE_1", row.get("DAYCHANGE")))
+            except (TypeError, ValueError) as exc:
+                raise ValueError("invalid official NSE IX GIFT NIFTY futures row") from exc
+            if price <= 0:
+                continue
+            unique[(expiry.isoformat(), observed.isoformat(), token)] = {
+                "expiry": expiry, "observed": observed, "price": price, "change": change,
+                "token": token, "volume": int(row.get("CONTRACTSTRADED") or 0),
+            }
+        if not unique:
+            raise ValueError("official NSE IX response contained no usable GIFT NIFTY future")
+        active = sorted(unique.values(), key=lambda row: (row["expiry"], -row["volume"]))[0]
+        reference = active["price"] - active["change"]
+        if reference <= 0:
+            raise ValueError("official NSE IX GIFT NIFTY reference close is invalid")
+        status_text = str(status_payload.get("marketstatus") or "UNKNOWN")
+        session = "MARKET_CLOSED" if "CLOSED" in status_text.upper() else "MARKET_OPEN" if "OPEN" in status_text.upper() else "UNKNOWN"
         return {
-            "provider_name": "gift_nifty_provider", "status": "NOT_CONFIGURED",
-            "item_count": 0, "last_successful_fetch": None, "last_attempted_fetch": None,
-            "freshness": "UNAVAILABLE", "failure_reason": "GENUINE_PROVIDER_NOT_CONFIGURED",
-            "is_enabled": False,
+            "symbol": "GIFT_NIFTY", "name": "GIFT Nifty Near-Month Future", "category": "GLOBAL_INDEX",
+            "price": active["price"], "change": active["change"],
+            "change_pct": round(active["change"] / reference * 100.0, 4), "currency": "USD",
+            "source_name": "NSE International Exchange", "source_attribution": "Official NSE IX public market snapshot",
+            "source_url": GiftNiftyProvider.SNAPSHOT_URL, "source_authority": "PRIMARY",
+            "source_symbol": "NSEIX:NIFTY", "provider_symbol": "NSEIX:NIFTY",
+            "exchange": "NSEIX", "exchange_timezone": "Asia/Kolkata", "instrument_type": "INDEX_FUTURE",
+            "contract_expiry": active["expiry"].isoformat(), "instrument_token": active["token"],
+            "observation_timestamp": active["observed"].isoformat(), "published_at": active["observed"].isoformat(),
+            "retrieved_at": retrieved_at, "reference_value": reference, "reference_type": "PREVIOUS_CLOSE",
+            "reference_timestamp": "", "source_session": session, "source_session_detail": status_text,
+            "observation_mode": "OFFICIAL_NEAR_MONTH_FUTURE_SNAPSHOT", "volume_contracts": active["volume"],
         }
+
+    def fetch_raw_data(self) -> List[Dict[str, Any]]:
+        retrieved_at = _utc_now()
+        try:
+            if self.fixture_payload is not None:
+                payload, status_payload = self.fixture_payload, self.fixture_status or {}
+            else:
+                raw, _, status = safe_url_fetch(self.SNAPSHOT_URL, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}, timeout=20.0, max_size=256 * 1024)
+                if status != 200:
+                    raise ConnectionError(f"official NSE IX snapshot returned HTTP {status}")
+                status_raw, _, status_code = safe_url_fetch(self.STATUS_URL, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}, timeout=20.0, max_size=32 * 1024)
+                payload = json.loads(raw.decode("utf-8"))
+                status_payload = json.loads(status_raw.decode("utf-8")) if status_code == 200 else {}
+            record = self.parse_snapshot(payload, status_payload, retrieved_at)
+            _atomic_json(self.cache_path, record)
+            self.record_success([record])
+            return [record]
+        except Exception as exc:
+            cached = _load_json(self.cache_path)
+            if cached.get("source_symbol") == "NSEIX:NIFTY" and cached.get("observation_timestamp"):
+                cached.update({"cache_restored": True, "latest_fetch_failure": str(exc)[:240]})
+                self.cached_raw_data = [cached]
+                self.item_count = 1
+                self.record_failure(exc)
+                return [cached]
+            self.record_failure(exc)
+            return []
 
 
 class NiftyWeightsProvider:

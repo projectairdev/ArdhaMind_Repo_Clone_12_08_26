@@ -117,28 +117,95 @@ class WorkstationStateService:
         macro_workspace = macro.get("workspace_context") or {}
         usable_macro_keys = set(macro_workspace.get("current_context_quote_keys") or [])
         has_macro_cues = bool(usable_macro_keys)
+
+        flow_context = []
+        for flow in macro.get("institutional_flows") or []:
+            dataset = str(flow.get("dataset_type") or "").upper()
+            net = flow.get("net_value")
+            if dataset not in {"FII_CASH", "DII_CASH"} or not DataQualityService.is_valid_number(net):
+                continue
+            flow_context.append({
+                **flow,
+                "context": f"{dataset.replace('_CASH', '')}_CASH_{'BUYING' if float(net) > 0 else 'SELLING' if float(net) < 0 else 'BALANCED'}",
+            })
+        macro["institutional_context"] = {
+            "cash": flow_context,
+            "derivatives": specialized.get("positioning") or {},
+            "status": "AVAILABLE" if flow_context or specialized_records else "UNAVAILABLE",
+            "prediction": None,
+        }
+
+        gift = macro_quotes.get("GIFT_NIFTY") or {}
+        nifty_reference = market.get("previous_close") or market.get("current_spot")
+        gap_session_eligible = market_closed or str(market_state).upper() in {"PRE_OPEN", "PRE_MARKET"}
+        gap_ready = (
+            gap_session_eligible
+            and
+            "GIFT_NIFTY" in usable_macro_keys
+            and DataQualityService.is_valid_number(gift.get("price"), positive=True)
+            and DataQualityService.is_valid_number(nifty_reference, positive=True)
+        )
+        if gap_ready:
+            gap_points = float(gift["price"]) - float(nifty_reference)
+            gap_pct = gap_points / float(nifty_reference) * 100.0
+            direction = "POSITIVE_GAP_INDICATION" if gap_pct > 0.15 else "NEGATIVE_GAP_INDICATION" if gap_pct < -0.15 else "FLAT_OPEN_INDICATION"
+            magnitude = "LARGE" if abs(gap_pct) >= 1.0 else "MODERATE" if abs(gap_pct) >= 0.5 else "SMALL" if abs(gap_pct) > 0.15 else "FLAT"
+            macro["opening_gap"] = {
+                "status": "READY", "readiness": "READY", "nifty_reference_close": float(nifty_reference),
+                "gift_nifty_reference": float(gift["price"]), "gap_points": round(gap_points, 4),
+                "gap_pct": round(gap_pct, 4), "classification": direction, "magnitude": magnitude,
+                "observation_timestamp": gift.get("observation_timestamp"), "age_seconds": gift.get("age_seconds"),
+                "freshness": gift.get("freshness_status"), "source": gift.get("source_name"),
+                "contract_expiry": gift.get("contract_expiry"),
+                "provenance": "GIFT_NIFTY_FUTURE_MINUS_VALIDATED_NIFTY_REFERENCE_CLOSE",
+                "disclaimer": "Opening indication only; not a predicted NIFTY opening price.",
+            }
+        else:
+            macro["opening_gap"] = {
+                "status": "UNAVAILABLE", "readiness": "BLOCKED", "nifty_reference_close": nifty_reference,
+                "gift_nifty_reference": gift.get("price"), "gap_points": None, "gap_pct": None,
+                "classification": None, "failure_reason": "SESSION_OR_ELIGIBLE_GIFT_NIFTY_OR_NIFTY_REFERENCE_UNAVAILABLE",
+            }
+
+        iv_values = [float(row["iv"]) for row in options.get("iv_skew") or [] if DataQualityService.is_valid_number(row.get("iv"), positive=True)]
+        atm_ce, atm_pe = options.get("atm_ce_iv"), options.get("atm_pe_iv")
+        options["volatility_context"] = {
+            "status": "AVAILABLE" if iv_values and DataQualityService.is_valid_number(atm_ce, positive=True) and DataQualityService.is_valid_number(atm_pe, positive=True) else "UNAVAILABLE",
+            "india_vix_regime": macro["india_vix"].get("regime"),
+            "atm_ce_iv": atm_ce, "atm_pe_iv": atm_pe, "atm_average_iv": options.get("atm_iv"),
+            "ce_pe_iv_difference": round(float(atm_ce) - float(atm_pe), 4) if DataQualityService.is_valid_number(atm_ce) and DataQualityService.is_valid_number(atm_pe) else None,
+            "strike_iv_min": min(iv_values) if iv_values else None, "strike_iv_max": max(iv_values) if iv_values else None,
+            "strike_iv_dispersion": round(max(iv_values) - min(iv_values), 4) if iv_values else None,
+            "source": "Kite option chain; deterministic Black-Scholes convergence",
+            "fallback_iv_used": False,
+        }
+        payload = {**payload, "optionContext": options}
         broker_account = sanitize_read_only(payload.get("brokerAccount") or {})
 
         overall_state = "NOT_READY" if expired or market_status == SectionStatus.BLOCKED else ("DEGRADED" if news_status != SectionStatus.READY or not has_macro_cues else "READY")
 
+        premarket_inputs = {
+            "gift_nifty": "READY" if "GIFT_NIFTY" in usable_macro_keys else "UNAVAILABLE",
+            "global_indices": "READY" if usable_macro_keys & {"S&P 500", "NASDAQ", "DOW_JONES", "NIKKEI_225", "HANG_SENG"} else "UNAVAILABLE",
+            "commodities_fx": "READY" if usable_macro_keys & {"BRENT_CRUDE", "GOLD", "USD_INR", "DXY", "US_10Y"} else "UNAVAILABLE",
+            "fii_dii": "READY" if macro.get("institutional_flows") else "UNAVAILABLE",
+            "derivative_positioning": "READY" if specialized_records else "UNAVAILABLE",
+            "volatility": "READY" if macro["india_vix"].get("status") in {"AVAILABLE", "DEGRADED"} else "UNAVAILABLE",
+            "calendars": "READY" if macro.get("corporate_actions") or macro.get("economic_events") else "UNAVAILABLE",
+            "news": "READY" if news_status == SectionStatus.READY else "UNAVAILABLE",
+        }
+        ready_count = sum(value == "READY" for value in premarket_inputs.values())
+        full_premarket = all(premarket_inputs[key] == "READY" for key in ("gift_nifty", "global_indices", "commodities_fx", "fii_dii", "news"))
+        premarket_state = "READY" if full_premarket else "PARTIAL_READY" if ready_count >= 4 else "BLOCKED" if not market_available else "UNAVAILABLE"
         readiness = {
             "overall_state": overall_state,
             "pre_market_850_readiness": {
-                "gift_nifty": "READY" if "GIFT_NIFTY" in usable_macro_keys else "UNAVAILABLE",
-                "global_indices": "READY" if usable_macro_keys & {"S&P 500", "NASDAQ", "DOW_JONES", "NIKKEI_225", "HANG_SENG"} else "UNAVAILABLE",
-                "commodities_fx": "READY" if usable_macro_keys & {"BRENT_CRUDE", "GOLD", "USD_INR", "DXY", "US_10Y"} else "UNAVAILABLE",
-                "fii_dii": "READY" if macro.get("institutional_flows") else "UNAVAILABLE",
-                "derivative_positioning": "READY" if specialized_records else "UNAVAILABLE",
-                "volatility": "READY" if macro["india_vix"].get("status") in {"AVAILABLE", "DEGRADED"} else "UNAVAILABLE",
-                "calendars": "READY" if macro.get("corporate_actions") or macro.get("economic_events") else "UNAVAILABLE",
-                "news": "READY" if news_status == SectionStatus.READY else "UNAVAILABLE",
-                "is_full_premarket_ready": bool(
-                    "GIFT_NIFTY" in usable_macro_keys
-                    and "S&P 500" in usable_macro_keys
-                    and bool(usable_macro_keys & {"BRENT_CRUDE", "GOLD"})
-                    and macro.get("institutional_flows")
-                    and news_status == SectionStatus.READY
-                ),
+                **premarket_inputs,
+                "overall_state": premarket_state,
+                "ready_inputs": sorted(key for key, value in premarket_inputs.items() if value == "READY"),
+                "unavailable_inputs": sorted(key for key, value in premarket_inputs.items() if value == "UNAVAILABLE"),
+                "blocked_inputs": [] if market_available else ["validated_nifty_reference"],
+                "is_full_premarket_ready": full_premarket,
             },
             "nifty_live": cls._ready("NIFTY Live", market_status, cls._reasons(market_status)),
             "pre_market_planner": cls._ready("Pre-Market Planner", market_status,

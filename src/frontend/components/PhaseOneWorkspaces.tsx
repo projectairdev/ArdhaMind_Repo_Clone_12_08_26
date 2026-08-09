@@ -122,7 +122,8 @@ function LegacyPreMarketPlannerWorkspace() {
   const { eveningReport, canonicalState } = useWorkstationState();
   const premarket = canonicalState?.workspace_readiness?.pre_market_850_readiness;
   const available = Boolean(eveningReport?.timestamp && premarket?.is_full_premarket_ready);
-  const missing = Object.entries(premarket || {}).filter(([key, value]) => key !== "is_full_premarket_ready" && value !== "READY").map(([key]) => key.replaceAll("_", " "));
+  const readinessMeta = new Set(["is_full_premarket_ready", "overall_state", "ready_inputs", "unavailable_inputs", "blocked_inputs"]);
+  const missing = Object.entries(premarket || {}).filter(([key, value]) => !readinessMeta.has(key) && value !== "READY").map(([key]) => key.replaceAll("_", " "));
   const plannerNews: any[] = safeArray(canonicalState?.news_intelligence?.items) as any[];
   const events: any[] = safeArray(canonicalState?.macro_intelligence?.economic_events) as any[];
   return (
