@@ -189,7 +189,7 @@ export function SettingsDashboard() {
 
         {/* SECTION 1: BROKER CONNECTION */}
         <section className="p-5 bg-slate-900/40 border border-slate-800 rounded-xl space-y-4">
-          <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center gap-2 font-bold text-white text-xs uppercase tracking-wider font-mono">
               <KeyRound size={16} className="text-cyan-400" />
               1. Broker Gateway Connection
@@ -280,11 +280,11 @@ export function SettingsDashboard() {
             </span>
           </div>
 
-          <div className="space-y-2.5 text-xs font-mono">
+          <div data-provider-health-scroll className="max-h-[28rem] space-y-1 overflow-y-auto overflow-x-hidden pr-2 text-xs font-mono sm:max-h-[32rem]">
             {Object.entries({ ...providerHealth, ...macroHealth }).map(([name, value]: [string, any]) => (
-              <div key={name} className="flex justify-between items-center py-1 border-b border-slate-900">
+              <div key={name} className="flex min-w-0 flex-col gap-1 border-b border-slate-900 py-1.5 sm:flex-row sm:items-center sm:justify-between">
                 <div><span className="text-slate-300 font-bold block">{safeString(value.provider_name || name)}</span><span className="text-[9px] text-slate-500 block">Success: {value.last_successful_fetch ? formatDate(value.last_successful_fetch) : "Never"} · Attempt: {value.last_attempted_fetch ? formatDate(value.last_attempted_fetch) : "Never"}</span>{value.operational_error_reason && <span className="text-[9px] text-rose-400 block">Reason: {safeString(value.operational_error_reason)}</span>}</div>
-                <div className="flex items-center gap-2">
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <span className="text-[10px] text-slate-500" title={`Raw ${safeNumber(value.raw_item_count)} · Normalized ${safeNumber(value.normalized_item_count)} · Unique ${safeNumber(value.unique_item_count)} · Clusters ${safeNumber(value.event_cluster_count)} · Streams ${safeArray(value.discovery_streams).join(", ") || "N/A"} · Rate ${safeString(value.rate_limit_state || "N/A")}`}>R {safeNumber(value.raw_item_count, safeNumber(value.item_count, 0))} · N {safeNumber(value.normalized_item_count)} · U {safeNumber(value.unique_item_count)} · C {safeNumber(value.event_cluster_count)} · {safeString(value.rate_limit_state || "N/A")}</span>
                   <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold">
                     {safeString(value.status || "UNAVAILABLE").toUpperCase()}

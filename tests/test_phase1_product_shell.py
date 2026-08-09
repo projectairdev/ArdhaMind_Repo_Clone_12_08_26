@@ -25,8 +25,9 @@ def test_removed_surfaces_are_not_in_active_import_graph():
 
 
 def test_top_bar_has_only_product_status_categories():
-    for required in ["AIR", "ArdhaMind", "Market Feed", "Notifications", "Settings", "Kite"]:
+    for required in ["AIR", "ArdhaMind", "Feed", "Notifications", "Kite"]:
         assert required in TOP_BAR
+    assert 'aria-label="Settings"' not in TOP_BAR
     for forbidden in ["Portfolio Value", "Today’s P&L", "Practice Mode", "workspace rotation", "user email"]:
         assert forbidden not in TOP_BAR
 

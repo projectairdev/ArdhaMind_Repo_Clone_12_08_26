@@ -65,7 +65,7 @@ def test_sidebar_retains_six_workspaces_and_accessible_active_state():
     text = read("frontend/layout/DashboardLayout.tsx")
     assert text.count('{ id: "') == 6
     assert 'aria-current={active===item.id?"page":undefined}' in text
-    assert "READ ONLY" in text
+    assert "Decision intelligence only. Execution and order management are unavailable." not in text
 
 
 def test_nifty_metrics_and_movers_use_dense_responsive_grids():

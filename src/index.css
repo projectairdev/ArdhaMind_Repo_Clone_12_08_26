@@ -28,7 +28,7 @@ button, a, input, select { outline: none; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { box-shadow: 0 0 0 2px var(--air-bg), 0 0 0 4px var(--air-info); }
 .air-surface { background: var(--air-surface); border: 1px solid var(--air-line); }
 .air-raised { background: var(--air-surface-raised); border: 1px solid var(--air-line); }
-.air-grid { background-image: linear-gradient(var(--air-line) 1px, transparent 1px), linear-gradient(90deg, var(--air-line) 1px, transparent 1px); background-size: 32px 32px; }
+.air-grid { background-image: linear-gradient(color-mix(in srgb, var(--air-line) 55%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--air-line) 55%, transparent) 1px, transparent 1px); background-size: 32px 32px; }
 .air-data { font-variant-numeric: tabular-nums lining-nums; }
 .air-flash-up { animation: air-flash-up 620ms ease-out; }
 .air-flash-down { animation: air-flash-down 620ms ease-out; }

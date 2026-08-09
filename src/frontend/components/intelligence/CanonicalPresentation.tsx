@@ -53,6 +53,6 @@ export function ScenarioCard({ scenario }: { key?: string; scenario: any }) {
   </article>;
 }
 
-export function ExplicitState({ title, state, reason }: { title: string; state: unknown; reason: unknown }) {
+export function ExplicitState({ title, state, reason }: { key?: string; title: string; state: unknown; reason: unknown }) {
   return <section className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"><div className="flex items-center justify-between gap-3"><strong className="text-[10px] text-white">{title}</strong><SemanticBadge value={state} kind="readiness" /></div><p className="mt-2 text-[10px] text-slate-500">{safeString(reason || "No additional detail is available.")}</p></section>;
 }
