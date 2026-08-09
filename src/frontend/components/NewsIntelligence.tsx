@@ -251,12 +251,12 @@ export function NewsIntelligence() {
       <div className="space-y-4">
         {/* Live Feed Tab */}
         {activeTab === "live" && (
-          <div className="space-y-4">
+          <div className="overflow-hidden rounded-lg border border-[var(--air-line)] bg-[var(--air-surface)]">
             {liveItems.length === 0 ? (
               <p className="text-xs text-slate-500 italic">No news items ingested. Try triggering a Manual Fetch.</p>
             ) : (
               liveItems.map((item, idx) => (
-                <div key={item.id || idx} className="p-4 bg-slate-900/40 border border-slate-800 rounded-lg space-y-2 hover:bg-slate-900/60 transition">
+                <article key={item.id || idx} className="border-b border-[var(--air-line)] px-3 py-2.5 last:border-0 hover:bg-slate-900/50">
                   <div className="flex justify-between items-start gap-4">
                     <a
                       href={safeString(item.original_url || item.discovery_url)}
@@ -268,11 +268,10 @@ export function NewsIntelligence() {
                     </a>
                     {getDirectionBadge(item.expected_direction)}
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">{stripHtml(item.summary_snippet || item.summary || item.description)}</p>
-                  {item.why_it_matters && <p className="text-xs text-cyan-300"><span className="font-semibold">Why it matters:</span> {safeString(item.why_it_matters)}</p>}
+                  <details className="mt-1"><summary className="cursor-pointer text-[9px] text-slate-600 hover:text-cyan-300">Context and transmission</summary><p className="mt-2 text-[10px] leading-relaxed text-slate-400">{stripHtml(item.summary_snippet || item.summary || item.description)}</p>{item.why_it_matters && <p className="mt-1 text-[10px] text-cyan-300"><span className="font-semibold">Why it matters:</span> {safeString(item.why_it_matters)}</p>}</details>
 
                   {/* Item badges */}
-                  <div className="flex flex-wrap items-center gap-3 pt-2 text-[10px] font-mono text-slate-500 border-t border-slate-900">
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-[9px] font-mono text-slate-500">
                     <span className="flex items-center gap-1 text-slate-400 font-semibold uppercase">{safeString(item.source_name)}</span>
                     <span>•</span>
                     <span className="flex items-center gap-1 uppercase">{safeString(item.category)}</span>
@@ -296,7 +295,7 @@ export function NewsIntelligence() {
                       {safeString(item.verification_status)}
                     </span>
                   </div>
-                </div>
+                </article>
               ))
             )}
           </div>
@@ -304,7 +303,7 @@ export function NewsIntelligence() {
 
         {/* Market Impact Tab */}
         {activeTab === "impact" && (
-          <div className="space-y-4">
+          <div className="space-y-2">
             {clusters.length === 0 ? (
               <p className="text-xs text-slate-500 italic">No distinct NIFTY-relevant event clusters are available.</p>
             ) : (
@@ -369,7 +368,7 @@ export function NewsIntelligence() {
               <p className="text-xs text-slate-500 italic">No canonical events match this window and filter.</p>
             ) : (
               filteredEvents.map((ev, idx) => (
-                <div key={ev.event_id || idx} data-economic-event={ev.event_id} className="p-4 bg-slate-900/30 border border-slate-800 rounded-lg space-y-3">
+                <div key={ev.event_id || idx} data-economic-event={ev.event_id} className="border-b border-[var(--air-line)] bg-[var(--air-surface)] px-3 py-2.5 last:border-0">
                   <div className="flex flex-col md:flex-row md:justify-between gap-3">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">

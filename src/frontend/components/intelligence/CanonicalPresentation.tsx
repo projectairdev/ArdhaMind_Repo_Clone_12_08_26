@@ -44,7 +44,8 @@ export function KeyLevelsPanel({ levels }: { levels: unknown }) {
 }
 
 export function ScenarioCard({ scenario }: { key?: string; scenario: any }) {
-  return <article data-canonical-scenario={safeString(scenario?.name)} className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-[10px] text-slate-300">
+  const primary = safeString(scenario?.priority).toUpperCase().includes("PRIMARY");
+  return <article data-canonical-scenario={safeString(scenario?.name)} className={`rounded-lg border bg-slate-950/60 p-3 text-[10px] text-slate-300 ${primary ? "border-cyan-800/70" : "border-slate-800"}`}>
     <div className="flex items-center justify-between gap-2"><strong className="text-cyan-300">{safeString(scenario?.name).replaceAll("_", " ")}</strong><SemanticBadge value={scenario?.priority} /></div>
     <div className="mt-2"><b>Confirm:</b> {safeArray(scenario?.confirmation_conditions).join(" · ") || "UNAVAILABLE"}</div>
     <div className="mt-1 text-rose-300"><b>Invalidate:</b> {safeArray(scenario?.invalidation_conditions).join(" · ") || "UNAVAILABLE"}</div>

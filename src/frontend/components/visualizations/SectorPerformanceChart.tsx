@@ -25,7 +25,7 @@ export function SectorPerformanceChart() {
   }
 
   return (
-    <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-4 text-left font-sans">
+    <div className="rounded-lg border border-[var(--air-line)] bg-[var(--air-surface)] p-4 text-left font-sans">
       <div className="flex justify-between items-center border-b border-slate-800 pb-3">
         <div className="flex items-center gap-2">
           <PieChart size={16} className="text-cyan-400" />
@@ -36,16 +36,20 @@ export function SectorPerformanceChart() {
         </span>
       </div>
 
-      <div className="space-y-2.5 font-mono text-xs">
+      <div className="font-mono text-xs">
         {sectors.map((s: any, idx: number) => {
           const changePct = safeNumber(s.change_pct, 0);
           const isPositive = changePct >= 0;
           const barWidth = Math.min(100, Math.abs(changePct) * 40);
           return (
-            <div key={idx} className="space-y-1">
-              <div className="flex justify-between items-center text-[11px]">
+            <div key={idx} className="grid grid-cols-[minmax(7rem,1fr)_5rem_5rem] items-center gap-3 border-b border-[var(--air-line)] py-1.5 last:border-0">
+              <div className="flex min-w-0 justify-between text-[10px]">
                 <span className="font-bold text-white">{s.name}</span>
-                <div className="flex items-center gap-2">
+              </div>
+              <div className="h-1 overflow-hidden bg-slate-950">
+                <div className={`h-full ${isPositive ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={{ width: `${barWidth}%` }}/>
+              </div>
+                <div className="flex items-center justify-end gap-2">
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-850">
                     {safeString(s.observation_mode || "UNAVAILABLE")}
                   </span>
@@ -53,13 +57,6 @@ export function SectorPerformanceChart() {
                     {isPositive ? "+" : ""}{formatNumber(changePct, 2)}%
                   </span>
                 </div>
-              </div>
-              <div className="h-2 w-full bg-slate-950 rounded overflow-hidden flex">
-                <div
-                  className={`h-full rounded ${isPositive ? "bg-emerald-500" : "bg-rose-500"}`}
-                  style={{ width: `${barWidth}%` }}
-                ></div>
-              </div>
             </div>
           );
         })}
