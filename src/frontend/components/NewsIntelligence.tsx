@@ -21,6 +21,7 @@ import {
   formatDate,
   formatDateTimeIST
 } from "../utils/safeHelpers";
+import { SemanticBadge } from "./intelligence/CanonicalPresentation";
 
 export function NewsIntelligence() {
   const { canonicalState, lastValidState, syncing: loading, diagnosticsError } = useWorkstationState();
@@ -191,10 +192,7 @@ export function NewsIntelligence() {
           {refreshStatus && (
             <span className="text-[10px] font-mono text-slate-400 max-w-[150px] truncate">{refreshStatus}</span>
           )}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-900 rounded border border-slate-800">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-            <span className="text-[10px] font-mono text-slate-400 uppercase">Coverage: {safeString(news.coverage_status || "UNAVAILABLE")} · Freshness: {safeString(news.freshness)}</span>
-          </div>
+          <div className="flex items-center gap-1.5"><SemanticBadge value={news.coverage_status} kind="readiness"/><SemanticBadge value={news.freshness} kind="freshness"/></div>
         </div>
       </div>
 
@@ -209,7 +207,7 @@ export function NewsIntelligence() {
           }`}
         >
           <Activity size={13} />
-          <span>Live Feed</span>
+          <span>Market-moving</span>
         </button>
         <button
           onClick={() => setActiveTab("impact")}

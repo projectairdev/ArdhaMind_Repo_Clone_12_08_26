@@ -88,7 +88,11 @@ export function SettingsDashboard() {
     const diagnosticPayload = {
       timestamp: new Date().toISOString(),
       workspaceContext,
-      brokerStatus: broker,
+      brokerStatus: {
+        status: safeString(broker?.status || "UNAVAILABLE"),
+        reconnect_required: Boolean(canonicalState?.broker_status?.reconnect_required),
+        session_valid: canonicalState?.broker_status?.session_valid,
+      },
       marketData: market,
       dataQuality: canonicalState?.data_quality,
       newsTemporalDiagnostics: canonicalState?.news_intelligence?.temporal_diagnostics,
@@ -204,7 +208,7 @@ export function SettingsDashboard() {
             </div>
             <div className="flex justify-between py-1 border-b border-slate-900">
               <span className="text-slate-500">Account Client ID:</span>
-              <span className="font-bold text-cyan-400">{brokerAccount?.client_id && brokerAccount.client_id !== "N/A" ? brokerAccount.client_id : "Unavailable — profile fetch failed"}</span>
+              <span className="font-bold text-cyan-400">{brokerAccount?.client_id && brokerAccount.client_id !== "N/A" ? "PROFILE VALIDATED — IDENTIFIER HIDDEN" : "Unavailable — profile fetch failed"}</span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-900"><span className="text-slate-500">Session Validity:</span><span className="text-slate-300">{isConnected ? (canonicalState?.broker_status?.session_valid === false ? "INVALID" : "CONNECTED (PROFILE VALIDATED)") : "INVALID / DISCONNECTED"}</span></div>
             <div className="flex justify-between py-1 border-b border-slate-900"><span className="text-slate-500">Last Authenticated:</span><span className="text-slate-300">{canonicalState?.broker_status?.last_authenticated_at ? formatDate(canonicalState.broker_status.last_authenticated_at) : "Unavailable"}</span></div>

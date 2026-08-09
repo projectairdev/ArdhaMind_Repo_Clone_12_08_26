@@ -10,6 +10,8 @@ import { GlobalMarketsDashboard } from "./visualizations/GlobalMarketsDashboard"
 import { HistoricalTelemetryCharts } from "./visualizations/HistoricalTelemetryCharts";
 import { AIInterpretationCard } from "./AIInterpretationCard";
 import { ParticipantPositioningWidget, VolatilityContextWidget } from "./SpecializedIntelligence";
+import { UnifiedIntelligencePanel } from "./UnifiedIntelligencePanel";
+import { ProvenanceLine, SemanticBadge } from "./intelligence/CanonicalPresentation";
 
 export type NiftyLiveView = "overview" | "price-trend" | "options";
 
@@ -35,11 +37,10 @@ function SpotSummary() {
       <div className="text-right font-mono"><div className="text-2xl font-bold text-white">{spot != null ? formatNumber(spot, 2) : "--"}</div><div className="text-xs text-slate-400">{hasComparison ? `${change >= 0 ? "+" : ""}${formatNumber(change, 2)} pts` : "Previous-session comparison unavailable"}</div></div>
     </div>
     <div className="mt-3 flex flex-wrap items-center gap-4 text-[11px] font-mono text-slate-400">
-      <span className="flex items-center gap-1 font-semibold text-emerald-400"><ShieldCheck size={13}/>Quality: {dq.quality_status === "valid" ? "VALIDATED" : safeString(dq.quality_status || "UNAVAILABLE").toUpperCase()}</span>
-      <span>Session: {safeString(canonicalState?.market_session?.status || marketContext?.trading_session || "UNAVAILABLE").toUpperCase()}</span>
-      <span>Source: {safeString(dq.source || "UNAVAILABLE")}</span>
-      <span>Observed: {dq.observed_at ? formatDate(dq.observed_at) : "UNAVAILABLE"}</span>
-      <span className="text-amber-400">{isClosed ? "MARKET_CLOSED" : safeString(dq.freshness_status).toUpperCase()}</span>
+      <span className="flex items-center gap-1 font-semibold text-emerald-400"><ShieldCheck size={13}/>Canonical quality</span>
+      <SemanticBadge value={dq.quality_status === "valid" ? "VALID" : dq.quality_status}/>
+      <SemanticBadge value={canonicalState?.market_session?.status || marketContext?.trading_session}/>
+      <ProvenanceLine source={dq.source} observedAt={dq.observed_at ? formatDate(dq.observed_at) : undefined} freshness={isClosed ? "LAST_VALID_SESSION" : dq.freshness_status}/>
     </div>
   </div>;
 }
@@ -111,7 +112,8 @@ function OptionsPanel() {
 }
 
 export function NiftyLiveWorkspace({ view = "overview" }: { view?: NiftyLiveView }) {
-  if (view === "price-trend") return <PriceTrendPanel />;
-  if (view === "options") return <OptionsPanel />;
-  return <OverviewPanel />;
+  return <div className="space-y-5">
+    <UnifiedIntelligencePanel workspace="NIFTY_LIVE" />
+    {view === "price-trend" ? <PriceTrendPanel /> : view === "options" ? <OptionsPanel /> : <OverviewPanel />}
+  </div>;
 }
