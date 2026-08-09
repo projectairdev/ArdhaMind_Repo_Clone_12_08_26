@@ -12,6 +12,7 @@ from src.models.data_quality import FreshnessStatus, SectionStatus, ValueClassif
 from src.models.decision_support import DecisionSupportReport
 from src.news_engine.temporal_integrity import assess_publication_time, strict_publication_timestamp
 from src.news_engine.macro_integrity import assess_macro_observation, aggregate_quote_freshness
+from src.intelligence_engine import UnifiedNiftyIntelligenceBuilder
 
 
 class WorkstationStateService:
@@ -218,6 +219,14 @@ class WorkstationStateService:
                 cls._reasons(market_status, option_status)),
             "settings": cls._ready("Settings", SectionStatus.READY, []),
         }
+        unified = UnifiedNiftyIntelligenceBuilder.build(
+            market=market, technical=sanitize_read_only(payload.get("technicalAnalysis") or {}),
+            options=options, macro=macro, news=news, market_state=market_state,
+            market_meta=market_meta.to_dict(), option_meta=option_meta.to_dict(), now=current,
+        )
+        for workspace_key in ("pre_market_planner", "todays_analysis", "live_assistant"):
+            readiness[workspace_key]["unified_intelligence_mode"] = unified["mode"]
+            readiness[workspace_key]["unified_intelligence_readiness"] = unified["readiness"]
         blockers = cls._reasons(market_status, option_status)
         support = DecisionSupportReport(
             market_interpretation="Validated analytical context" if not blockers else "Analytical context incomplete",
@@ -226,6 +235,45 @@ class WorkstationStateService:
             missing_confirmations=blockers, blockers=blockers,
             warnings=["Live broker session requires reconnect"] if expired else [],
         )
+        support_payload = {
+            **support.to_dict(),
+            "unified_intelligence_engine": unified["engine"],
+            "session_mode": unified["mode"],
+            "alignment": unified["alignment"],
+            "confirming_signals": unified["confirming_signals"],
+            "opposing_signals": unified["opposing_signals"],
+            "unavailable_or_ineligible_signals": unified["unavailable_or_ineligible_signals"],
+            "market_regime": unified["market_regime"],
+            "key_levels": unified["key_levels"],
+            "scenarios": unified["scenarios"],
+            "invalidation_conditions": unified["invalidation_conditions"],
+            "risk": unified["risk"], "confidence": unified["confidence"],
+            "human_decision_required": True, "execution_authorized": False,
+        }
+        explanation_payload = {
+            **sanitize_read_only(payload.get("explanationReport") or {}),
+            "status": assistant_status.value, "engine": unified["engine"],
+            "deterministic": True, "llm_dependency": False,
+            "summary": unified["explanation"],
+            "evidence": {name: signal["evidence"] for name, signal in unified["signals"].items()},
+            "confirming_signals": unified["confirming_signals"],
+            "opposing_signals": unified["opposing_signals"],
+        }
+        confidence_payload = {
+            **sanitize_read_only(payload.get("confidenceReport") or {}),
+            "unified_evidence_quality": unified["confidence"],
+            "evidence_completeness": unified["evidence_completeness"],
+            "agreement_state": unified["alignment"],
+            "explainable": True,
+        }
+        risk_payload = {
+            **sanitize_read_only(payload.get("riskReport") or {}),
+            "unified_analytical_risk": unified["risk"],
+            "event_risk": unified["signals"]["events"],
+            "volatility_risk": unified["signals"]["volatility"],
+            "data_quality_risk": unified["unavailable_or_ineligible_signals"],
+            "position_sizing": None,
+        }
         def section(name: str, status: SectionStatus, fallback: Any = None) -> dict[str, Any]:
             value = sanitize_read_only(payload.get(name) or fallback or {})
             if status == SectionStatus.UNAVAILABLE and name in {"marketContext", "optionContext"}:
@@ -249,8 +297,8 @@ class WorkstationStateService:
             section("optionContext", option_status), section("marketScore", market_status),
             section("opportunityContext", market_status), section("strategyEvaluation", assistant_status),
             sanitize_read_only(payload.get("tradeScenarios") or []),
-            section("confidenceReport", assistant_status), section("riskReport", market_status),
-            sanitize_read_only(payload.get("decisionReport") or support.to_dict()), section("explanationReport", assistant_status),
+            {**confidence_payload, "status": assistant_status.value}, {**risk_payload, "status": market_status.value},
+            support_payload, explanation_payload,
             section("newsSentiment", news_status), broker_account or None, section("operationsReport", SectionStatus.READY),
             readiness, {"market_data": market_meta.to_dict(), "option_intelligence": option_meta.to_dict()},
             sanitize_read_only(payload.get("eveningReport") or {}),
@@ -259,6 +307,7 @@ class WorkstationStateService:
             sanitize_read_only(payload.get("optimizationReport") or {}),
             sanitize_read_only(payload.get("analyticsReport") or {}),
             macro,
+            unified,
             warnings=support.warnings, errors=[],
         )
 

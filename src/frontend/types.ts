@@ -1566,6 +1566,8 @@ export interface CanonicalWorkstationState {
   validation_report: any;
   optimization_report: any;
   analytics_report: any;
+  macro_intelligence?: any;
+  unified_intelligence?: any;
   warnings: string[];
   errors: string[];
 }

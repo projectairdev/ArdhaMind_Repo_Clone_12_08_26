@@ -18,6 +18,7 @@ import { SystemReadinessWidget } from "./SystemReadinessWidget";
 import { NiftyLiveWorkspace as NiftyLiveView } from "./NiftyLiveWorkspace";
 import { SettingsDashboard } from "./SettingsDashboard";
 import { ErrorBoundary } from "./ErrorBoundary";
+import { UnifiedIntelligencePanel } from "./UnifiedIntelligencePanel";
 
 export type ReadinessKind = "initializing" | "unavailable" | "stale" | "blocked" | "closed" | "expired" | "partial" | "error";
 
@@ -145,8 +146,8 @@ function LegacyPreMarketPlannerWorkspace() {
 export function TodaysAnalysisWorkspace() {
   const { marketContext, canonicalState } = useWorkstationState();
   const closed = Boolean(canonicalState?.market_session?.is_closed);
-  if (closed) return <div className="space-y-5"><Heading eyebrow="Meaning, not headlines" title="Today's Analysis" description="Validated last-session and post-close context."/><ReadinessState kind="closed" title="LAST_SESSION_ANALYSIS" reason="Historical and post-close context only; live confirmation logic is disabled."/><ClosedSessionIntelligence mode="analysis"/></div>;
-  return <div className="space-y-5"><Heading eyebrow="Meaning, not headlines" title="Today’s Analysis" description="Why NIFTY is behaving as it is and which scenarios are confirming or failing."/>{marketContext?.current_spot && marketContext.feed_health === "HEALTHY" ? <MarketStory/> : <ReadinessState kind="blocked" title="Today’s Analysis is waiting" reason="A healthy current-session market feed is required before interpreting the session."/>}</div>;
+  if (closed) return <div className="space-y-5"><Heading eyebrow="Meaning, not headlines" title="Today's Analysis" description="Validated last-session and post-close context."/><ReadinessState kind="closed" title="LAST_SESSION_ANALYSIS" reason="Historical and post-close context only; live confirmation logic is disabled."/><UnifiedIntelligencePanel workspace="TODAYS_ANALYSIS"/><ClosedSessionIntelligence mode="analysis"/></div>;
+  return <div className="space-y-5"><Heading eyebrow="Meaning, not headlines" title="Today’s Analysis" description="Why NIFTY is behaving as it is and which scenarios are confirming or failing."/><UnifiedIntelligencePanel workspace="TODAYS_ANALYSIS"/>{marketContext?.current_spot && marketContext.feed_health === "HEALTHY" ? <MarketStory/> : <ReadinessState kind="blocked" title="Today’s Analysis is waiting" reason="A healthy current-session market feed is required before interpreting the session."/>}</div>;
 }
 
 export function NewsUpdatesWorkspace() {
@@ -161,10 +162,11 @@ export function NewsUpdatesWorkspace() {
 export function LiveAssistantWorkspace() {
   const { canonicalState, marketContext } = useWorkstationState() as any;
   const isClosed = Boolean(canonicalState?.market_session?.is_closed || marketContext?.session_mode === "LAST_SESSION");
-  if (isClosed) return <div className="space-y-5"><Heading eyebrow="Plan versus live market" title="Live Assistant" description="Closed-session intelligence from verified canonical inputs."/><ReadinessState kind="closed" title="CLOSED_SESSION_READY" reason="Live intraday confirmation, option-building and invalidation logic is disabled."/><ClosedSessionIntelligence mode="assistant"/></div>;
+  if (isClosed) return <div className="space-y-5"><Heading eyebrow="Plan versus live market" title="Live Assistant" description="Closed-session intelligence from verified canonical inputs."/><ReadinessState kind="closed" title="CLOSED_SESSION_READY" reason="Live intraday confirmation, option-building and invalidation logic is disabled."/><UnifiedIntelligencePanel workspace="LIVE_ASSISTANT"/><ClosedSessionIntelligence mode="assistant"/></div>;
   return (
     <div className="space-y-5">
       <Heading eyebrow="Plan versus live market" title="Live Assistant" description="Current scenario, confirmations, invalidations, changes and what to watch next."/>
+      <UnifiedIntelligencePanel workspace="LIVE_ASSISTANT"/>
       {marketContext?.feed_health === "HEALTHY" ? <><IntradayAssistant/><DecisionEngine/></> : <ReadinessState kind="blocked" title="Live Assistant is waiting" reason="A healthy current-session market feed is required."/>}
     </div>
   );
