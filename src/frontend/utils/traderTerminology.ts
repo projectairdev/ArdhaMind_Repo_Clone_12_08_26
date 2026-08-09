@@ -61,7 +61,7 @@ export function mapTraderEnum(val: unknown, domain: TermDomain = "general"): str
     "MARKET_CLOSED": "Market Closed",
     "CLOSED": "Market Closed",
     "LAST_VALID_SESSION": "Previous Trading Session",
-    "LAST_SESSION": "Previous Trading Session",
+    "LAST_SESSION": "Previous Session",
     "HOLIDAY": "Trading Holiday",
     "WEEKEND": "Market Closed · Weekend",
     "POST_CLOSE": "Market Closed",
@@ -77,6 +77,7 @@ export function mapTraderEnum(val: unknown, domain: TermDomain = "general"): str
     "PARTIAL": "Partial",
     "READY": "Ready",
     "HEALTHY": "Healthy",
+    "PREVIOUS_COMPARISON_NOT_AVAILABLE_YET": "Previous comparison not available yet",
     "UNAVAILABLE": "Unavailable",
     "DEGRADED": "Degraded Data Source",
     "STALE": "Stale Data",
@@ -93,6 +94,19 @@ export function mapTraderEnum(val: unknown, domain: TermDomain = "general"): str
     // Risk environments
     "RISK_ON": "Risk-On Environment",
     "RISK_OFF": "Risk-Off Environment",
+
+    // Temporal Context & Decision Usability
+    "CURRENT_SESSION": "Current Session",
+    "PREVIOUS_SESSION": "Previous Trading Session",
+    "OVERNIGHT_SINCE_CLOSE": "Since India Close",
+    "FOREIGN_SESSION": "Latest Foreign Session",
+    "CURRENT_ELIGIBLE": "Current Session Eligible",
+    "CONTEXT_ONLY": "Context Only",
+    "INELIGIBLE": "Ineligible",
+    "PRICE_STRUCTURE": "Price Structure",
+    "OPTION_OI": "Option OI",
+    "MAX_PAIN": "Max Pain Level",
+    "ATM": "ATM Strike",
 
     // Professional positioning
     "NET_SHORT": "Net Short Bias",

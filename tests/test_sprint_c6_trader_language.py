@@ -53,7 +53,9 @@ def test_market_closed_human_readable():
 def test_premarket_subtitle_no_canonical_inputs():
     text = read("frontend/components/PreMarketPlannerWorkspace.tsx")
     assert "Three purpose-specific preparation views backed by canonical inputs." not in text
-    assert "Prepare for the next NIFTY session." in text
+    # C.8.1 replaced the static subtitle with TomorrowsOutlookCard rendering
+    # the trader-facing outlook directly — verify trader-facing structure exists
+    assert "TomorrowsOutlookCard" in text
 
 
 def test_centralized_terminology_mapping():

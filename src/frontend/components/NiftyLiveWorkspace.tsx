@@ -11,7 +11,7 @@ import { GlobalMarketsDashboard } from "./visualizations/GlobalMarketsDashboard"
 import { HistoricalTelemetryCharts } from "./visualizations/HistoricalTelemetryCharts";
 import { AIInterpretationCard } from "./AIInterpretationCard";
 import { ParticipantPositioningWidget, VolatilityContextWidget } from "./SpecializedIntelligence";
-import { ProvenanceLine, SemanticBadge } from "./intelligence/CanonicalPresentation";
+import { DecisionZonesPanel, ProvenanceLine, SemanticBadge } from "./intelligence/CanonicalPresentation";
 
 export type NiftyLiveView = "overview" | "price-trend" | "options";
 
@@ -121,7 +121,7 @@ function OverviewPanel() {
 }
 
 function PriceTrendPanel() {
-  const { marketContext } = useWorkstationState() as any;
+  const { marketContext, canonicalState } = useWorkstationState() as any;
   const candles = safeArray(marketContext?.candles) as any[];
   const highs = candles.map(c => safeNumber(c.h, NaN)).filter(Number.isFinite);
   const lows = candles.map(c => safeNumber(c.l, NaN)).filter(Number.isFinite);
@@ -135,7 +135,7 @@ function PriceTrendPanel() {
       <Metric label="EMA 20 / 50" value={marketContext?.ema_20 && marketContext?.ema_50 ? `${formatNumber(marketContext.ema_20, 2)} / ${formatNumber(marketContext.ema_50, 2)}` : "UNAVAILABLE"} detail="Calculated from verified prices"/>
       <Metric label="Trend / Volatility" value={`${mapTraderEnum(marketContext?.market_regime || "UNKNOWN")} · ${mapTraderEnum(marketContext?.trend_direction || "UNKNOWN")} · ${mapTraderEnum(marketContext?.volatility_state || "UNKNOWN")}`}/>
     </div>
-    <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Key Levels to Watch</h3><p className="mt-2 text-xs text-slate-300">Support: {supports.length ? supports.map(v => formatNumber(v, 2)).join(", ") : "UNAVAILABLE"} · Resistance: {resistances.length ? resistances.map(v => formatNumber(v, 2)).join(", ") : "UNAVAILABLE"}</p></section>
+    <DecisionZonesPanel zones={canonicalState?.unified_intelligence?.decision_zones} rawLevels={canonicalState?.unified_intelligence?.key_levels} />
     <HistoricalTelemetryCharts />
   </div>;
 }

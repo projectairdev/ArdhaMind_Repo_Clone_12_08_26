@@ -35,6 +35,23 @@ class WorkstationStateService:
         market_closed = str(market_state).upper() in {"CLOSED", "MARKET_CLOSED", "POST_MARKET", "HOLIDAY", "TRADING_HOLIDAY"}
         expired = str(broker_state).upper() in {"SESSION_EXPIRED", "TOKEN_EXPIRED", "EXPIRED"}
         market = sanitize_read_only(payload.get("marketContext") or {})
+        raw_candles = market.get("candles") or []
+        valid_candles, candle_errors = DataQualityService.validate_candles(raw_candles)
+        market["candles"] = valid_candles
+        if candle_errors:
+            market["candle_validation_warnings"] = candle_errors
+
+        tech = sanitize_read_only(payload.get("technicalAnalysis") or {})
+        if not tech.get("vwap") or tech.get("vwap") == 0:
+            tech["vwap_status"] = "UNAVAILABLE"
+            tech["vwap_reason"] = "Index spot data has no volume; VWAP requires volume-weighted ticks."
+        if not tech.get("ema_20") or not tech.get("ema_50"):
+            tech["ema_status"] = "UNAVAILABLE"
+            tech["ema_reason"] = "Requires minimum 50 historical candles for calculation."
+        if tech.get("trend_direction") in {None, "", "UNKNOWN"}:
+            tech["trend_reason"] = "Insufficient validated historical candles to establish technical trend direction."
+        payload["technicalAnalysis"] = tech
+
         options = sanitize_read_only(payload.get("optionContext") or {})
         market_observed = cls._timestamp(market)
         option_observed = cls._timestamp(options)

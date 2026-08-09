@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, time as dt_time
+from datetime import datetime, timedelta, timezone, time as dt_time
 from typing import Optional, List
 
 logger = logging.getLogger("MarketStatusService")
@@ -32,6 +32,7 @@ class MarketStatusReport:
     next_session_start: str
     timezone: str = "Asia/Kolkata"
     current_time_ist: str = ""
+    calendar_verified: bool = True
 
 class MarketStatusService:
     """
@@ -56,6 +57,8 @@ class MarketStatusService:
         """Converts UTC or Local time to Asia/Kolkata (IST: UTC + 5 hours 30 mins) time."""
         if current_utc is None:
             current_utc = datetime.utcnow()
+        elif current_utc.tzinfo is not None:
+            current_utc = current_utc.astimezone(timezone.utc).replace(tzinfo=None)
         # Explicitly calculate IST offset (UTC + 5:30)
         ist_offset = timedelta(hours=5, minutes=30)
         return current_utc + ist_offset
@@ -147,5 +150,6 @@ class MarketStatusService:
             is_holiday=is_h,
             remaining_seconds=remaining_seconds,
             next_session_start=next_session_start_str,
-            current_time_ist=current_time_ist_str
+            current_time_ist=current_time_ist_str,
+            calendar_verified=next_session_dt.year <= 2026
         )

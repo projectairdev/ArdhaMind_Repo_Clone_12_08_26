@@ -101,3 +101,44 @@ class DataQualityService:
     def _iso(value: Any) -> Optional[str]:
         parsed = DataQualityService.parse_time(value)
         return parsed.isoformat().replace("+00:00", "Z") if parsed else None
+
+    @classmethod
+    def validate_candles(cls, candles: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+        """Authoritative candle-validation boundary.
+        Validates OHLC invariants:
+          low <= open <= high
+          low <= close <= high
+          Strict chronological order
+          Deduplicates timestamps
+        """
+        valid_candles = []
+        errors = []
+        seen_timestamps = set()
+
+        for idx, c in enumerate(candles or []):
+            try:
+                o = float(c.get("o", c.get("open", 0)))
+                h = float(c.get("h", c.get("high", 0)))
+                l = float(c.get("l", c.get("low", 0)))
+                cl = float(c.get("c", c.get("close", 0)))
+                t = str(c.get("t", c.get("time", c.get("timestamp", ""))))
+            except (TypeError, ValueError):
+                errors.append(f"Candle {idx}: non-numeric OHLC values")
+                continue
+
+            if not (l <= o <= h) or not (l <= cl <= h):
+                errors.append(f"Candle {idx} ({t}): OHLC invariant violation (o={o}, h={h}, l={l}, c={cl})")
+                continue
+
+            if not t or t in seen_timestamps:
+                errors.append(f"Candle {idx} ({t}): missing or duplicate timestamp")
+                continue
+
+            seen_timestamps.add(t)
+            valid_candles.append({
+                "o": o, "h": h, "l": l, "c": cl, "v": float(c.get("v", c.get("volume", 0))),
+                "time": t, "timestamp": t
+            })
+
+        valid_candles.sort(key=lambda x: x["time"])
+        return valid_candles, errors

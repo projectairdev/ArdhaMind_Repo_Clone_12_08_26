@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Activity, BookOpen, Calendar, Newspaper, Radio, Sliders } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useWorkstationState } from "../context/WorkstationStateContext";
-import { LiveAssistantWorkspace, NewsUpdatesWorkspace, NiftyLiveWorkspace, PreMarketPlannerWorkspace, SettingsWorkspace, TodaysAnalysisWorkspace } from "../components/PhaseOneWorkspaces";
+import { LiveAssistantWorkspace, NewsUpdatesWorkspace, PreMarketPlannerWorkspace, SettingsWorkspace, TodaysAnalysisWorkspace } from "../components/PhaseOneWorkspaces";
+import { NiftyLiveWorkspace } from "../components/NiftyLiveWorkspace";
 import { WorkstationTopBar } from "../components/WorkstationTopBar";
 
 export const PRIMARY_WORKSPACES = [

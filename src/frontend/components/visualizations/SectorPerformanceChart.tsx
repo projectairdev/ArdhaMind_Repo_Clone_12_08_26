@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { useWorkstationState } from "../../context/WorkstationStateContext";
 import { Activity, TrendingUp, TrendingDown, PieChart } from "lucide-react";
+import { mapTraderEnum } from "../../utils/traderTerminology";
 import { safeNumber, safeString, formatNumber } from "../../utils/safeHelpers";
 
 export function SectorPerformanceChart() {
@@ -24,39 +25,53 @@ export function SectorPerformanceChart() {
     );
   }
 
+  const firstMode = sectors[0]?.observation_mode || "LAST_SESSION";
+  const allSameMode = sectors.every((s: any) => (s.observation_mode || firstMode) === firstMode);
+  const commonModeLabel = mapTraderEnum(firstMode);
+
   return (
     <div className="rounded-lg border border-[var(--air-line)] bg-[var(--air-surface)] p-4 text-left font-sans">
-      <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
         <div className="flex items-center gap-2">
           <PieChart size={16} className="text-cyan-400" />
           <h3 className="font-bold text-white text-xs uppercase tracking-wider font-mono">Sector Performance & Relative Strength</h3>
         </div>
-        <span className="text-[10px] font-mono text-cyan-400 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
-          Ranked by Relative Strength
-        </span>
+        <div className="flex items-center gap-2 font-mono text-[10px]">
+          {allSameMode && (
+            <span className="whitespace-nowrap rounded border border-slate-800 bg-slate-950 px-2 py-0.5 text-slate-400">
+              {commonModeLabel}
+            </span>
+          )}
+          <span className="whitespace-nowrap rounded border border-slate-800 bg-slate-950 px-2 py-0.5 text-cyan-400">
+            Ranked by Relative Strength
+          </span>
+        </div>
       </div>
 
-      <div className="font-mono text-xs">
+      <div className="font-mono text-xs mt-2">
         {sectors.map((s: any, idx: number) => {
           const changePct = safeNumber(s.change_pct, 0);
           const isPositive = changePct >= 0;
           const barWidth = Math.min(100, Math.abs(changePct) * 40);
+          const isExceptionalRow = !allSameMode && s.observation_mode && s.observation_mode !== firstMode;
           return (
             <div key={idx} className="grid grid-cols-[minmax(7rem,1fr)_5rem_5rem] items-center gap-3 border-b border-[var(--air-line)] py-1.5 last:border-0">
-              <div className="flex min-w-0 justify-between text-[10px]">
-                <span className="font-bold text-white">{s.name}</span>
+              <div className="flex min-w-0 items-center justify-between text-[10px]">
+                <span className="font-bold text-white truncate">{s.name}</span>
               </div>
-              <div className="h-1 overflow-hidden bg-slate-950">
-                <div className={`h-full ${isPositive ? "bg-emerald-500/70" : "bg-rose-500/70"}`} style={{ width: `${barWidth}%` }}/>
+              <div className="h-1.5 overflow-hidden bg-slate-950 rounded-full">
+                <div className={`h-full ${isPositive ? "bg-emerald-500/80" : "bg-rose-500/80"}`} style={{ width: `${barWidth}%` }}/>
               </div>
-                <div className="flex items-center justify-end gap-2">
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-850">
-                    {safeString(s.observation_mode || "UNAVAILABLE")}
+              <div className="flex items-center justify-end gap-2">
+                {isExceptionalRow && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-950 text-slate-400 border border-slate-800 whitespace-nowrap">
+                    {mapTraderEnum(s.observation_mode)}
                   </span>
-                  <span className={`font-bold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
-                    {isPositive ? "+" : ""}{formatNumber(changePct, 2)}%
-                  </span>
-                </div>
+                )}
+                <span className={`font-mono font-bold text-[11px] whitespace-nowrap ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                  {isPositive ? "+" : ""}{formatNumber(changePct, 2)}%
+                </span>
+              </div>
             </div>
           );
         })}

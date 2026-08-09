@@ -112,8 +112,8 @@ export function NiftyLiveWorkspace() {
   const { marketContext, optionContext, loading } = useWorkstationState();
   const marketAvailable = Boolean(marketContext?.current_spot && marketContext?.last_tick_time);
   return <ErrorBoundary fallbackTitle="NIFTY Live Workspace Error">
-    <div className="space-y-5"><Heading eyebrow="Live market" title="NIFTY Live" description="Live NIFTY market intelligence. No fallback price is shown."/><Tabs values={["Overview", "Price & Trend", "Options"]} active={tab} onChange={setTab}/>
-      {loading && !marketAvailable ? <ReadinessState kind="initializing" title="Initializing market data" reason="Waiting for market observations."/> : !marketAvailable ? <ReadinessState kind="unavailable" title="Live market data unavailable" reason="Connect broker or wait for a valid market snapshot."/> : <NiftyLiveView view={tab === "Price & Trend" ? "price-trend" : tab === "Options" ? "options" : "overview"} />}
+    <div className="space-y-5"><Heading eyebrow="Live market" title="NIFTY Live" description="Live NIFTY market intelligence. No fallback price is shown." /><Tabs values={["Overview", "Price & Trend", "Options"]} active={tab} onChange={setTab} />
+      {loading && !marketAvailable ? <ReadinessState kind="initializing" title="Initializing market data" reason="Waiting for market observations." /> : !marketAvailable ? <ReadinessState kind="unavailable" title="Live market data unavailable" reason="Connect broker or wait for a valid market snapshot." /> : <NiftyLiveView view={tab === "Price & Trend" ? "price-trend" : tab === "Options" ? "options" : "overview"} />}
     </div>
   </ErrorBoundary>;
 }
@@ -129,8 +129,7 @@ function LegacyPreMarketPlannerWorkspace() {
   const events: any[] = safeArray(canonicalState?.macro_intelligence?.economic_events) as any[];
   return (
     <div className="space-y-5">
-      <Heading eyebrow="Next session" title="Pre-Market Planner" description="Prepare for the next NIFTY session."/>
-      <Tabs values={["Evening Outlook", "8:50 AM Briefing", "Opening Checklist"]} active={tab} onChange={setTab}/>
+      <Tabs values={["Evening Outlook", "8:50 AM Briefing", "Opening Checklist"]} active={tab} onChange={setTab} />
       <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Setup Readiness Summary</h3><p className="mt-2 text-xs text-slate-300">Last session: {canonicalState?.market_data?.status === "market_closed" ? "READY" : "UNAVAILABLE"} · Macro quotes: {Object.keys(canonicalState?.macro_intelligence?.quotes || {}).length} · News: {plannerNews.length} · FII/DII: {safeArray(canonicalState?.macro_intelligence?.institutional_flows).length} · Options: {canonicalState?.option_intelligence?.status || "unavailable"}</p>{missing.length > 0 && <p className="mt-2 text-xs text-amber-400">Missing inputs: {missing.join(", ")}.</p>}</section>
       <GlobalCuesWidget />
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -138,22 +137,31 @@ function LegacyPreMarketPlannerWorkspace() {
         <NiftyConstituentsWidget />
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Important News</h3><div className="mt-2 space-y-2 text-xs text-slate-300">{plannerNews.length ? plannerNews.slice(0, 4).map((item, i) => <p key={item.id || i}>{safeString(item.headline)} · {safeString(item.source_name)}</p>) : <p>No verified updates available.</p>}</div></section><section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Upcoming Events</h3><div className="mt-2 space-y-2 text-xs text-slate-300">{events.length ? events.slice(0, 4).map((event, i) => <p key={event.id || i}>{safeString(event.title || event.event_name)} · {formatDate(event.scheduled_at)}</p>) : <p>No verified upcoming events available.</p>}</div></section></div>
-      {available ? <TomorrowWorkspace/> : <ReadinessState kind="partial" title={`${tab} partially ready`} reason="Setup calculations are waiting for all required inputs."/>}
+      {available ? <TomorrowWorkspace /> : <ReadinessState kind="partial" title={`${tab} partially ready`} reason="Setup calculations are waiting for all required inputs." />}
     </div>
   );
 }
 
 export function TodaysAnalysisWorkspace() {
   const { marketContext, canonicalState } = useWorkstationState();
-  const closed = Boolean(canonicalState?.market_session?.is_closed);
-  if (closed) return <div className="space-y-5"><Heading eyebrow="Market drivers" title="Today's Analysis" description="Understand what is driving NIFTY."/><ReadinessState kind="closed" title="Previous session analysis" reason="Historical and post-close context; live confirmation logic is paused."/><TodaysAnalysisSynthesis/><ClosedSessionIntelligence mode="analysis"/></div>;
-  return <div className="space-y-5"><Heading eyebrow="Market drivers" title="Today’s Analysis" description="Understand what is driving NIFTY."/><TodaysAnalysisSynthesis/>{marketContext?.current_spot && marketContext.feed_health === "HEALTHY" ? <MarketStory/> : <ReadinessState kind="blocked" title="Today’s Analysis is waiting" reason="A healthy current-session market feed is required."/>}</div>;
+  const closed = Boolean(canonicalState?.market_session?.is_closed || canonicalState?.market_session?.status === "CLOSED");
+  return (
+    <div className="space-y-5">
+      <TodaysAnalysisSynthesis />
+      {closed ? (
+        <MarketStory />
+      ) : (marketContext?.current_spot && marketContext.feed_health === "HEALTHY") ? (
+        <MarketStory />
+      ) : (
+        <ReadinessState kind="blocked" title="Today’s Analysis is waiting" reason="A healthy current-session market feed is required." />
+      )}
+    </div>
+  );
 }
 
 export function NewsUpdatesWorkspace() {
   return (
     <div className="space-y-5">
-      <Heading eyebrow="News & events" title="NEWS & UPDATES" description="Market-moving news, events and updates."/>
       <NewsIntelligence />
     </div>
   );
@@ -162,12 +170,10 @@ export function NewsUpdatesWorkspace() {
 export function LiveAssistantWorkspace() {
   const { canonicalState, marketContext } = useWorkstationState() as any;
   const isClosed = Boolean(canonicalState?.market_session?.is_closed || marketContext?.session_mode === "LAST_SESSION");
-  if (isClosed) return <div className="space-y-5"><Heading eyebrow="Market view" title="Live Assistant" description="Understand ArdhaMind's current market view."/><ReadinessState kind="closed" title="Closed-session view" reason="Live intraday confirmation logic is paused."/><LiveAssistantExplanationView/><ClosedSessionIntelligence mode="assistant"/></div>;
   return (
     <div className="space-y-5">
-      <Heading eyebrow="Market view" title="Live Assistant" description="Understand ArdhaMind's current market view."/>
-      <LiveAssistantExplanationView/>
-      {marketContext?.feed_health === "HEALTHY" ? <><IntradayAssistant/><DecisionEngine/></> : <ReadinessState kind="blocked" title="Live Assistant is waiting" reason="A healthy current-session market feed is required."/>}
+      <LiveAssistantExplanationView />
+      {marketContext?.feed_health === "HEALTHY" ? <><IntradayAssistant /><DecisionEngine /></> : <ReadinessState kind="blocked" title="Live Assistant is waiting" reason="A healthy current-session market feed is required." />}
     </div>
   );
 }
@@ -175,11 +181,6 @@ export function LiveAssistantWorkspace() {
 export function SettingsWorkspace() {
   return (
     <div className="space-y-5">
-      <Heading
-        eyebrow="System health"
-        title="Settings"
-        description="Connections, data sources and system health."
-      />
       <SettingsDashboard />
     </div>
   );

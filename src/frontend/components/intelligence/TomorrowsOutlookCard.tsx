@@ -2,7 +2,7 @@ import React from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, XCircle } from "lucide-react";
 import { safeArray, safeString } from "../../utils/safeHelpers";
 import { mapTraderEnum } from "../../utils/traderTerminology";
-import { KeyLevelsPanel, ScenarioCard, SemanticBadge } from "./CanonicalPresentation";
+import { DecisionZonesPanel, ScenarioCard, SemanticBadge } from "./CanonicalPresentation";
 
 interface OutlookCardProps {
   intelligence: any;
@@ -37,13 +37,21 @@ export function TomorrowsOutlookCard({ intelligence, macro }: OutlookCardProps) 
   const keyConcerns = safeArray(outlook.key_concerns?.length ? outlook.key_concerns : intelligence.risk?.reasons);
   const mainConcern = safeString(keyConcerns[0] || "No major concern reported.");
 
-  const supports = safeArray(outlook.supports?.length ? outlook.supports : intelligence.confirming_signals);
-  const caution = safeArray(outlook.caution?.length ? outlook.caution : keyConcerns);
-  const opposes = safeArray(outlook.opposes?.length ? outlook.opposes : intelligence.opposing_signals);
+  const evidenceItems = safeArray(intelligence.evidence_items) as any[];
+  const hasEvidenceItems = evidenceItems.length > 0;
+  const confirmingEv = evidenceItems.filter(e => e.stance === "CONFIRMING");
+  const opposingEv = evidenceItems.filter(e => e.stance === "OPPOSING");
+  const neutralEv = evidenceItems.filter(e => e.stance === "NEUTRAL" || e.stance === "MIXED");
+
+  const supportsFallback = hasEvidenceItems ? [] : safeArray(outlook.supports?.length ? outlook.supports : intelligence.confirming_signals);
+  const cautionFallback = hasEvidenceItems ? [] : safeArray(outlook.caution?.length ? outlook.caution : keyConcerns);
+  const opposesFallback = hasEvidenceItems ? [] : safeArray(outlook.opposes?.length ? outlook.opposes : intelligence.opposing_signals);
+
   const atTheOpenRaw = safeArray(outlook.at_the_open);
   const atTheOpen = atTheOpenRaw.map((x: any) => typeof x === "string" ? x : safeString(x?.item));
   const scenarios = safeArray(intelligence.scenarios) as any[];
-  const levels = safeArray(intelligence.key_levels) as any[];
+  const decisionZones = safeArray(intelligence.decision_zones) as any[];
+  const rawLevels = safeArray(intelligence.key_levels) as any[];
 
   // Tone color helper for overall view
   const overallTone = overallView.includes("Positive")
@@ -95,7 +103,7 @@ export function TomorrowsOutlookCard({ intelligence, macro }: OutlookCardProps) 
         </div>
       </div>
 
-      {/* LEVEL 2 — WHY (EVIDENCE BREAKDOWN) */}
+      {/* LEVEL 2 — WHY (EXPLANATORY EVIDENCE BREAKDOWN WITH TEMPORAL CONTEXT) */}
       <div className="grid gap-3 md:grid-cols-3">
         {/* SUPPORTS */}
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
@@ -103,9 +111,23 @@ export function TomorrowsOutlookCard({ intelligence, macro }: OutlookCardProps) 
             <CheckCircle2 size={13} />
             <span>SUPPORTS THE VIEW</span>
           </div>
-          {supports.length ? (
+          {confirmingEv.length ? (
+            <ul className="space-y-2 text-[10px] text-emerald-200">
+              {confirmingEv.map((item: any) => (
+                <li key={item.evidence_id} className="flex flex-col gap-0.5 border-b border-emerald-950/40 pb-1.5 last:border-none">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-300">{item.category_label}</span>
+                    <span className="text-[8px] px-1 py-0.2 rounded border border-emerald-800/60 bg-emerald-950/40 text-emerald-400">
+                      {mapTraderEnum(item.temporal_relation)}
+                    </span>
+                  </div>
+                  <span className="text-slate-300">{item.summary}</span>
+                </li>
+              ))}
+            </ul>
+          ) : supportsFallback.length ? (
             <ul className="space-y-1.5 text-[10px] text-emerald-200">
-              {supports.map((item: any, i: number) => (
+              {supportsFallback.map((item: any, i: number) => (
                 <li key={i} className="flex items-start gap-1.5">
                   <span className="text-emerald-400 font-bold">•</span>
                   <span>{mapTraderEnum(item)}</span>
@@ -117,15 +139,29 @@ export function TomorrowsOutlookCard({ intelligence, macro }: OutlookCardProps) 
           )}
         </div>
 
-        {/* CAUTION */}
+        {/* CAUTION / MIXED */}
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
           <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-amber-400 border-b border-slate-800/60 pb-1.5 mb-2">
             <AlertTriangle size={13} />
             <span>CAUTION / MIXED</span>
           </div>
-          {caution.length ? (
+          {neutralEv.length ? (
+            <ul className="space-y-2 text-[10px] text-amber-200">
+              {neutralEv.map((item: any) => (
+                <li key={item.evidence_id} className="flex flex-col gap-0.5 border-b border-amber-950/40 pb-1.5 last:border-none">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-amber-300">{item.category_label}</span>
+                    <span className="text-[8px] px-1 py-0.2 rounded border border-amber-800/60 bg-amber-950/40 text-amber-400">
+                      {mapTraderEnum(item.temporal_relation)}
+                    </span>
+                  </div>
+                  <span className="text-slate-300">{item.summary}</span>
+                </li>
+              ))}
+            </ul>
+          ) : cautionFallback.length ? (
             <ul className="space-y-1.5 text-[10px] text-amber-200">
-              {caution.map((item: any, i: number) => (
+              {cautionFallback.map((item: any, i: number) => (
                 <li key={i} className="flex items-start gap-1.5">
                   <span className="text-amber-400 font-bold">•</span>
                   <span>{mapTraderEnum(item)}</span>
@@ -143,9 +179,23 @@ export function TomorrowsOutlookCard({ intelligence, macro }: OutlookCardProps) 
             <XCircle size={13} />
             <span>GOES AGAINST THE VIEW</span>
           </div>
-          {opposes.length ? (
+          {opposingEv.length ? (
+            <ul className="space-y-2 text-[10px] text-rose-200">
+              {opposingEv.map((item: any) => (
+                <li key={item.evidence_id} className="flex flex-col gap-0.5 border-b border-rose-950/40 pb-1.5 last:border-none">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-rose-300">{item.category_label}</span>
+                    <span className="text-[8px] px-1 py-0.2 rounded border border-rose-800/60 bg-rose-950/40 text-rose-400">
+                      {mapTraderEnum(item.temporal_relation)}
+                    </span>
+                  </div>
+                  <span className="text-slate-300">{item.summary}</span>
+                </li>
+              ))}
+            </ul>
+          ) : opposesFallback.length ? (
             <ul className="space-y-1.5 text-[10px] text-rose-200">
-              {opposes.map((item: any, i: number) => (
+              {opposesFallback.map((item: any, i: number) => (
                 <li key={i} className="flex items-start gap-1.5">
                   <span className="text-rose-400 font-bold">•</span>
                   <span>{mapTraderEnum(item)}</span>
@@ -158,7 +208,7 @@ export function TomorrowsOutlookCard({ intelligence, macro }: OutlookCardProps) 
         </div>
       </div>
 
-      {/* LEVEL 3 — PLAN (SCENARIOS, WATCHLIST, LEVELS) */}
+      {/* LEVEL 3 — PLAN (SCENARIOS, WATCHLIST, DECISION ZONES & LEVELS) */}
       <div className="space-y-3 border-t border-slate-800/80 pt-3">
         {/* Scenarios */}
         {scenarios.length > 0 && (
@@ -184,8 +234,8 @@ export function TomorrowsOutlookCard({ intelligence, macro }: OutlookCardProps) 
           </div>
         )}
 
-        {/* Key Levels */}
-        <KeyLevelsPanel levels={levels} />
+        {/* Key Decision Zones & Levels */}
+        <DecisionZonesPanel zones={decisionZones} rawLevels={rawLevels} />
       </div>
     </section>
   );

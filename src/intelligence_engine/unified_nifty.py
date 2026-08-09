@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from src.broker.services.market_status_service import MarketStatusService
+
 
 class UnifiedNiftyIntelligenceBuilder:
     """Pure, inexpensive synthesis over already-canonical observations.
@@ -39,6 +41,8 @@ class UnifiedNiftyIntelligenceBuilder:
         ineligible = [name for name, signal in signals.items() if not signal["eligible"]]
         alignment = cls._alignment(signals, session)
         levels = cls._levels(market, technical, options)
+        decision_zones = cls._decision_zones(levels, spot=market.get("current_spot"), atr=technical.get("atr"))
+        evidence_items = cls._evidence_items(signals, alignment)
         regime = cls._regime(market, technical, signals)
         risk = cls._risk(signals, alignment)
         confidence = cls._confidence(signals, alignment, session)
@@ -57,7 +61,9 @@ class UnifiedNiftyIntelligenceBuilder:
             "signals": signals, "alignment": alignment["state"],
             "confirming_signals": alignment["confirming"], "opposing_signals": alignment["opposing"],
             "neutral_signals": alignment["neutral"], "unavailable_or_ineligible_signals": ineligible,
-            "market_regime": regime, "key_levels": levels, "scenarios": scenarios,
+            "market_regime": regime, "key_levels": levels, "decision_zones": decision_zones,
+            "evidence_items": evidence_items,
+            "scenarios": scenarios,
             "invalidation_conditions": invalidations, "risk": risk, "confidence": confidence,
             "outlook": outlook,
             "premarket_view_validation": {
@@ -155,11 +161,12 @@ class UnifiedNiftyIntelligenceBuilder:
         fresh=str(meta.get("freshness_status") or ("fresh" if observed else "unavailable")).lower()
         eligible=pcr is not None and mp is not None and bool(observed) and (session != "MARKET_OPEN" or fresh in cls.LIVE_FRESHNESS)
         if not eligible: return cls._signal("UNAVAILABLE", [], source="canonical.option_intelligence", eligible=False, reason="fresh session-appropriate option aggregate unavailable", freshness=fresh)
-        p=float(pcr); bias=str(options.get("market_option_bias") or "").upper()
-        pstate="BULLISH" if p >= 1.05 else "BEARISH" if p <= .8 else "BALANCED"
-        mapped="BULLISH" if "BULL" in bias else "BEARISH" if "BEAR" in bias else "BALANCED"
-        state="CONFLICTED" if mapped != "BALANCED" and pstate != "BALANCED" and mapped != pstate else mapped if mapped != "BALANCED" else pstate
-        return cls._signal(state, [f"PCR {p:.2f} ({pstate.lower()}); Max Pain {mp}; ATM {atm}."], source="Kite option chain", observed_at=observed, freshness=fresh)
+        p = float(pcr); bias = str(options.get("market_option_bias") or "").upper()
+        pstate = "BULLISH" if p >= 1.05 else "BEARISH" if p <= .8 else "BALANCED"
+        mapped = "BULLISH" if "BULL" in bias else "BEARISH" if "BEAR" in bias else "BALANCED"
+        state = "CONFLICTED" if mapped != "BALANCED" and pstate != "BALANCED" and mapped != pstate else mapped if mapped != "BALANCED" else pstate
+        actual_freshness = fresh if session == "MARKET_OPEN" else "last_valid_session"
+        return cls._signal(state, [f"PCR {p:.2f} ({pstate.lower()}); Max Pain {mp}; ATM {atm}."], source="Kite option chain", observed_at=observed, freshness=actual_freshness)
 
     @classmethod
     def _volatility(cls, market, options, macro, session):
@@ -282,28 +289,142 @@ class UnifiedNiftyIntelligenceBuilder:
         return f"{prefix} is {label}. Confirming evidence: {confirming}. Opposing evidence: {opposing}. Market regime is {regime.lower().replace('_',' ')}; analytical risk is {risk['state'].lower()}."
 
     @classmethod
+    def _decision_zones(cls, levels: list[dict[str, Any]], spot: float | None = None, atr: float | None = None) -> list[dict[str, Any]]:
+        threshold = max(10.0, float(atr) * 0.15) if (atr is not None and float(atr) > 0) else 15.0
+        zones = []
+        for role in ("SUPPORT", "RESISTANCE", "REFERENCE"):
+            role_levels = sorted([x for x in levels if x.get("role") == role], key=lambda x: float(x["value"]))
+            if not role_levels:
+                continue
+            clusters: list[list[dict[str, Any]]] = []
+            for item in role_levels:
+                val = float(item["value"])
+                if not clusters:
+                    clusters.append([item])
+                else:
+                    prev_cluster = clusters[-1]
+                    prev_max = max(float(x["value"]) for x in prev_cluster)
+                    if abs(val - prev_max) <= threshold:
+                        prev_cluster.append(item)
+                    else:
+                        clusters.append([item])
+
+            for idx, cluster in enumerate(clusters):
+                vals = [float(x["value"]) for x in cluster]
+                min_v, max_v = min(vals), max(vals)
+                zones.append({
+                    "zone_id": f"ZONE_{role}_{idx+1}",
+                    "role": role,
+                    "lower": min_v,
+                    "upper": max_v,
+                    "display_range": f"{min_v:g}" if min_v == max_v else f"{min_v:g} – {max_v:g}",
+                    "contributing_levels": cluster,
+                    "count": len(cluster),
+                    "rationale": f"{role.title()} zone formed by {len(cluster)} contributing level(s)."
+                })
+        return zones
+
+    @classmethod
+    def _evidence_items(cls, signals: dict[str, Any], alignment: dict[str, Any]) -> list[dict[str, Any]]:
+        items = []
+        cat_map = {
+            "price": ("PRICE_STRUCTURE", "Price Structure"),
+            "opening": ("OPENING_INDICATION", "Opening Indication"),
+            "global": ("GLOBAL_CUES", "Global Equity Cues"),
+            "institutional": ("INSTITUTIONAL_POSITIONING", "Institutional Flow & Positioning"),
+            "breadth": ("MARKET_BREADTH", "Market Breadth"),
+            "options": ("OPTION_POSITIONING", "Option OI & Sentiment"),
+            "volatility": ("VOLATILITY_STATE", "Volatility & VIX"),
+            "news": ("NEWS_INTELLIGENCE", "News & Event Intelligence"),
+            "events": ("EVENT_RISK", "Scheduled Event Risk"),
+        }
+        for name, sig in signals.items():
+            freshness = str(sig.get("freshness") or "unavailable").lower()
+            observed_at = sig.get("observed_at")
+
+            if name == "global":
+                temporal_rel = "FOREIGN_SESSION"
+            elif freshness in {"last_valid_session", "market_closed"}:
+                temporal_rel = "PREVIOUS_SESSION"
+            elif freshness in {"fresh", "current", "live"}:
+                temporal_rel = "CURRENT_SESSION"
+            else:
+                temporal_rel = "HISTORICAL"
+
+            if not sig.get("eligible"):
+                eligibility = "INELIGIBLE"
+            elif temporal_rel in {"PREVIOUS_SESSION", "FOREIGN_SESSION"}:
+                eligibility = "CONTEXT_ONLY"
+            else:
+                eligibility = "CURRENT_ELIGIBLE"
+
+            if not sig.get("eligible"):
+                items.append({
+                    "evidence_id": f"EVID_{name.upper()}_UNAVAIL",
+                    "category": cat_map.get(name, (name.upper(), name))[0],
+                    "category_label": cat_map.get(name, (name.upper(), name))[1],
+                    "stance": "UNAVAILABLE",
+                    "summary": f"{cat_map.get(name, (name.upper(), name))[1]} unavailable ({sig.get('ineligibility_reason') or 'not current-session eligible'}).",
+                    "source": sig.get("source"),
+                    "observed_at": observed_at,
+                    "freshness": freshness,
+                    "temporal_relation": temporal_rel,
+                    "decision_eligibility": eligibility,
+                    "source_rule": f"signals.{name}.eligible",
+                })
+                continue
+
+            state = str(sig.get("state") or "").upper()
+            stance = "CONFIRMING" if state in cls.POSITIVE else "OPPOSING" if state in cls.NEGATIVE else "NEUTRAL"
+            ev_list = sig.get("evidence") or []
+            time_qualifier = " (Previous Session)" if temporal_rel == "PREVIOUS_SESSION" else " (Foreign Session)" if temporal_rel == "FOREIGN_SESSION" else ""
+            summary_body = "; ".join(ev_list) if ev_list else f"{cat_map.get(name, (name.upper(), name))[1]} is {state.lower()}."
+            summary = f"{summary_body}{time_qualifier}"
+
+            items.append({
+                "evidence_id": f"EVID_{name.upper()}_01",
+                "category": cat_map.get(name, (name.upper(), name))[0],
+                "category_label": cat_map.get(name, (name.upper(), name))[1],
+                "stance": stance,
+                "summary": summary,
+                "source": sig.get("source"),
+                "observed_at": observed_at,
+                "freshness": freshness,
+                "temporal_relation": temporal_rel,
+                "decision_eligibility": eligibility,
+                "source_rule": f"signals.{name}.state",
+            })
+        return items
+
+    @classmethod
     def _outlook(cls, session: str, alignment: dict[str, Any], confidence: str, risk: dict[str, Any],
                  signals: dict[str, Any], scenarios: list[dict[str, Any]], levels: list[dict[str, Any]],
                  now: datetime) -> dict[str, Any]:
         current_utc = now.astimezone(timezone.utc)
-        weekday = current_utc.strftime("%a")
+        status_report = MarketStatusService.get_instance().get_market_status(current_utc)
 
-        if session == "WEEKEND":
-            relation = "NEXT_TRADING_SESSION"
-            date_str = None
-            verified = False
-        elif session == "HOLIDAY":
-            relation = "NEXT_TRADING_SESSION"
-            date_str = None
-            verified = False
-        elif session == "PRE_OPEN":
+        if session == "PRE_OPEN":
             relation = "TODAY"
-            date_str = current_utc.strftime("%Y-%m-%d")
+            date_str = status_report.current_time_ist.split(" ")[0] if status_report.current_time_ist else current_utc.strftime("%Y-%m-%d")
             verified = True
         else:
-            relation = "TOMORROW"
-            date_str = None
-            verified = False
+            next_start = status_report.next_session_start or ""
+            next_date_str = next_start.split(" ")[0] if next_start else None
+            current_ist_date = status_report.current_time_ist.split(" ")[0] if status_report.current_time_ist else current_utc.strftime("%Y-%m-%d")
+
+            if next_date_str:
+                date_str = next_date_str
+                verified = status_report.calendar_verified
+                try:
+                    d_curr = datetime.strptime(current_ist_date, "%Y-%m-%d")
+                    d_next = datetime.strptime(next_date_str, "%Y-%m-%d")
+                    relation = "TOMORROW" if (d_next - d_curr).days == 1 else "NEXT_TRADING_SESSION"
+                except Exception:
+                    relation = "NEXT_TRADING_SESSION"
+            else:
+                date_str = None
+                verified = False
+                relation = "NEXT_TRADING_SESSION"
 
         align_state = str(alignment.get("state") or "").upper()
         if align_state == "STRONG_BULLISH_ALIGNMENT":
