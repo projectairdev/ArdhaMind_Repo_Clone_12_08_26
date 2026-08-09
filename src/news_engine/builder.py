@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.models.news_context_v2 import (
-    NewsContext as NewsContextV2,
+    NewsContextV2,
     NewsArticle,
     NewsEvent,
     EventSeverity,

@@ -52,6 +52,7 @@ class CanonicalWorkstationState:
     validation_report: dict[str, Any]
     optimization_report: dict[str, Any]
     analytics_report: dict[str, Any]
+    macro_intelligence: Optional[dict[str, Any]] = None
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 

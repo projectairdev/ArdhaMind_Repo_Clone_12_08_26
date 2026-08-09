@@ -214,42 +214,12 @@ export async function getLivePortfolioReport(forceRefresh = false): Promise<Live
 }
 
 export async function executeOrder(order: ExecutionOrder): Promise<ExecutionReport> {
-  const resp = await fetch("/api/orders/place", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      symbol: order.tradingsymbol,
-      transaction_type: order.transaction_type,
-      quantity: order.quantity,
-      product: order.product || "NRML",
-      order_type: order.order_type || "MARKET",
-      price: order.price,
-      exchange: order.exchange || "NSE"
-    })
-  });
-  const data = await resp.json();
-  if (data.error) {
-    throw new Error(data.error);
-  }
-  return {
-    report_id: "EXE_" + Math.floor(Math.random() * 100000),
-    request_id: "REQ_" + Math.floor(Math.random() * 100000),
-    submitted_orders: [order],
-    accepted_orders: [order],
-    rejected_orders: [],
-    broker_order_id: data.order_id || "N/A",
-    exchange_order_id: "EXE_" + Math.floor(Math.random() * 100000),
-    timestamp: new Date().toISOString(),
-    failure_reason: "",
-    status: "COMPLETED"
-  };
+  void order;
+  throw new Error("AIR ArdhaMind is read only; order execution is unavailable");
 }
 
 export async function exitPosition(symbol: string, product: string): Promise<any> {
-  const resp = await fetch("/api/positions/exit", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ symbol, product })
-  });
-  return resp.json();
+  void symbol;
+  void product;
+  throw new Error("AIR ArdhaMind is read only; position exits are unavailable");
 }

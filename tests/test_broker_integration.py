@@ -281,12 +281,12 @@ class TestBrokerIntegration(unittest.TestCase):
         # Calling without manual confirmation (confirmed=False)
         report = OrdersManager.execute_request(request, confirmed=False)
         self.assertEqual(report.status, "FAILED")
-        self.assertIn("MANUAL_CONFIRMATION_REQUIRED", report.failure_reason)
+        self.assertIn("READ_ONLY_PRODUCT", report.failure_reason)
 
     @patch("src.broker.compat.connection.ConnectionManager.is_connected")
     @patch("src.broker.compat.connection.ConnectionManager.get_client")
     @patch("src.broker.compat.funds.FundsManager.get_funds_info")
-    def test_orders_manager_successful_placement_with_confirmation(
+    def test_orders_manager_rejects_placement_even_with_confirmation(
         self, mock_get_funds, mock_get_client, mock_is_connected
     ):
         mock_is_connected.return_value = True
@@ -326,9 +326,10 @@ class TestBrokerIntegration(unittest.TestCase):
 
         # Call with manual operator confirmation
         report = OrdersManager.execute_request(request, confirmed=True)
-        self.assertEqual(report.status, "COMPLETED")
-        self.assertEqual(report.broker_order_id, "ZORD_ORD_77777")
-        self.assertEqual(len(report.accepted_orders), 1)
+        self.assertEqual(report.status, "FAILED")
+        self.assertIn("READ_ONLY_PRODUCT", report.failure_reason)
+        self.assertEqual(len(report.accepted_orders), 0)
+        mock_client.place_order.assert_not_called()
 
     def test_broker_panel_to_dict_and_render(self):
         conn_status = {"connected": True}

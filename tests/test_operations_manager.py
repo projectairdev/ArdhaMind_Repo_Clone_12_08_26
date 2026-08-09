@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import unittest
-import os
+import tempfile
+from pathlib import Path
 from datetime import datetime
 from src.models.operations_report import (
     OperationsReport,
@@ -41,51 +42,42 @@ class TestOperationsManager(unittest.TestCase):
         }
         
         # Test full success
-        temp_scoring_yaml = "/tmp/test_scoring.yaml"
-        temp_log_dir = "/tmp/test_logs"
-        temp_cache_dir = "/tmp/test_cache"
-        temp_db_path = "/tmp/test_cache/instruments.db"
+        with tempfile.TemporaryDirectory() as temp_root:
+            root = Path(temp_root)
+            temp_scoring_yaml = root / "test_scoring.yaml"
+            temp_log_dir = root / "logs"
+            temp_cache_dir = root / "cache"
+            temp_db_path = temp_cache_dir / "instruments.db"
 
-        os.makedirs(temp_cache_dir, exist_ok=True)
-        os.makedirs(temp_log_dir, exist_ok=True)
-        with open(temp_scoring_yaml, "w") as f:
-            f.write("test_config: 1.0")
-        with open(temp_db_path, "w") as f:
-            f.write("")
+            temp_cache_dir.mkdir()
+            temp_log_dir.mkdir()
+            temp_scoring_yaml.write_text("test_config: 1.0", encoding="utf-8")
+            temp_db_path.touch()
 
-        custom_paths = {
-            "scoring_yaml": temp_scoring_yaml,
-            "log_dir": temp_log_dir,
-            "cache_dir": temp_cache_dir,
-            "instrument_db": temp_db_path,
-        }
+            custom_paths = {
+                "scoring_yaml": str(temp_scoring_yaml),
+                "log_dir": str(temp_log_dir),
+                "cache_dir": str(temp_cache_dir),
+                "instrument_db": str(temp_db_path),
+            }
 
-        diagnostics = StartupDiagnosticManager.run_diagnostics(
-            custom_env=custom_env,
-            custom_paths=custom_paths
-        )
+            diagnostics = StartupDiagnosticManager.run_diagnostics(
+                custom_env=custom_env,
+                custom_paths=custom_paths
+            )
 
-        self.assertTrue(diagnostics.config_valid)
-        self.assertTrue(diagnostics.env_vars_valid)
-        self.assertTrue(diagnostics.instrument_db_valid)
-        self.assertTrue(diagnostics.working_dirs_valid)
+            self.assertTrue(diagnostics.config_valid)
+            self.assertTrue(diagnostics.env_vars_valid)
+            self.assertTrue(diagnostics.instrument_db_valid)
+            self.assertTrue(diagnostics.working_dirs_valid)
 
-        # Test failure case (e.g. missing environment variables)
-        bad_env = {"KITE_API_KEY": ""}
-        bad_diagnostics = StartupDiagnosticManager.run_diagnostics(
-            custom_env=bad_env,
-            custom_paths=custom_paths
-        )
-        self.assertFalse(bad_diagnostics.env_vars_valid)
-
-        # Cleanup
-        try:
-            os.remove(temp_scoring_yaml)
-            os.remove(temp_db_path)
-            os.rmdir(temp_cache_dir)
-            os.rmdir(temp_log_dir)
-        except Exception:
-            pass
+            # Test failure case (e.g. missing environment variables)
+            bad_env = {"KITE_API_KEY": ""}
+            bad_diagnostics = StartupDiagnosticManager.run_diagnostics(
+                custom_env=bad_env,
+                custom_paths=custom_paths
+            )
+            self.assertFalse(bad_diagnostics.env_vars_valid)
 
     def test_dependency_validator(self) -> None:
         """

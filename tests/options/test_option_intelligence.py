@@ -211,10 +211,10 @@ class TestOptionIntelligence(unittest.TestCase):
             spot_price=self.spot_price
         )
         
-        iv_res = analyze_iv(chain, self.spot_price, atm_strike=24300.0, expiry_date=self.expiry_date, today_date=self.today)
+        iv_res = analyze_iv(chain, self.spot_price, atm_strike=24300.0, expiry_date=self.expiry_date, today_date=self.today, r=0.05)
         self.assertGreater(iv_res.atm_iv, 0.0)
         self.assertGreater(iv_res.expected_move, 0.0)
-        self.assertIn(iv_res.iv_classification, ["LOW", "NORMAL", "HIGH", "EXTREME"])
+        self.assertIn(iv_res.iv_classification, ["LOW", "NORMAL", "ELEVATED", "HIGH"])
 
     def test_strike_ranking(self):
         """Verify RankStrike objects and proper multi-factor sorting."""
@@ -227,7 +227,7 @@ class TestOptionIntelligence(unittest.TestCase):
         )
         
         liq_res = analyze_liquidity(chain, atm_strike=24300.0, strike_step=50.0)
-        iv_res = analyze_iv(chain, self.spot_price, atm_strike=24300.0, expiry_date=self.expiry_date, today_date=self.today)
+        iv_res = analyze_iv(chain, self.spot_price, atm_strike=24300.0, expiry_date=self.expiry_date, today_date=self.today, r=0.05)
         
         ranked = rank_strikes(chain, liq_res, iv_res, atm_strike=24300.0)
         

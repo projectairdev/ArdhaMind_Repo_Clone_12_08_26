@@ -94,6 +94,17 @@ export function TomorrowWorkspace() {
         </div>
       </div>
 
+      {/* ── 8:50 AM BRIEFING & GLOBAL CUES SECTION ── */}
+      <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs">
+          <Compass className="h-4 w-4 text-cyan-400" />
+          <span>8:50 AM Pre-Market Briefing & Opening Preparation</span>
+        </div>
+        <p className="text-xs text-slate-300 font-sans leading-relaxed">
+          NIFTY opening context uses freshness-eligible global observations, available official institutional-flow records, and verified regulatory news. GIFT Nifty is included only when a genuine provider observation exists.
+        </p>
+      </div>
+
       {/* ── MAIN BENTO GRID ARCHITECTURE ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         

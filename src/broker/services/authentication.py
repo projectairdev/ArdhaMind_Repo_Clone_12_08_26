@@ -20,14 +20,11 @@ try:
     from kiteconnect import KiteConnect
     from kiteconnect import exceptions as kite_exceptions
 except ImportError:
-    # Safe fallback if not installed/importable in some test contexts
+    # Fail closed when the genuine provider SDK is unavailable.
     class KiteConnect:
-        def __init__(self, *args, **kwargs): pass
-        def login_url(self) -> str: return "https://kite.zerodha.com"
-        def generate_session(self, *args, **kwargs): return {"access_token": "MOCK_TOKEN"}
-        def invalidate_access_token(self, *args, **kwargs): pass
-        def profile(self) -> dict: return {}
-        
+        def __init__(self, *args, **kwargs):
+            raise RuntimeError("kiteconnect dependency is unavailable; no provider fallback is permitted")
+
     class kite_exceptions:
         class TokenException(Exception): pass
         class InputException(Exception): pass
@@ -76,21 +73,21 @@ class AuthenticationManager:
     @classmethod
     def generate_login_url(cls, api_key: Optional[str] = None, redirect_url: Optional[str] = None) -> str:
         """
-        Generates the official Zerodha login URL.
+        Generates the official Zerodha login URL using official KiteConnect.login_url().
         """
         key = api_key or getattr(Config, "KITE_API_KEY", "")
         if not key:
             raise InvalidAPIKeyError("KITE_API_KEY is missing or empty. Cannot generate login URL.")
             
         r_url = redirect_url or getattr(Config, "KITE_REDIRECT_URL", "")
-        if not r_url:
-            r_url = getattr(Config, "APP_URL", "http://127.0.0.1:3000") + "/api/broker/callback"
-            
+        logger.info(f"Loaded KITE_REDIRECT_URL: {r_url}")
+        print(f"Loaded KITE_REDIRECT_URL: {r_url}", flush=True)
+
         try:
             kite = KiteConnect(api_key=key)
-            login_url = f"https://kite.trade/connect/login?api_key={key}&v=3"
-            if r_url:
-                login_url += f"&redirect_params=redirect_uri%3D{r_url}"
+            login_url = kite.login_url()
+            logger.info(f"Generated login URL: {login_url}")
+            print(f"Generated login URL: {login_url}", flush=True)
             return login_url
         except Exception as e:
             logger.error(f"Error generating login URL: {e}")

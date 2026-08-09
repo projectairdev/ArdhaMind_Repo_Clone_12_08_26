@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from src.broker.services.instrument_service import InstrumentService
 from src.broker.utils.cache_manager import InstrumentCacheManager
+import src.broker.utils.cache_manager as cache_manager
 from src.broker.services.market_status_service import MarketStatusService, MarketStatusReport
 from src.broker.utils.data_validation import MarketDataValidator, DataValidationItem
 from src.broker.services.broker_service import BrokerService
@@ -22,19 +23,22 @@ class TestSprint30MarketData(unittest.TestCase):
     """
 
     def setUp(self) -> None:
+        self._original_db_path = cache_manager.DB_PATH
+        cache_manager.DB_PATH = ".cache/test_sprint30_instruments.db"
         # Clear the SQLite database between tests for isolation
-        if os.path.exists("cache/instruments.db"):
+        if os.path.exists(cache_manager.DB_PATH):
             try:
-                os.remove("cache/instruments.db")
+                os.remove(cache_manager.DB_PATH)
             except Exception:
                 pass
 
     def tearDown(self) -> None:
-        if os.path.exists("cache/instruments.db"):
+        if os.path.exists(cache_manager.DB_PATH):
             try:
-                os.remove("cache/instruments.db")
+                os.remove(cache_manager.DB_PATH)
             except Exception:
                 pass
+        cache_manager.DB_PATH = self._original_db_path
 
     def test_instrument_cache_manager_save_and_load(self):
         """Verifies SQLite cache saving, loading, exists, age, and validation."""
@@ -55,6 +59,9 @@ class TestSprint30MarketData(unittest.TestCase):
                 "exchange": "NFO"
             }
         ]
+
+        # Ensure fresh test isolation
+        InstrumentCacheManager.invalidate_cache(broker)
 
         # Initially, cache should not exist
         self.assertFalse(InstrumentCacheManager.cache_exists(broker))

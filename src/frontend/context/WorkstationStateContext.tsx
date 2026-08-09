@@ -98,13 +98,13 @@ export interface WorkstationStateContextProps {
 }
 
 const defaultWorkspaceContext: WorkspaceContext = {
-  currentMode: "LIVE_PRACTICE",
+  currentMode: "READ_ONLY",
   brokerState: "DISCONNECTED",
   marketState: "CLOSED",
   brokerType: "ZERODHA",
   marketDataSource: "LIVE",
-  executionMode: "PAPER_EXECUTION",
-  portfolioSource: "BROKER",
+  executionMode: "READ_ONLY",
+  portfolioSource: "READ_ONLY_BROKER",
   analyticsMode: "ENABLED",
   notificationMode: "ENABLED",
   timestamp: new Date().toISOString()
@@ -177,7 +177,7 @@ const defaultPortfolioReport: LivePortfolioReport = {
   broker_health: {
     broker_name: "N/A",
     connection_status: "DISCONNECTED",
-    trading_mode: "MOCK",
+    trading_mode: "READ_ONLY",
     latency: 0,
     authentication_status: "UNAUTHENTICATED",
     last_heartbeat: "N/A",
@@ -804,7 +804,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
       ...defaultOptionContext,
       ...raw,
       underlying_spot: currentSpot,
-      atm_strike: Math.round(currentSpot / 50.0) * 50.0
+      atm_strike: raw.atm_strike ?? 0
     };
   }, [canonicalState, lastValidState, liveTickPrice]);
 
@@ -1023,13 +1023,15 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
 
     // Check parameters for redirected callbacks
     const params = new URLSearchParams(window.location.search);
-    const loginStatus = params.get("login");
-    const reason = params.get("reason");
-    if (loginStatus === "success") {
+    const connected = params.get("connected") || params.get("broker");
+    const loginStatus = params.get("login") || params.get("status");
+
+    if (connected === "true" || connected === "connected" || loginStatus === "success") {
       window.history.replaceState({}, document.title, window.location.pathname);
       syncBroker(true);
     } else if (loginStatus === "failed") {
-      setErrorState(reason || "Zerodha KiteConnect login failed. Verify keys or request token.");
+      const reason = params.get("reason");
+      setErrorState(reason || "Zerodha KiteConnect login failed.");
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
@@ -1102,6 +1104,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
               setDiagnosticsDetails("");
               setLiveTickPrice(null); // Clear fast-path ticks on fresh state frame
               setLastSyncTime(new Date().toLocaleTimeString());
+              setApiLatency(Math.max(0, Date.now() - new Date(rawData.generated_at).getTime()));
               return rawData;
             });
           } else if (msg.type === "auth_event") {
@@ -1307,6 +1310,3 @@ export function useNewsIntelligence() {
     isStale: !isLive || !context.canonicalState,
   };
 }
-
-
-

@@ -130,6 +130,9 @@ def _compute_support_resistance(spot: float, atr: float) -> tuple[list, list]:
 _candle_buffer: List[Dict] = []
 _candle_last_fetch: float = 0.0
 _CANDLE_FETCH_INTERVAL_SECONDS = 300  # Refresh candles every 5 minutes
+_kite_extensions: Dict[str, Any] = {}
+_kite_extensions_last_fetch: float = 0.0
+_KITE_EXTENSIONS_FETCH_INTERVAL_SECONDS = 60
 
 
 def _refresh_candle_buffer(bs: Any) -> None:
@@ -151,15 +154,17 @@ def _refresh_candle_buffer(bs: Any) -> None:
         inst_svc = InstrumentService.get_instance()
         inst_svc.load_instruments(bs)
         nifty_inst = inst_svc.lookup_index_instrument("NIFTY 50")
-        if not nifty_inst:
-            logger.warning("Could not find NIFTY 50 instrument token for candle fetch.")
+        if not nifty_inst or not nifty_inst.get("instrument_token"):
+            logger.warning("NIFTY 50 instrument token is unresolved; historical fetch suppressed.")
+            return
+        token = int(nifty_inst["instrument_token"])
+
+        fetch_fn = getattr(kite, "historical_data", None) or getattr(kite, "get_historical_data", None)
+        if not fetch_fn:
+            logger.warning("No historical data fetch function available.")
             return
 
-        token = int(nifty_inst.get("instrument_token", 0))
-        if token == 0:
-            return
-
-        candles_raw = kite.historical_data(
+        candles_raw = fetch_fn(
             instrument_token=token,
             from_date=from_dt.strftime("%Y-%m-%d %H:%M:%S"),
             to_date=to_dt.strftime("%Y-%m-%d %H:%M:%S"),
@@ -250,7 +255,7 @@ class MarketContextBuilder:
                 except Exception:
                     pass
 
-        # ---- ATR and VWAP from intraday candle buffer ----
+        # ---- ATR, VWAP and Candles from intraday candle buffer ----
         try:
             _refresh_candle_buffer(bs)
         except Exception:
@@ -259,22 +264,60 @@ class MarketContextBuilder:
         vwap = _compute_vwap(_candle_buffer)
         atr = _compute_atr(_candle_buffer)
 
-        # If we have a live spot but VWAP not available yet, use spot as proxy
-        if vwap <= 0 and spot > 0:
-            vwap = spot
+        # Build chart candles payload from _candle_buffer
+        candles_payload = []
+        if _candle_buffer:
+            for c in _candle_buffer[-30:]:
+                dt_obj = c.get("date")
+                if hasattr(dt_obj, "strftime"):
+                    t_str = dt_obj.strftime("%H:%M")
+                else:
+                    dt_val = str(dt_obj or "")
+                    t_str = dt_val.split(" ")[1][:5] if " " in dt_val else (dt_val.split("T")[1][:5] if "T" in dt_val else dt_val[-8:-3])
+                candles_payload.append({
+                    "time": t_str,
+                    "o": float(c.get("open", 0.0)),
+                    "h": float(c.get("high", 0.0)),
+                    "l": float(c.get("low", 0.0)),
+                    "c": float(c.get("close", 0.0)),
+                    "v": int(c.get("volume", 0))
+                })
+
+        session_mode = "LIVE"
+        if spot <= 0.0 and _candle_buffer:
+            last_c = _candle_buffer[-1]
+            spot = float(last_c.get("close", 0.0))
+            ltp = spot
+            bid = spot
+            ask = spot
+            ts_val = last_c.get("date")
+            last_tick_time = str(ts_val) if ts_val else now_str
+            session_mode = "LAST_SESSION"
 
         # ---- Trend determination from observed values ----
         market_regime, trend_direction, trend_strength = _determine_trend(spot, vwap, atr)
         supports, resistances = _compute_support_resistance(spot, atr)
 
         # ---- Volatility ----
-        if india_vix <= 0.0 and bs.is_connected():
-            try:
-                ltps = bs.get_ltp(["NSE:INDIA VIX"])
-                if ltps and "NSE:INDIA VIX" in ltps:
-                    india_vix = float(ltps["NSE:INDIA VIX"].get("last_price", 0.0))
-            except Exception:
-                pass
+        # India VIX is rendered only from the exact resolved NSE instrument and
+        # a timestamped Kite quote (or its persisted last-valid observation).
+        try:
+            from src.broker.services.market_status_service import MarketStatusService
+            vix_session = str(MarketStatusService.get_instance().get_market_status().status).upper()
+        except Exception:
+            vix_session = "UNKNOWN"
+        vix_closed = any(value in vix_session for value in ("CLOSED", "HOLIDAY", "POST_MARKET"))
+        try:
+            from src.broker.services.kite_intelligence_service import KiteIntelligenceService
+            india_vix_context = KiteIntelligenceService.build_india_vix_snapshot(bs, vix_closed)
+        except Exception as exc:
+            india_vix_context = {
+                "status": "UNAVAILABLE", "value": None, "source": "Kite Quote API",
+                "source_symbol": "NSE:INDIA VIX", "observation_timestamp": None,
+                "freshness": "UNAVAILABLE", "failure_reason": str(exc)[:240],
+            }
+        validated_vix = india_vix_context.get("value") if india_vix_context.get("status") in {"AVAILABLE", "DEGRADED"} else None
+        india_vix = float(validated_vix) if validated_vix is not None else 0.0
         vol_state = _determine_volatility_state(india_vix)
 
         # ---- PCR from cached option context ----
@@ -285,14 +328,11 @@ class MarketContextBuilder:
         try:
             from src.broker.services.market_feed_service import MarketFeedService
             mfs = MarketFeedService.get_instance()
-            atm_strike = round(spot / 50.0) * 50.0 if spot > 0 else 0.0
-            # PCR from option chain if available
             if hasattr(mfs, "subscribed_options") and mfs.last_expiry_for_sub:
                 current_weekly_expiry = mfs.last_expiry_for_sub
         except Exception:
             pass
 
-        # Attempt to get PCR from cached option context
         try:
             from src.server_bridge import cached_option_context as _oc
             if _oc:
@@ -305,19 +345,43 @@ class MarketContextBuilder:
         except Exception:
             pass
 
-        # ---- Trading session ----
         try:
             from src.broker.services.market_status_service import MarketStatusService
             ms = MarketStatusService.get_instance().get_market_status()
-            trading_session = ms.get("status", "UNKNOWN")
+            trading_session = getattr(ms, "status", "UNKNOWN")
         except Exception:
             trading_session = "UNKNOWN"
+
+        if str(trading_session).upper() in {"CLOSED", "HOLIDAY", "TRADING_HOLIDAY", "POST_MARKET"}:
+            feed_health = "MARKET_CLOSED"
+            session_mode = "LAST_SESSION" if spot > 0 else "UNAVAILABLE"
+            if _candle_buffer:
+                candle_time = _candle_buffer[-1].get("date")
+                if candle_time:
+                    last_tick_time = str(candle_time)
+
+        global _kite_extensions, _kite_extensions_last_fetch
+        market_closed = str(trading_session).upper() in {"CLOSED", "HOLIDAY", "TRADING_HOLIDAY", "POST_MARKET"}
+        if bs.is_connected() and time.time() - _kite_extensions_last_fetch >= _KITE_EXTENSIONS_FETCH_INTERVAL_SECONDS:
+            try:
+                from src.broker.services.kite_intelligence_service import KiteIntelligenceService
+                _kite_extensions = KiteIntelligenceService.build_market_extensions(bs, market_closed)
+                _kite_extensions_last_fetch = time.time()
+            except Exception as exc:
+                logger.warning("Kite market extensions unavailable: %s", exc)
+        breadth = _kite_extensions.get("breadth") or {
+            "status": "UNAVAILABLE", "coverage": {"valid": 0, "expected": 50, "minimum": 40}
+        }
+        sectors = _kite_extensions.get("sectors") or []
+        breadth_ratio = breadth.get("advance_decline_ratio") if breadth.get("status") == "READY" else None
 
         return {
             # Spot & Tick
             "current_spot": spot,
             "ltp": ltp,
             "last_tick_time": last_tick_time,
+            "session_mode": session_mode,
+            "candles": candles_payload,
             # Bid / Ask
             "bid": bid,
             "ask": ask,
@@ -331,6 +395,7 @@ class MarketContextBuilder:
             "atr": atr,
             # Volatility
             "india_vix": india_vix,
+            "india_vix_context": india_vix_context,
             "volatility_state": vol_state,
             # Options
             "pcr": pcr,
@@ -344,7 +409,15 @@ class MarketContextBuilder:
             "support_levels": supports,
             "resistance_levels": resistances,
             # Breadth (N/A — requires equity scanner)
-            "market_breadth": 0.0,
+            "market_breadth": breadth_ratio,
+            "breadth": breadth,
+            "constituent_instruments": _kite_extensions.get("constituent_instruments") or {},
+            "sectors": sectors,
+            "sector_performance": sectors,
+            "sector_coverage": {
+                "resolved": _kite_extensions.get("resolved_count", 0),
+                "quoted": _kite_extensions.get("quote_count", 0),
+            },
             # Feed health
             "feed_latency_ms": feed_latency_ms,
             "feed_health": feed_health,

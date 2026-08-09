@@ -33,12 +33,7 @@ class WorkspaceManager:
             return
         
         # Load mode from Configuration
-        mode_str = getattr(Config, "WORKSPACE_MODE", "") or getattr(Config, "DEFAULT_WORKSPACE_MODE", "LIVE_PRACTICE")
-        try:
-            self._current_mode = WorkspaceMode(mode_str)
-        except ValueError:
-            logger.warning(f"Invalid operating mode '{mode_str}' in configuration, falling back to LIVE_PRACTICE.")
-            self._current_mode = WorkspaceMode.LIVE_PRACTICE
+        self._current_mode = WorkspaceMode.READ_ONLY
 
         self._initialized = True
 
@@ -63,6 +58,12 @@ class WorkspaceManager:
         Attempts to change the workspace operating mode.
         If validation fails, raises InvalidModeTransitionError and triggers auto-fallback if configured.
         """
+        if new_mode != WorkspaceMode.READ_ONLY:
+            raise InvalidModeTransitionError(
+                self._current_mode,
+                new_mode,
+                "AIR ArdhaMind has one fixed read-only product mode",
+            )
         if self._current_mode == new_mode:
             return True
 
@@ -105,11 +106,11 @@ class WorkspaceManager:
         mode = self._current_mode
         
         # Centralized Behaviour Matrix resolution (Task 4)
-        if mode == WorkspaceMode.LIVE_PRACTICE:
+        if mode == WorkspaceMode.READ_ONLY:
             market_data = MarketDataSource.LIVE
             broker_type = "ZERODHA"
-            portfolio = PortfolioSource.BROKER
-            exec_mode = ExecutionMode.PAPER_EXECUTION
+            portfolio = PortfolioSource.READ_ONLY_BROKER
+            exec_mode = ExecutionMode.READ_ONLY
             analytics = AnalyticsMode.ENABLED
             notification = NotificationMode.ENABLED
         elif mode == WorkspaceMode.LIVE_TRADING:

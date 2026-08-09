@@ -31,18 +31,19 @@ export function WorkstationTopBar({ mobileOpen, onToggleMobile, onOpenSettings }
   const feedHealth = stateObj?.market_feed_status?.status || "offline";
   const feedLatencyMs = stateObj?.data_quality?.market_data?.age_seconds ? stateObj.data_quality.market_data.age_seconds * 1000 : 0;
 
-  const feed = marketStateStr === "CLOSED" 
+  const isClosedSession = marketStateStr === "CLOSED" || marketStateStr === "HOLIDAY" || Boolean(stateObj?.market_session?.is_closed);
+
+  const feed = isClosedSession
     ? "Market Closed" 
     : marketConnection === "DISCONNECTED"
-      ? "Lost"
+      ? "Offline"
       : marketConnection === "CONNECTING"
-        ? "Initializing"
+        ? "Connecting"
         : feedHealth === "healthy" 
           ? "Live" 
           : feedHealth === "degraded" 
             ? `Delayed${feedLatencyMs ? ` ${Math.ceil(feedLatencyMs / 1000)}s` : ""}` 
-            : "Initializing";
+            : "Market Closed";
 
   return <><header data-testid="phase1-top-bar" className="flex min-h-16 items-center gap-3 border-b border-neutral-800 bg-neutral-950/90 px-4"><button aria-label="Toggle navigation" className="lg:hidden" onClick={onToggleMobile}>{mobileOpen ? <X /> : <Menu />}</button><div className="mr-auto"><div className="font-black text-white">AIR <span className={accentClasses.text}>ArdhaMind</span></div><div className="text-[9px] uppercase tracking-widest text-neutral-500">Live intelligence · Read only</div></div><div className="hidden text-xs text-neutral-300 md:block">{marketLabel(marketStateStr)} · {clock}</div><div className="hidden text-xs text-neutral-400 lg:block">{kite}</div><div className="hidden text-xs text-neutral-400 lg:block">Market Feed · {feed}</div><button aria-label="Notifications" onClick={() => setNotifications(!notifications)} className="rounded border border-neutral-800 p-2"><Bell size={15} /></button><button aria-label="Settings" onClick={onOpenSettings} className="rounded border border-neutral-800 p-2"><Settings size={15} /></button></header>{notifications && <div className="absolute right-16 top-16 z-50 w-72 rounded-lg border border-neutral-800 bg-neutral-950 p-4 text-xs text-neutral-400 shadow-xl">No unread intelligence alerts.</div>}</>;
 }
-

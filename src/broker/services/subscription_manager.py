@@ -24,6 +24,7 @@ class SubscriptionManager:
         self.ticker_adapter = ticker_adapter
         self.active_symbols: Set[str] = set()
         self.active_tokens: Set[int] = set()
+        self._symbol_tokens: Dict[str, int] = {}
 
     def set_ticker_adapter(self, ticker_adapter: Any) -> None:
         self.ticker_adapter = ticker_adapter
@@ -59,10 +60,15 @@ class SubscriptionManager:
                         token = idx_inst.get("instrument_token")
 
             if token:
-                tokens_to_sub.append(token)
+                token = int(token)
                 self.active_symbols.add(upper_sym)
-                self.active_tokens.add(token)
-                logger.info(f"Subscribed to {symbol} (Token: {token})")
+                self._symbol_tokens[upper_sym] = token
+                if token not in self.active_tokens:
+                    tokens_to_sub.append(token)
+                    self.active_tokens.add(token)
+                    logger.info(f"Subscribed to {symbol} (Token: {token})")
+                else:
+                    logger.debug(f"Token already subscribed through another symbol: {token}")
             else:
                 logger.warning(f"Could not resolve symbol to token: {symbol}")
 
@@ -87,18 +93,21 @@ class SubscriptionManager:
                 continue
 
             # Resolve to token
-            token = None
-            if upper_sym in DEFAULT_INDICES:
-                token = DEFAULT_INDICES[upper_sym]
-            else:
-                inst = inst_service.lookup_instrument_by_symbol(symbol)
-                if inst:
-                    token = inst.get("instrument_token")
+            token = self._symbol_tokens.get(upper_sym)
+            if token is None:
+                if upper_sym in DEFAULT_INDICES:
+                    token = DEFAULT_INDICES[upper_sym]
+                else:
+                    inst = inst_service.lookup_instrument_by_symbol(symbol)
+                    if inst:
+                        token = inst.get("instrument_token")
 
             if token:
-                tokens_to_unsub.append(token)
                 self.active_symbols.discard(upper_sym)
-                self.active_tokens.discard(token)
+                self._symbol_tokens.pop(upper_sym, None)
+                if token not in self._symbol_tokens.values():
+                    tokens_to_unsub.append(token)
+                    self.active_tokens.discard(token)
                 logger.info(f"Unsubscribed from {symbol} (Token: {token})")
             else:
                 # If we couldn't resolve, but we had it in set, discard
@@ -119,3 +128,4 @@ class SubscriptionManager:
         """Clears all tracking."""
         self.active_symbols.clear( )
         self.active_tokens.clear()
+        self._symbol_tokens.clear()

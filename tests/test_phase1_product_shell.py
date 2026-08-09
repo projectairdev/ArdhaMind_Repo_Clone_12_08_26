@@ -43,7 +43,7 @@ def test_readiness_and_failure_states_are_explicit():
 def test_execution_http_and_daemon_paths_reject_actions():
     assert 'app.post("/api/orders/place"' in SERVER
     assert 'app.post("/api/positions/exit"' in SERVER
-    assert SERVER.count("res.status(410)") >= 4
+    assert SERVER.count("rejectReadOnlyMutation(") >= 5
     for action in ["place_order", "modify_order", "cancel_order", "exit_position"]:
         assert f'args.action == "{action}"' not in BRIDGE
 

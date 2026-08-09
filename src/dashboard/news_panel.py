@@ -20,87 +20,151 @@ class NewsIntelligencePanel:
             return {}
 
         nc = self.news_context
-        stats = nc.statistics
-        sumry = nc.market_summary
+        if hasattr(nc, "payload"):
+            payload = nc.payload
+            items_list = nc.items
+        else:
+            payload = {
+                "section_status": "ready" if nc.usable else "unavailable",
+                "items": [],
+                "top_headlines": [],
+                "high_impact_items": [],
+                "corporate_items": [],
+                "event_items": [],
+                "provider_health": getattr(nc, "provider_health", {}),
+                "freshness": "unavailable",
+                "warnings": [],
+                "errors": [],
+                "generated_at": nc.scanned_at,
+            }
+            # Map legacy articles to items
+            items_list = []
+            for art in getattr(nc, "articles", []):
+                # Fake matching item fields
+                class NewsItemCompat:
+                    def __init__(self, a):
+                        self.id = a.article_id
+                        self.headline = a.title
+                        self.summary_snippet = a.content
+                        self.source_name = a.source
+                        self.published_at = a.published_at
+                        self.affected_symbols = a.entities
+                        self.affected_sectors = []
+                        self.category = a.classification
+                        self.impact_strength = a.severity.value.lower()
+                        self.expected_direction = a.impact.expected_direction.lower() if a.impact else "uncertain"
+                        self.nifty_relevance_score = a.impact.impact_score if a.impact else 1.0
+                        self.confidence = a.confidence_score
+                items_list.append(NewsItemCompat(art))
 
-        # Calculate sentiment bias and panic triggers
-        sentiment = stats.sentiment_score
-        bias = "BULLISH" if sentiment >= 0.15 else "BEARISH" if sentiment <= -0.15 else "NEUTRAL"
-        is_panic = sentiment <= -0.4
+        total_articles = len(items_list)
+        severity_distribution = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+        classification_distribution: Dict[str, int] = {}
+        total_sentiment = 0.0
 
-        return {
+        for item in items_list:
+            classification_distribution[item.category] = classification_distribution.get(item.category, 0) + 1
+            if item.impact_strength == "high":
+                severity_distribution["HIGH"] += 1
+            elif item.impact_strength == "medium":
+                severity_distribution["MEDIUM"] += 1
+            else:
+                severity_distribution["LOW"] += 1
+
+            val = 1 if item.expected_direction == "positive" else -1 if item.expected_direction == "negative" else 0
+            total_sentiment += item.nifty_relevance_score * val
+
+        sentiment_score = round(total_sentiment / total_articles, 2) if total_articles else 0.0
+        bias = "BULLISH" if sentiment_score >= 0.15 else "BEARISH" if sentiment_score <= -0.15 else "NEUTRAL"
+        is_panic = sentiment_score <= -0.4
+
+        from src.news_engine.normalizer import clean_html_text
+
+        # Sanitize all items in payload if present
+        if isinstance(payload.get("items"), list):
+            for it in payload["items"]:
+                if isinstance(it, dict):
+                    it["headline"] = clean_html_text(it.get("headline", ""), max_length=200)
+                    it["summary_snippet"] = clean_html_text(it.get("summary_snippet", ""), max_length=500)
+                    if "summary" in it:
+                        it["summary"] = clean_html_text(it.get("summary", ""), max_length=500)
+                    if "description" in it:
+                        it["description"] = clean_html_text(it.get("description", ""), max_length=500)
+
+        legacy = {
             "scanned_at": nc.scanned_at,
-            "overall_sentiment": sentiment,
+            "overall_sentiment": sentiment_score,
             "sentiment_bias": bias,
             "is_news_panic_active": is_panic,
             "timestamp": nc.scanned_at,
             "statistics": {
-                "total_articles": stats.total_articles,
-                "sentiment_score": stats.sentiment_score,
-                "severity_distribution": stats.severity_distribution,
-                "classification_distribution": stats.classification_distribution,
+                "total_articles": total_articles,
+                "sentiment_score": sentiment_score,
+                "severity_distribution": severity_distribution,
+                "classification_distribution": classification_distribution,
             },
             "summary": {
-                "market_summary": sumry.market_summary,
-                "key_takeaways": sumry.key_takeaways,
-                "critical_alerts": sumry.critical_alerts,
+                "market_summary": clean_html_text(nc.market_summary.market_summary if hasattr(nc, "market_summary") else "Unified financial news and macroeconomic calendar updates.", max_length=500),
+                "key_takeaways": nc.market_summary.key_takeaways if hasattr(nc, "market_summary") else [],
+                "critical_alerts": nc.market_summary.critical_alerts if hasattr(nc, "market_summary") else [],
             },
             "critical_events": [
                 {
                     "event_id": ev.event_id,
-                    "title": ev.title,
-                    "description": ev.description,
+                    "title": clean_html_text(ev.title, max_length=200),
+                    "description": clean_html_text(ev.description, max_length=500),
                     "event_type": ev.event_type,
                     "severity": ev.severity.value,
                     "scheduled_time": ev.scheduled_time,
                     "direction": ev.impact.expected_direction if ev.impact else "NEUTRAL",
                     "impact_score": ev.impact.impact_score if ev.impact else 0.0,
                 }
-                for ev in nc.critical_alerts
+                for ev in getattr(nc, "critical_alerts", [])
             ],
             "upcoming_events": [
                 {
                     "event_id": ev.event_id,
-                    "title": ev.title,
-                    "description": ev.description,
+                    "title": clean_html_text(ev.title, max_length=200),
+                    "description": clean_html_text(ev.description, max_length=500),
                     "event_type": ev.event_type,
                     "severity": ev.severity.value,
                     "scheduled_time": ev.scheduled_time,
                     "direction": ev.impact.expected_direction if ev.impact else "NEUTRAL",
                     "impact_score": ev.impact.impact_score if ev.impact else 0.0,
                 }
-                for ev in nc.upcoming_events
+                for ev in getattr(nc, "upcoming_events", [])
             ],
             "current_events": [
                 {
                     "event_id": ev.event_id,
-                    "title": ev.title,
-                    "description": ev.description,
+                    "title": clean_html_text(ev.title, max_length=200),
+                    "description": clean_html_text(ev.description, max_length=500),
                     "event_type": ev.event_type,
                     "severity": ev.severity.value,
                     "scheduled_time": ev.scheduled_time,
                 }
-                for ev in nc.current_events
+                for ev in getattr(nc, "current_events", [])
             ],
             "articles": [
                 {
-                    "article_id": art.article_id,
-                    "title": art.title,
-                    "headline": art.title,
-                    "summary": art.content,
-                    "source": art.source,
-                    "published_at": art.published_at,
-                    "entities": art.entities,
-                    "classification": art.classification,
-                    "severity": art.severity.value,
-                    "expected_direction": art.impact.expected_direction if art.impact else "NEUTRAL",
-                    "sentiment_score": art.impact.impact_score if art.impact else 0.0,
-                    "impact_score": art.impact.impact_score if art.impact else 0.0,
-                    "decay_multiplier": art.confidence_score,
+                    "article_id": item.id,
+                    "title": clean_html_text(item.headline, max_length=200),
+                    "headline": clean_html_text(item.headline, max_length=200),
+                    "summary": clean_html_text(item.summary_snippet, max_length=500),
+                    "source": clean_html_text(item.source_name, max_length=100),
+                    "published_at": item.published_at,
+                    "entities": item.affected_symbols + item.affected_sectors,
+                    "classification": item.category,
+                    "severity": "HIGH" if item.impact_strength == "high" else "MEDIUM" if item.impact_strength == "medium" else "LOW",
+                    "expected_direction": item.expected_direction.upper(),
+                    "sentiment_score": item.nifty_relevance_score,
+                    "impact_score": item.nifty_relevance_score,
+                    "decay_multiplier": item.confidence,
                 }
-                for art in nc.articles
+                for item in items_list
             ]
         }
+        return {**payload, **legacy}
 
     def render_cli(self) -> str:
         """

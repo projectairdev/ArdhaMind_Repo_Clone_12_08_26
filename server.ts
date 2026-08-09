@@ -1,4 +1,6 @@
+import "dotenv/config";
 import express from "express";
+import { rejectReadOnlyMutation } from "./src/read_only_http";
 import path from "path";
 import fs from "fs";
 import { spawn, ChildProcess } from "child_process";
@@ -11,8 +13,29 @@ const PORT = 3000;
 
 app.use(express.json());
 
+// In-memory REST rate limiter (120 requests / min per IP)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api/")) return next();
+  const ip = req.ip || "127.0.0.1";
+  const now = Date.now();
+  const record = rateLimitMap.get(ip) || { count: 0, resetAt: now + 60000 };
+  if (now > record.resetAt) {
+    record.count = 1;
+    record.resetAt = now + 60000;
+  } else {
+    record.count += 1;
+  }
+  rateLimitMap.set(ip, record);
+  if (record.count > 150) {
+    res.status(429).json({ error: "Too many REST requests. Rate limit exceeded." });
+    return;
+  }
+  next();
+});
+
 // Persistent state for workspace mode in-memory (defaults to LIVE_PRACTICE)
-let activeWorkspaceMode = process.env.WORKSPACE_MODE || "LIVE_PRACTICE";
+let activeWorkspaceMode = "READ_ONLY";
 
 // In-memory active broker keys for the duration of the server process
 let activeApiKey = process.env.KITE_API_KEY || "";
@@ -50,7 +73,7 @@ let workstationState: any = {
     marketState: "CLOSED",
     brokerType: "ZERODHA",
     marketDataSource: "LIVE",
-    executionMode: "PAPER_EXECUTION",
+    executionMode: "READ_ONLY",
     portfolioSource: "BROKER",
     analyticsMode: "ENABLED",
     notificationMode: "ENABLED",
@@ -78,6 +101,34 @@ let workstationState: any = {
   newsSentiment: null,
   ticks: {}
 };
+
+function mergeOfficialIndiaEvents(macro: any, news: any) {
+  const existing = Array.isArray(macro?.official_india_events) ? macro.official_india_events : [];
+  const officialNews = (Array.isArray(news?.items) ? news.items : [])
+    .filter((item: any) => ["RBI", "SEBI", "GOVERNMENT_POLICY", "INDIA_MACRO"].includes(String(item?.canonical_event_category || "")))
+    .map((item: any) => ({
+      id: item.id,
+      event_category: item.canonical_event_category,
+      headline: item.headline,
+      description: item.summary_snippet,
+      published_at: item.published_at,
+      retrieved_at: item.received_at,
+      source_name: item.source_name,
+      source_url: item.original_url,
+      source_reference: item.source_reference || item.original_url,
+      source_authority: item.source_authority || "PRIMARY",
+      verification_status: String(item.verification_status || "").toUpperCase(),
+      relevance_score: item.nifty_relevance_score,
+      impact_level: String(item.impact_strength || "").toUpperCase(),
+      confidence: item.confidence,
+      official_subcategory: item.official_subcategory,
+      freshness_status: item.freshness_status,
+    }));
+  const merged = [...existing, ...officialNews].filter((item: any, index: number, all: any[]) =>
+    all.findIndex((candidate: any) => String(candidate?.id || "") === String(item?.id || "")) === index
+  );
+  return { ...(macro || {}), official_india_events: merged };
+}
 
 // WebSocket broadcast server instance
 let wss: WebSocketServer | null = null;
@@ -109,20 +160,25 @@ function startPythonDaemon() {
     ...process.env,
     PYTHONPATH: ".",
     WORKSPACE_MODE: activeWorkspaceMode,
-    KITE_API_KEY: activeApiKey,
-    KITE_ACCESS_TOKEN: activeAccessToken,
+    KITE_API_KEY: activeApiKey || process.env.KITE_API_KEY || "",
+    KITE_API_SECRET: process.env.KITE_API_SECRET || "",
+    KITE_REDIRECT_URL: process.env.KITE_REDIRECT_URL || "http://127.0.0.1:3000/api/broker/callback",
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
     PREFERRED_TRADING_STYLE: process.env.PREFERRED_TRADING_STYLE || "Intraday"
   };
 
   let pythonCmd = process.platform === "win32" ? "python" : "python3";
-  const venvPath = process.platform === "win32"
+  const venvPath1 = path.join(process.cwd(), "new/Scripts/python.exe");
+  const venvPath2 = process.platform === "win32"
     ? path.join(process.cwd(), ".venv/Scripts/python.exe")
     : path.join(process.cwd(), ".venv/bin/python");
-  if (fs.existsSync(venvPath)) {
-    pythonCmd = venvPath;
+  if (fs.existsSync(venvPath1)) {
+    pythonCmd = venvPath1;
+  } else if (fs.existsSync(venvPath2)) {
+    pythonCmd = venvPath2;
   }
   console.log(`Spawning persistent Python bridge daemon: ${pythonCmd} src/server_bridge.py --action daemon`);
-  
+
   pyDaemon = spawn(pythonCmd, ["src/server_bridge.py", "--action", "daemon"], { env });
 
   const rl = readline.createInterface({
@@ -142,11 +198,7 @@ function startPythonDaemon() {
         workstationState.ticks[msg.symbol] = tickData;
         broadcastToClients({ type: "tick", symbol: msg.symbol, data: tickData });
       } else if (msg.type === "state") {
-        workstationState = {
-          ...workstationState,
-          ...msg.data,
-          ticks: workstationState.ticks
-        };
+        workstationState = msg.data;
         broadcastToClients({ type: "state", data: workstationState });
       } else if (msg.type === "response") {
         const req = pendingRequests.get(msg.requestId);
@@ -214,6 +266,57 @@ app.post("/api/workspace/trading-preferences", async (req, res) => {
     process.env.PREFERRED_TRADING_STYLE = preferredTradingStyle;
   }
   res.json({ preferredTradingStyle: process.env.PREFERRED_TRADING_STYLE || "Intraday" });
+});
+
+app.get("/api/broker/login-url", async (_req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_login_url");
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/broker/callback", async (req, res) => {
+  const requestToken = (req.query.request_token as string) || (req.query.requestToken as string);
+  console.log(`[AUTH] Callback route reached. RequestToken present: ${Boolean(requestToken)}`);
+  if (!requestToken) {
+    res.status(400).json({ success: false, error: "Missing request_token parameter from Zerodha authentication." });
+    return;
+  }
+  try {
+    const result = await sendDaemonRequest("exchange_request_token", { request_token: requestToken });
+    console.log(`[AUTH] Token exchange result success: ${Boolean(result && result.success)}`);
+    if (result && result.success) {
+      workstationState.workspaceContext = {
+        ...workstationState.workspaceContext,
+        brokerState: "CONNECTED",
+        timestamp: new Date().toISOString()
+      };
+      broadcastToClients({
+        type: "auth_event",
+        brokerState: "CONNECTED",
+        timestamp: new Date().toISOString()
+      });
+      console.log("[AUTH] Broker canonical publication SUCCESS — auth_event broadcast to all clients.");
+      if (req.headers.accept && req.headers.accept.includes("application/json")) {
+        return res.json({ success: true, brokerState: "CONNECTED" });
+      }
+      return res.redirect("/?connected=true");
+    } else {
+      console.log(`[AUTH] Token exchange failed: ${result?.error || "Unknown error"}`);
+      if (req.headers.accept && req.headers.accept.includes("application/json")) {
+        return res.status(400).json({ success: false, error: result?.error || "Unknown error" });
+      }
+      return res.redirect(`/?login=failed&reason=${encodeURIComponent(result?.error || "Token exchange failed")}`);
+    }
+  } catch (err: any) {
+    console.log(`[AUTH] Callback exception: ${err.message}`);
+    if (req.headers.accept && req.headers.accept.includes("application/json")) {
+      return res.status(500).json({ error: err.message });
+    }
+    return res.redirect(`/?login=failed&reason=${encodeURIComponent(err.message)}`);
+  }
 });
 
 app.get("/api/broker/config", async (req, res) => {
@@ -298,8 +401,49 @@ app.post("/api/broker/logout", async (req, res) => {
   }
 });
 
+app.get("/api/interpretation/status", async (_req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_interpretation_status");
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ status: "unavailable", reason: err.message });
+  }
+});
+
+app.post("/api/interpretation/generate", async (_req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_interpretation");
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/health", (req, res) => {
+  const readiness = workstationState.workspace_readiness || workstationState.workspaceReadiness || {};
+  const overallState = readiness.overall_state || "DEGRADED";
+
+  res.json({
+    status: overallState,
+    overall_state: overallState,
+    market_session: workstationState.market_session?.status || "UNKNOWN",
+    runtime_id: workstationState.runtime_id || null,
+    state_sequence: workstationState.state_sequence || 0,
+    timestamp: new Date().toISOString(),
+    component_readiness: {
+      zerodha: workstationState.broker_status?.status || "disconnected",
+      market_feed: workstationState.market_feed_status?.status || "offline",
+      options: workstationState.option_intelligence?.status || "unavailable",
+      news: workstationState.news_intelligence?.status || "unavailable",
+      macro: workstationState.macro_intelligence?.usable ? "ready" : "unavailable",
+      live_assistant: readiness.live_assistant?.status || "unavailable"
+    }
+  });
+});
+
 app.get("/api/broker/health", (req, res) => {
-  res.json(workstationState.portfolioReport?.broker_health || { connection_status: "DISCONNECTED", session_valid: false });
+  const status = workstationState.broker_status?.status || "disconnected";
+  res.json({ connection_status: status.toUpperCase(), session_valid: status === "connected", last_successful_update: workstationState.broker_status?.last_successful_update || null });
 });
 
 app.get("/api/portfolio", (req, res) => {
@@ -307,7 +451,7 @@ app.get("/api/portfolio", (req, res) => {
 });
 
 app.get("/api/profile", (req, res) => {
-  res.json(workstationState.brokerAccount || {});
+  res.json(workstationState.read_only_account_summary || {});
 });
 
 app.get("/api/funds", (req, res) => {
@@ -399,12 +543,110 @@ app.get("/api/planner/optimization-report", (req, res) => {
   res.json(workstationState.optimization_report || {});
 });
 
-app.post("/api/orders/place", (_req, res) => {
-  res.status(410).json({ error: "Order placement is unavailable: AIR ArdhaMind is read only." });
+app.post("/api/orders/place", rejectReadOnlyMutation("Order placement"));
+app.post("/api/orders/modify", rejectReadOnlyMutation("Order modification"));
+app.post("/api/orders/cancel", rejectReadOnlyMutation("Order cancellation"));
+app.post("/api/positions/exit", rejectReadOnlyMutation("Position exit"));
+app.post("/api/paper-trading/:action", rejectReadOnlyMutation("Paper trading"));
+
+let manualRefreshStatus: "idle" | "running" | "completed" | "failed" = "idle";
+let lastRefreshTime = 0;
+let refreshError: string | null = null;
+
+app.post("/api/news/refresh", async (req, res) => {
+  const now = Date.now();
+  if (manualRefreshStatus === "running") {
+    return res.status(409).json({ status: "running", error: "A refresh is already in progress." });
+  }
+  if (now - lastRefreshTime < 60000) {
+    return res.status(429).json({ status: "rate_limited", error: "Rate limit exceeded. Manual refresh is allowed once per minute." });
+  }
+
+  manualRefreshStatus = "running";
+  refreshError = null;
+  res.json({ status: "running", message: "Refresh initiated." });
+
+  // Execute asynchronously
+  (async () => {
+    try {
+      const result = await sendDaemonRequest("refresh_news");
+      if (result && result.success) {
+        manualRefreshStatus = "completed";
+        lastRefreshTime = Date.now();
+        if (result.newsSentiment) {
+          workstationState = {
+            ...workstationState,
+            news_intelligence: result.newsSentiment,
+            macro_intelligence: mergeOfficialIndiaEvents(workstationState.macro_intelligence, result.newsSentiment)
+          };
+          broadcastToClients({ type: "state", data: workstationState });
+        }
+      } else {
+        manualRefreshStatus = "failed";
+        refreshError = result?.error || "Daemon failed to refresh news.";
+      }
+    } catch (err: any) {
+      manualRefreshStatus = "failed";
+      refreshError = err.message;
+    }
+  })();
 });
 
-app.post("/api/positions/exit", (_req, res) => {
-  res.status(410).json({ error: "Position exits are unavailable: AIR ArdhaMind is read only." });
+app.get("/api/news/refresh/status", (req, res) => {
+  res.json({
+    status: manualRefreshStatus,
+    lastRefreshTime,
+    error: refreshError
+  });
+});
+
+let manualMacroRefreshStatus: "idle" | "running" | "completed" | "failed" = "idle";
+let lastMacroRefreshTime = 0;
+let macroRefreshError: string | null = null;
+
+app.post("/api/macro/refresh", async (req, res) => {
+  const now = Date.now();
+  if (manualMacroRefreshStatus === "running") {
+    return res.status(409).json({ status: "running", error: "A macro refresh is already in progress." });
+  }
+  if (now - lastMacroRefreshTime < 60000) {
+    return res.status(429).json({ status: "rate_limited", error: "Rate limit exceeded. Manual refresh is allowed once per minute." });
+  }
+
+  manualMacroRefreshStatus = "running";
+  macroRefreshError = null;
+  res.json({ status: "running", message: "Macro refresh initiated." });
+
+  (async () => {
+    try {
+      const result = await sendDaemonRequest("refresh_macro");
+      if (result && result.success) {
+        manualMacroRefreshStatus = "completed";
+        lastMacroRefreshTime = Date.now();
+        if (result.macroIntelligence) {
+          workstationState = {
+            ...workstationState,
+            macro_intelligence: mergeOfficialIndiaEvents(result.macroIntelligence, workstationState.news_intelligence)
+          };
+          broadcastToClients({ type: "state", data: workstationState });
+        }
+      } else {
+        manualMacroRefreshStatus = "failed";
+        macroRefreshError = result?.error || "Daemon failed to refresh macro data.";
+      }
+    } catch (err: any) {
+      manualMacroRefreshStatus = "failed";
+      macroRefreshError = err.message;
+    }
+  })();
+});
+
+app.get("/api/macro/refresh/status", (req, res) => {
+  res.json({
+    status: manualMacroRefreshStatus,
+    lastRefreshTime: lastMacroRefreshTime,
+    error: macroRefreshError
+  });
 });
 
 // Vite middleware setup for development, or static serving for production

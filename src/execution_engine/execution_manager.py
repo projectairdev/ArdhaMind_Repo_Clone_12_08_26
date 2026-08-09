@@ -48,7 +48,12 @@ class ExecutionManager:
         Validates an ExecutionRequest. If valid, registers it for manual operator confirmation.
         If invalid, immediately records a failed validation audit entry.
         """
-        validation = ExecutionValidator.validate_request(request, bypass_safety=bypass_safety)
+        del bypass_safety
+        validation = ExecutionValidation(
+            is_valid=False,
+            errors=["READ_ONLY_PRODUCT: execution validation and confirmation are unavailable."],
+            timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        )
         
         if validation.is_valid:
             # Register for manual confirmation
@@ -82,7 +87,19 @@ class ExecutionManager:
         """
         Submits confirmed order execution request to the BrokerService.
         """
-        # 1. Retrieve the pending request
+        del operator, bypass_safety
+        return ExecutionResult(
+            request_id=request_id,
+            status="FAILED",
+            failures=[ExecutionFailure(
+                order_id="",
+                tradingsymbol="",
+                error_message="READ_ONLY_PRODUCT: order execution is unavailable.",
+            )],
+            timestamp=datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        )
+
+        # Retained below as unreachable historical implementation context.
         request = ConfirmationManager.get_pending_request(request_id)
         if not request:
             # Check if it was already confirmed/cancelled

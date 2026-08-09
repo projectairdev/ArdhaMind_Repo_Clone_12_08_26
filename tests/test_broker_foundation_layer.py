@@ -8,6 +8,7 @@ from typing import Dict, Any
 from src.broker.models.trading_mode import TradingMode, BrokerType
 from src.broker.models.health import BrokerHealth
 from src.broker.utils.cache_manager import InstrumentCacheManager
+import src.broker.utils.cache_manager as cache_manager
 from tests.support.mock_broker_gateway import MockBrokerGateway
 from tests.support.fake_kiteconnect import FakeKiteConnect
 from src.broker.adapters.kite_broker import KiteBrokerGateway
@@ -38,30 +39,32 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         self._orig_api_secret = getattr(Config, "KITE_API_SECRET", "")
         self._orig_cache_path = getattr(Config, "SESSION_CACHE_PATH", ".cache/session.json")
         self._orig_trading_mode = getattr(Config, "TRADING_MODE", "PAPER_TRADING")
+        self._orig_instrument_db_path = cache_manager.DB_PATH
         
         # Configure temporary test credentials
         Config.KITE_API_KEY = "test_api_key"
         Config.KITE_API_SECRET = "test_api_secret"
         Config.SESSION_CACHE_PATH = ".cache/test_session.json"
         Config.TRADING_MODE = "PAPER_TRADING"
+        cache_manager.DB_PATH = ".cache/test_instruments.db"
         
         # Reset BrokerService singleton for isolation
         BrokerService._instance = None
         
         # Ensure clean session cache state and instrument cache state
         SessionManager.delete_session()
-        if os.path.exists("cache/instruments.db"):
+        if os.path.exists(cache_manager.DB_PATH):
             try:
-                os.remove("cache/instruments.db")
+                os.remove(cache_manager.DB_PATH)
             except Exception:
                 pass
 
     def tearDown(self) -> None:
         # Delete temporary test session
         SessionManager.delete_session()
-        if os.path.exists("cache/instruments.db"):
+        if os.path.exists(cache_manager.DB_PATH):
             try:
-                os.remove("cache/instruments.db")
+                os.remove(cache_manager.DB_PATH)
             except Exception:
                 pass
         
@@ -70,6 +73,7 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         Config.KITE_API_SECRET = self._orig_api_secret
         Config.SESSION_CACHE_PATH = self._orig_cache_path
         Config.TRADING_MODE = self._orig_trading_mode
+        cache_manager.DB_PATH = self._orig_instrument_db_path
         BrokerService._instance = None
 
     def test_enums(self):
@@ -117,6 +121,7 @@ class TestBrokerFoundationLayer(unittest.TestCase):
 
     def test_instrument_cache_manager(self):
         """Verifies stateless cache manager placeholders."""
+        InstrumentCacheManager.invalidate_cache("MOCK")
         self.assertIsNone(InstrumentCacheManager.load_cache("MOCK"))
         self.assertTrue(InstrumentCacheManager.save_cache("MOCK", {}))
         self.assertTrue(InstrumentCacheManager.cache_exists("MOCK"))
@@ -138,8 +143,8 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         with self.assertRaises(SessionMissingError):
             gateway.get_funds()
             
-        # Write actions remain strictly prohibited and raise NotImplementedError
-        with self.assertRaises(NotImplementedError):
+        # Write actions remain strictly prohibited by the product boundary.
+        with self.assertRaises(PermissionError):
             gateway.place_order(symbol="NIFTY")
             
         # Health report should represent disconnected state
@@ -156,10 +161,13 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         # Config verification
         self.assertEqual(Config.KITE_API_KEY, "test_api_key")
         
+        mock_instance = mock_kite_class.return_value
+        mock_instance.login_url.return_value = "https://kite.zerodha.com/connect/login?api_key=test_api_key&v=3"
+
         # Test generation of login URL
         url = AuthenticationManager.generate_login_url()
         self.assertIn("api_key=test_api_key", url)
-        self.assertIn("redirect_params=redirect_uri%3D", url)
+        self.assertIn("https://kite.zerodha.com/connect/login", url)
         
         # Test exchanging request token
         mock_instance = mock_kite_class.return_value

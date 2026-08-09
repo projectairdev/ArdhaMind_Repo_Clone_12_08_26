@@ -21,6 +21,21 @@ export function safeString(val: any, fallback = ""): string {
   return String(val);
 }
 
+export function stripHtml(val: any): string {
+  if (!val) return "";
+  const str = String(val);
+  return str
+    .replace(/<[^>]*>?/gm, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function formatCurrency(val: any, fractionDigits = 0): string {
   if (val === null || val === undefined || val === "") return "—";
   const num = Number(val);
@@ -78,4 +93,16 @@ export function formatDate(val: any, fallback = "N/A"): string {
   } catch {
     return fallback;
   }
+}
+
+export function formatDateTimeIST(val: any, fallback = "N/A"): string {
+  if (!val) return fallback;
+  try {
+    const d = new Date(val);
+    if (isNaN(d.getTime())) return fallback;
+    return new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: false,
+    }).format(d) + " IST";
+  } catch { return fallback; }
 }

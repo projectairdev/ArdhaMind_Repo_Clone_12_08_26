@@ -12,6 +12,7 @@ from src.options_engine.oi_analysis import analyze_oi
 from src.options_engine.max_pain import calculate_max_pain
 from src.options_engine.liquidity import analyze_liquidity
 from src.options_engine.iv import analyze_iv
+from src.news_engine.specialized_data_provider import RbiRiskFreeRateProvider
 from src.options_engine.strike_ranker import rank_strikes
 from src.utils import setup_logger, now_str
 
@@ -96,7 +97,9 @@ class OptionIntelligencePipeline:
         liq_res = analyze_liquidity(chain, atm_strike, step)
 
         # 8. Calculate Implied Volatility (Task 6)
-        iv_res = analyze_iv(chain, spot_price, atm_strike, expiry_date)
+        rate_record = RbiRiskFreeRateProvider.load_validated_rate()
+        rate_value = rate_record.get("rate") if rate_record.get("status") in {"AVAILABLE", "DEGRADED"} else None
+        iv_res = analyze_iv(chain, spot_price, atm_strike, expiry_date, r=rate_value)
 
         # 9. Rank Strikes (Task 7)
         ranked_strikes = rank_strikes(chain, liq_res, iv_res, atm_strike)
@@ -168,8 +171,8 @@ class OptionIntelligencePipeline:
             far_expiry=far_expiry_str,
             all_expiries=expiries_str,
             time_to_expiry=float(dte),
-            atm_iv=float(iv_res.atm_iv),
-            expected_move=float(iv_res.expected_move),
+            atm_iv=float(iv_res.atm_iv or 0.0),
+            expected_move=float(iv_res.expected_move or 0.0),
             pcr=float(oi_res.pcr_oi),
             max_pain=float(max_pain_res.max_pain_strike),
             highest_call_oi=float(oi_res.highest_ce_oi_value),

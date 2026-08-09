@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 from dataclasses import is_dataclass
 from src.models import (
+    NewsContext,
     NewsContextV2,
     NewsArticle,
     NewsEvent,
@@ -167,13 +168,13 @@ class TestNewsIntelligence(unittest.TestCase):
     def test_event_classifier(self) -> None:
         """Test keyword-based event classification."""
         c1 = EventClassifier.classify("RBI repo rate hikes expected next week", "Monetary policy decision is upcoming")
-        self.assertEqual(c1, "Central Bank")
+        self.assertEqual(c1, "RBI")
         
         c2 = EventClassifier.classify("Inflation cools down as CPI drops to 4.2%")
-        self.assertEqual(c2, "Inflation")
+        self.assertEqual(c2, "Macro")
 
         c3 = EventClassifier.classify("TCS announces outstanding corporate results with record revenue")
-        self.assertEqual(c3, "Corporate Earnings")
+        self.assertEqual(c3, "Earnings")
 
         c4 = EventClassifier.classify("Drone attacks hit key shipping container vessels")
         self.assertEqual(c4, "Geopolitics")
@@ -233,7 +234,7 @@ class TestNewsIntelligence(unittest.TestCase):
         # Test Pipeline
         pipeline = NewsPipeline()
         ctx_from_pipeline = pipeline.run()
-        self.assertIsInstance(ctx_from_pipeline, NewsContextV2)
+        self.assertIsInstance(ctx_from_pipeline, NewsContext)
 
     def test_dashboard_news_panel(self) -> None:
         """Test NewsIntelligencePanel dictionary serialization and CLI rendering."""

@@ -235,7 +235,9 @@ class BrokerService(IBrokerGateway):
         orch = StreamingOrchestrator.get_instance(self._gateway)
         api_key = getattr(self._gateway, "api_key", "") or getattr(Config, "KITE_API_KEY", "")
         access_token = getattr(self._gateway, "access_token", None) or getattr(Config, "KITE_ACCESS_TOKEN", "")
-        orch.configure(api_key, access_token or "MOCK_TOKEN")
+        if not api_key or not access_token:
+            raise PermissionError("A genuine authenticated Kite session is required for market streaming")
+        orch.configure(api_key, access_token)
         return orch
 
     def connect_stream(self) -> bool:
@@ -265,4 +267,3 @@ class BrokerService(IBrokerGateway):
     def get_stream_health(self) -> Any:
         """Returns the current immutable StreamHealthReport."""
         return self._get_orchestrator().get_health_report()
-

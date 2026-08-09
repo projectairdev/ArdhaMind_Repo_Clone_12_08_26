@@ -4,8 +4,17 @@ import datetime
 import math
 from dataclasses import dataclass, field
 from typing import List, Optional
-import numpy as np
+
 from src.options_engine.chain_builder import OptionChainContract
+
+
+@dataclass
+class IVSolverResult:
+    iv: Optional[float]
+    solver_status: str
+    iterations: int
+    convergence_error: Optional[float]
+    reason: Optional[str] = None
 
 
 @dataclass
@@ -13,73 +22,92 @@ class ContractIV:
     tradingsymbol: str
     strike: float
     instrument_type: str
-    iv: float  # as percentage, e.g. 15.4 for 15.4%
+    iv: float
+    solver_status: str = "CONVERGED"
+    iterations: int = 0
+    convergence_error: Optional[float] = None
 
 
 @dataclass
 class IVAnalysisResult:
-    atm_iv: float
-    average_iv: float
-    iv_percentile: float
-    expected_move: float
-    iv_classification: str  # "LOW", "NORMAL", "HIGH", "EXTREME"
+    atm_iv: Optional[float]
+    average_iv: Optional[float]
+    iv_percentile: Optional[float]
+    expected_move: Optional[float]
+    iv_classification: str
     contract_ivs: List[ContractIV] = field(default_factory=list)
+    status: str = "UNAVAILABLE"
+    reason: Optional[str] = None
 
 
 def normal_cdf(x: float) -> float:
-    """Standard normal cumulative distribution function."""
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 
-def black_scholes_price(
-    S: float,
-    K: float,
-    T: float,
-    r: float,
-    sigma: float,
-    option_type: str,
-) -> float:
-    """Computes the Black-Scholes price of a European option."""
-    if T <= 0 or sigma <= 0:
-        return max(0.0, S - K) if option_type == "CE" else max(0.0, K - S)
-
+def black_scholes_price(S: float, K: float, T: float, r: float, sigma: float, option_type: str) -> float:
+    kind = str(option_type).upper()
+    if S <= 0 or K <= 0 or T <= 0 or sigma <= 0 or kind not in {"CE", "PE"}:
+        raise ValueError("Black-Scholes inputs must be positive and option type must be CE or PE")
     d1 = (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
     d2 = d1 - sigma * math.sqrt(T)
-
-    if option_type == "CE":
+    if kind == "CE":
         return S * normal_cdf(d1) - K * math.exp(-r * T) * normal_cdf(d2)
-    else:
-        return K * math.exp(-r * T) * normal_cdf(-d2) - S * normal_cdf(-d1)
+    return K * math.exp(-r * T) * normal_cdf(-d2) - S * normal_cdf(-d1)
 
 
-def calculate_implied_volatility(
+def solve_implied_volatility(
     price: float,
     S: float,
     K: float,
     T: float,
-    r: float,
+    r: Optional[float],
     option_type: str,
-) -> float:
-    """Computes the Implied Volatility using Bisection search."""
-    # Check intrinsic value
-    intrinsic = max(0.0, S - K) if option_type == "CE" else max(0.0, K - S)
-    if price <= intrinsic + 0.05:
-        return 0.0
-
-    low = 0.0001
-    high = 5.0  # Max 500% IV
-    
-    for _ in range(50):
+    tolerance: float = 0.005,
+    max_iterations: int = 100,
+    lower_sigma: float = 0.0001,
+    upper_sigma: float = 5.0,
+) -> IVSolverResult:
+    """Bounded bisection solver with explicit rejection and convergence state."""
+    kind = str(option_type).upper()
+    values = (price, S, K, T)
+    if r is None:
+        return IVSolverResult(None, "UNAVAILABLE", 0, None, "MISSING_RISK_FREE_RATE")
+    if any(not isinstance(value, (int, float)) or not math.isfinite(float(value)) for value in values):
+        return IVSolverResult(None, "INVALID_INPUT", 0, None, "NON_FINITE_INPUT")
+    if price <= 0 or S <= 0 or K <= 0:
+        return IVSolverResult(None, "INVALID_INPUT", 0, None, "NON_POSITIVE_PRICE_SPOT_OR_STRIKE")
+    if T <= 0:
+        return IVSolverResult(None, "EXPIRED", 0, None, "EXPIRED_CONTRACT")
+    if kind not in {"CE", "PE"}:
+        return IVSolverResult(None, "INVALID_INPUT", 0, None, "INVALID_OPTION_TYPE")
+    discounted_strike = K * math.exp(-float(r) * T)
+    lower_bound = max(0.0, S - discounted_strike) if kind == "CE" else max(0.0, discounted_strike - S)
+    upper_bound = S if kind == "CE" else discounted_strike
+    if price < lower_bound - tolerance or price > upper_bound + tolerance:
+        return IVSolverResult(None, "INVALID_INPUT", 0, None, "IMPOSSIBLE_OPTION_PRICE")
+    low, high = lower_sigma, upper_sigma
+    low_price = black_scholes_price(S, K, T, float(r), low, kind)
+    high_price = black_scholes_price(S, K, T, float(r), high, kind)
+    if price < low_price - tolerance or price > high_price + tolerance:
+        return IVSolverResult(None, "NON_CONVERGENCE", 0, min(abs(price - low_price), abs(price - high_price)), "PRICE_OUTSIDE_SOLVER_BOUNDS")
+    error: Optional[float] = None
+    for iteration in range(1, max_iterations + 1):
         mid = (low + high) / 2.0
-        mid_price = black_scholes_price(S, K, T, r, mid, option_type)
-        if abs(mid_price - price) < 0.01:
-            return mid * 100.0  # Return as percentage
-        if mid_price > price:
+        calculated = black_scholes_price(S, K, T, float(r), mid, kind)
+        error = abs(calculated - price)
+        if error <= tolerance:
+            return IVSolverResult(round(mid * 100.0, 4), "CONVERGED", iteration, error)
+        if calculated > price:
             high = mid
         else:
             low = mid
+    return IVSolverResult(None, "NON_CONVERGENCE", max_iterations, error, "ITERATION_LIMIT_REACHED")
 
-    return ((low + high) / 2.0) * 100.0
+
+def calculate_implied_volatility(price: float, S: float, K: float, T: float, r: float, option_type: str) -> float:
+    """Backward-compatible numeric wrapper; invalid inputs return 0, never a guessed IV."""
+    result = solve_implied_volatility(price, S, K, T, r, option_type)
+    return float(result.iv) if result.iv is not None else 0.0
 
 
 def analyze_iv(
@@ -88,115 +116,55 @@ def analyze_iv(
     atm_strike: float,
     expiry_date: datetime.date,
     today_date: Optional[datetime.date] = None,
-    r: float = 0.07,
+    r: Optional[float] = None,
     historical_ivs: Optional[List[float]] = None,
 ) -> IVAnalysisResult:
-    """
-    Analyzes Implied Volatility (IV) across the option chain.
-    Calculates ATM IV, Average IV, IV Percentile, Expected Move, and IV Classification.
-    """
+    if r is None:
+        return IVAnalysisResult(None, None, None, None, "UNAVAILABLE", status="UNAVAILABLE", reason="MISSING_RISK_FREE_RATE")
     if today_date is None:
         today_date = datetime.date.today()
-
-    dte = (expiry_date - today_date).days
-    # Use minimum of 0.5 days to avoid division by zero
-    T = max(0.5, float(dte)) / 365.0
-
     if not chain or spot_price <= 0:
-        return IVAnalysisResult(
-            atm_iv=0.0,
-            average_iv=0.0,
-            iv_percentile=50.0,
-            expected_move=0.0,
-            iv_classification="NORMAL",
-        )
-
-    contract_ivs = []
-    atm_ivs = []
-    all_ivs = []
-
-    for c in chain:
-        # Resolve contract-specific T
+        return IVAnalysisResult(None, None, None, None, "UNAVAILABLE", status="UNAVAILABLE", reason="MISSING_CHAIN_OR_SPOT")
+    contract_ivs: List[ContractIV] = []
+    atm_ivs: List[float] = []
+    all_ivs: List[float] = []
+    for contract in chain:
         try:
-            import pandas as pd
-            if isinstance(c.expiry, str):
-                c_expiry_date = pd.to_datetime(c.expiry).date()
-            elif hasattr(c.expiry, "date"):
-                c_expiry_date = c.expiry.date()
-            else:
-                c_expiry_date = c.expiry
-        except Exception:
-            c_expiry_date = expiry_date
-
-        c_dte = (c_expiry_date - today_date).days
-        c_T = max(0.5, float(c_dte)) / 365.0
-
-        # Calculate implied volatility for each contract
-        iv_val = calculate_implied_volatility(
-            price=c.ltp,
-            S=spot_price,
-            K=c.strike,
-            T=c_T,
-            r=r,
-            option_type=c.instrument_type,
-        )
-        
-        # If the bisection failed or price is too low, we might get 0.0. Only include valid non-zero IVs
-        if iv_val > 0:
-            contract_ivs.append(
-                ContractIV(
-                    tradingsymbol=c.tradingsymbol,
-                    strike=c.strike,
-                    instrument_type=c.instrument_type,
-                    iv=round(iv_val, 2),
-                )
-            )
-            all_ivs.append(iv_val)
-            
-            # ATM IV: average IV of contracts at the ATM strike
-            if abs(c.strike - atm_strike) < 0.1:
-                atm_ivs.append(iv_val)
-
-    # Resolve ATM IV
-    if atm_ivs:
-        atm_iv = float(np.mean(atm_ivs))
+            expiry = datetime.date.fromisoformat(str(contract.expiry)[:10])
+        except (TypeError, ValueError):
+            expiry = expiry_date
+        T = (expiry - today_date).days / 365.0
+        solved = solve_implied_volatility(contract.ltp, spot_price, contract.strike, T, r, contract.instrument_type)
+        if solved.iv is None:
+            continue
+        contract_ivs.append(ContractIV(
+            tradingsymbol=contract.tradingsymbol, strike=contract.strike,
+            instrument_type=contract.instrument_type, iv=solved.iv,
+            solver_status=solved.solver_status, iterations=solved.iterations,
+            convergence_error=solved.convergence_error,
+        ))
+        all_ivs.append(solved.iv)
+        if abs(contract.strike - atm_strike) < 0.1:
+            atm_ivs.append(solved.iv)
+    if not all_ivs:
+        return IVAnalysisResult(None, None, None, None, "UNAVAILABLE", status="UNAVAILABLE", reason="NO_CONVERGED_CONTRACT_IV")
+    atm_iv = sum(atm_ivs) / len(atm_ivs) if atm_ivs else None
+    average_iv = sum(all_ivs) / len(all_ivs)
+    if atm_iv is None:
+        classification = "UNAVAILABLE"
+        expected_move = None
     else:
-        # Fallback if ATM strike doesn't have valid IV: average of nearest strikes
-        nearest_ivs = [c_iv.iv for c_iv in contract_ivs if abs(c_iv.strike - atm_strike) <= (100.0 * 2)]
-        atm_iv = float(np.mean(nearest_ivs)) if nearest_ivs else 15.0
-
-    # Resolve Average IV
-    average_iv = float(np.mean(all_ivs)) if all_ivs else atm_iv
-
-    # IV Classification
-    if atm_iv < 12.0:
-        iv_class = "LOW"
-    elif atm_iv < 18.0:
-        iv_class = "NORMAL"
-    elif atm_iv < 25.0:
-        iv_class = "HIGH"
-    else:
-        iv_class = "EXTREME"
-
-    # IV Percentile
+        classification = "LOW" if atm_iv < 12.0 else "NORMAL" if atm_iv < 18.0 else "ELEVATED" if atm_iv < 25.0 else "HIGH"
+        T = max((expiry_date - today_date).days / 365.0, 0.0)
+        expected_move = spot_price * (atm_iv / 100.0) * math.sqrt(T) if T > 0 else None
+    percentile = None
     if historical_ivs:
-        arr = np.array(historical_ivs)
-        iv_pct = float((arr <= atm_iv).mean() * 100.0)
-    else:
-        # If no history is provided, we calibrate relative to normal NIFTY VIX range (10.0 to 24.0)
-        min_vix = 10.0
-        max_vix = 24.0
-        pct = ((atm_iv - min_vix) / (max_vix - min_vix)) * 100.0
-        iv_pct = float(np.clip(pct, 0.0, 100.0))
-
-    # Expected Move: Spot * IV * sqrt(T)
-    expected_move = spot_price * (atm_iv / 100.0) * math.sqrt(T)
-
+        valid_history = [value for value in historical_ivs if isinstance(value, (int, float)) and math.isfinite(value)]
+        if valid_history and atm_iv is not None:
+            percentile = sum(value <= atm_iv for value in valid_history) / len(valid_history) * 100.0
     return IVAnalysisResult(
-        atm_iv=round(atm_iv, 2),
-        average_iv=round(average_iv, 2),
-        iv_percentile=round(iv_pct, 2),
-        expected_move=round(expected_move, 2),
-        iv_classification=iv_class,
-        contract_ivs=contract_ivs,
+        round(atm_iv, 4) if atm_iv is not None else None,
+        round(average_iv, 4), round(percentile, 2) if percentile is not None else None,
+        round(expected_move, 2) if expected_move is not None else None,
+        classification, contract_ivs=contract_ivs, status="AVAILABLE",
     )

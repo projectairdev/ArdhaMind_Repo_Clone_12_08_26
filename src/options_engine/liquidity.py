@@ -87,7 +87,7 @@ def analyze_liquidity(
         liquidity_score = (spread_score * 0.5) + (volume_score * 0.3) + (oi_score * 0.2)
 
         # Tradability score penalizes strikes far from ATM
-        distance_steps = abs(c.strike - atm_strike) / (strike_step if strike_step > 0 else 50.0)
+        distance_steps = abs(c.strike - atm_strike) / strike_step if strike_step > 0 else 0.0
         # Penalty: 5 points per strike step away from ATM, max penalty of 50 points
         distance_penalty = min(50.0, distance_steps * 5.0)
         tradability_score = max(0.0, liquidity_score - distance_penalty)

@@ -102,26 +102,26 @@ def test_workspace_mode_guards_and_transitions(mock_broker_get):
     Config.ALLOW_LIVE_TRADING = False
     with pytest.raises(InvalidModeTransitionError) as excinfo:
         manager.set_mode(WorkspaceMode.LIVE_TRADING, operator_confirmed=True)
-    assert "LIVE trading is disabled" in str(excinfo.value)
+    assert "fixed read-only product mode" in str(excinfo.value)
 
     # Transitioning to LIVE_TRADING without credentials/confirmation must fail
     Config.ALLOW_LIVE_TRADING = True
     Config.REQUIRE_CONFIRMATION = True
     with pytest.raises(InvalidModeTransitionError) as excinfo:
         manager.set_mode(WorkspaceMode.LIVE_TRADING, operator_confirmed=False)
-    assert "Operator confirmation is required" in str(excinfo.value)
+    assert "fixed read-only product mode" in str(excinfo.value)
 
     # Transition with operator confirmation but unhealthy risk engine must still fail
     Config.RISK_ENGINE_HEALTHY = False
     with pytest.raises(InvalidModeTransitionError) as excinfo:
         manager.set_mode(WorkspaceMode.LIVE_TRADING, operator_confirmed=True)
-    assert "Risk Engine is configured as unhealthy" in str(excinfo.value)
+    assert "fixed read-only product mode" in str(excinfo.value)
     Config.RISK_ENGINE_HEALTHY = True
 
 
 @patch("src.broker.services.broker_service.BrokerService.get_instance")
-def test_workspace_live_trading_success(mock_broker_get):
-    """Verify live trading transition works under perfect conditions."""
+def test_workspace_live_trading_remains_blocked_when_dependencies_are_healthy(mock_broker_get):
+    """Healthy dependencies must never activate an execution-capable mode."""
     mock_broker = MagicMock()
     mock_health = MagicMock()
     mock_health.authentication_status = "AUTHENTICATED"
@@ -140,10 +140,9 @@ def test_workspace_live_trading_success(mock_broker_get):
     Config.RISK_ENGINE_HEALTHY = True
     Config.EMERGENCY_STOP_TRIGGERED = False
 
-    # Transition with perfect health and confirmation should succeed
-    success = manager.set_mode(WorkspaceMode.LIVE_TRADING, operator_confirmed=True, bypass_market_open=True)
-    assert success is True
-    assert manager.current_mode == WorkspaceMode.LIVE_TRADING
+    with pytest.raises(InvalidModeTransitionError, match="fixed read-only product mode"):
+        manager.set_mode(WorkspaceMode.LIVE_TRADING, operator_confirmed=True, bypass_market_open=True)
+    assert manager.current_mode != WorkspaceMode.LIVE_TRADING
 
 
 def test_configuration_engine_integration():
@@ -154,4 +153,3 @@ def test_configuration_engine_integration():
     assert hasattr(Config, "REQUIRE_CONFIRMATION")
     assert hasattr(Config, "SHOW_MODE_WARNING")
     assert hasattr(Config, "AUTO_FALLBACK_TO_DEVELOPMENT")
-

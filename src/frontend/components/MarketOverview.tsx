@@ -45,11 +45,9 @@ export function MarketOverview() {
   }
 
   const currentSpot = safeNumber(market?.current_spot);
-  const newsItems = safeArray(planner?.economic_calendar || [
-    { time: "09:00 AM", event: "RBI Governor Address on Liquidity Framework", impact: "HIGH" },
-    { time: "11:30 AM", event: "European Inflation Rate YoY Flash Estimate", impact: "MEDIUM" },
-    { time: "06:00 PM", event: "US Core Inflation Index Data release", impact: "HIGH" }
-  ]) as any[];
+  const newsItems = safeArray(planner?.economic_calendar) as any[];
+  const vixContext: any = market?.india_vix_context || {};
+  const hasVerifiedVix = vixContext.value != null && Boolean(vixContext.observation_timestamp);
 
   return (
     <div id="market-overview" className="p-6 bg-slate-950 rounded-xl border border-slate-800 space-y-6 text-left">
@@ -80,11 +78,11 @@ export function MarketOverview() {
         <div className="p-4 bg-slate-900/40 rounded-lg border border-slate-800/60 space-y-1">
           <span className="text-[10px] font-mono font-medium text-slate-500 uppercase">India VIX (Vol State)</span>
           <div className="text-lg font-mono font-bold text-white">
-            {formatNumber(market?.india_vix, 2) || "13.85"}
+            {hasVerifiedVix ? formatNumber(vixContext.value, 2) : "UNAVAILABLE"}
           </div>
           <p className="text-xs text-cyan-400 flex items-center gap-1">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-400"></span>
-            {safeString(market?.volatility_state, "NORMAL")}
+            {hasVerifiedVix ? safeString(vixContext.regime, "UNAVAILABLE") : "UNAVAILABLE"}
           </p>
         </div>
 
@@ -207,7 +205,7 @@ export function MarketOverview() {
           <Newspaper size={14} className="text-cyan-400" /> Economic Calendar & Sentiment Drivers
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {newsItems.map((item, idx) => (
+          {newsItems.length === 0 ? <p className="text-xs text-slate-500">No verified economic-calendar observations are available.</p> : newsItems.map((item, idx) => (
             <div key={idx} className="p-3.5 bg-slate-900/40 border border-slate-800 rounded-lg space-y-1">
               <div className="flex justify-between items-center">
                 <span className="text-[10px] font-mono text-slate-500 font-bold">{safeString(item?.time)}</span>

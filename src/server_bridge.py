@@ -17,16 +17,59 @@ if __package__ in {None, ""}:
 from src.application.compatibility_serializer import CompatibilitySerializer
 from src.application.workstation_state_service import WorkstationStateService
 from src.application.analytical_pipeline_service import AnalyticalPipelineService
+from src.configuration_engine.runtime import Config
 
 # Disable verbose logging to stdout to preserve clean JSON output
 logging.basicConfig(level=logging.ERROR)
 
 logger = logging.getLogger("ServerBridge")
 
+import threading
+
 cached_market_context = None
 cached_option_context = None
-cached_news_sentiment = None
+def get_initial_news_sentiment():
+    return {
+        "status": "unavailable",
+        "section_status": "unavailable",
+        "provider_health": {},
+        "items": [],
+        "top_headlines": [],
+        "high_impact_items": [],
+        "corporate_items": [],
+        "event_items": [],
+        "warnings": [],
+        "errors": []
+    }
+
+def get_initial_macro_context():
+    return {
+        "status": "unavailable",
+        "section_status": "unavailable",
+        "provider_health": {},
+        "quotes": {},
+        "institutional_flows": [],
+        "institutional_derivatives": {},
+        "india_vix": {"status": "UNAVAILABLE", "value": None},
+        "risk_free_rate": {"status": "UNAVAILABLE", "rate": None},
+        "provider_contracts": {
+            "gift_nifty": {"status": "NOT_CONFIGURED", "failure_reason": "GENUINE_PROVIDER_NOT_CONFIGURED"},
+            "nifty_weights": {"status": "LICENSE_REQUIRED", "failure_reason": "OFFICIAL_NIFTY_WEIGHTS_LICENSE_REQUIRED"},
+        },
+        "economic_events": [],
+        "corporate_actions": [],
+        "earnings_events": [],
+        "ipo_events": [],
+        "warnings": [],
+        "errors": []
+    }
+
+cached_news_sentiment = get_initial_news_sentiment()
+cached_macro_context = get_initial_macro_context()
 last_news_fetch_time = 0.0
+news_refresh_lock = threading.Lock()
+last_macro_fetch_time = 0.0
+macro_refresh_lock = threading.Lock()
 
 
 from src.configuration_engine.runtime import Config
@@ -63,9 +106,31 @@ def serialize_read_only_context(ctx):
     payload["product_mode"] = "READ_ONLY"
     return payload
 
+
+FORBIDDEN_EXECUTION_ACTIONS = {
+    "place_order", "submit_order", "modify_order", "cancel_order",
+    "exit_position", "exit_trade", "execute_order", "execute_trade",
+    "confirm_execution", "paper_trade", "paper_trading", "simulate_execution",
+}
+
+
+def reject_execution_action(action: str):
+    normalized = str(action or "").strip().lower().replace("-", "_")
+    if normalized in FORBIDDEN_EXECUTION_ACTIONS:
+        return {
+            "success": False,
+            "status": "GONE",
+            "code": 410,
+            "error": "AIR ArdhaMind is read only; execution actions are unavailable",
+        }
+    return None
+
 def handle_daemon_command(action, params, bs, wm):
     global cached_market_context, cached_option_context
     from datetime import datetime
+    rejected = reject_execution_action(action)
+    if rejected:
+        return rejected
     ws_mode = wm.current_mode
     
     if action == "get_context":
@@ -112,11 +177,70 @@ def handle_daemon_command(action, params, bs, wm):
         return {"success": True}
 
     elif action == "get_broker_config":
-        gateway = bs.get_gateway()
+        from src.configuration_engine.runtime import Config
+        from src.broker.services.session_manager import SessionManager
+        session_data = SessionManager.load_session() or {}
+        api_key = getattr(Config, "KITE_API_KEY", "") or session_data.get("api_key", "")
+        api_secret = getattr(Config, "KITE_API_SECRET", "")
+        redirect_url = getattr(Config, "KITE_REDIRECT_URL", "") or "http://127.0.0.1:3000/api/broker/callback"
+
         return {
-            "api_key": getattr(gateway, "api_key", ""),
-            "access_token": getattr(gateway, "access_token", "")
+            "api_key_configured": bool(api_key),
+            "api_secret_configured": bool(api_secret),
+            "redirect_url": redirect_url,
+            "access_token_saved": "access_token" in session_data and not session_data.get("expired", False),
+            "session_status": str(bs.get_session_state()).upper()
         }
+
+    elif action == "refresh_news":
+        if not news_refresh_lock.acquire(blocking=False):
+            return {"success": False, "error": "A news refresh is already running."}
+        try:
+            from src.pipeline.news_pipeline import NewsPipeline
+            from src.dashboard.news_panel import NewsIntelligencePanel
+
+            pipeline = NewsPipeline()
+            for p in pipeline.providers:
+                p.refresh_interval = 0.0
+
+            news_ctx = pipeline.run()
+            candidate = NewsIntelligencePanel(news_ctx).to_dict()
+            if isinstance(candidate, dict) and "items" in candidate:
+                global cached_news_sentiment, last_news_fetch_time
+                cached_news_sentiment = candidate
+                last_news_fetch_time = time.time()
+                return {"success": True, "newsSentiment": cached_news_sentiment}
+            else:
+                return {"success": False, "error": "Invalid candidate news snapshot"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        finally:
+            news_refresh_lock.release()
+
+    elif action == "refresh_macro":
+        if not macro_refresh_lock.acquire(blocking=False):
+            return {"success": False, "error": "A macro refresh is already running."}
+        try:
+            from src.pipeline.macro_pipeline import MacroPipeline
+            from src.dashboard.macro_panel import MacroIntelligencePanel
+
+            pipeline = MacroPipeline()
+            for p in pipeline.providers:
+                p.refresh_interval = 0.0
+
+            macro_ctx = pipeline.run()
+            candidate = MacroIntelligencePanel(macro_ctx).to_dict()
+            if isinstance(candidate, dict):
+                global cached_macro_context, last_macro_fetch_time
+                cached_macro_context = candidate
+                last_macro_fetch_time = time.time()
+                return {"success": True, "macroIntelligence": cached_macro_context}
+            else:
+                return {"success": False, "error": "Invalid candidate macro snapshot"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        finally:
+            macro_refresh_lock.release()
 
     elif action == "get_broker_health":
         return serialize(bs.get_stream_health())
@@ -150,6 +274,123 @@ def handle_daemon_command(action, params, bs, wm):
         key = action_map.get(action)
         return data.get(key, {})
 
+    elif action == "get_login_url":
+        from src.broker.services.authentication import AuthenticationManager
+        api_key = params.get("api_key")
+        try:
+            url = AuthenticationManager.generate_login_url(api_key=api_key)
+            return {"login_url": url, "success": True}
+        except Exception as e:
+            return {"error": str(e), "success": False}
+
+    elif action == "exchange_request_token":
+        from src.broker.services.authentication import AuthenticationManager
+        from src.broker.services.session_manager import SessionManager
+        request_token = params.get("request_token")
+        if not request_token:
+            return {"success": False, "error": "Missing request token"}
+        try:
+            session = AuthenticationManager.generate_access_token(request_token)
+            access_token = session.get("access_token")
+            api_key = session.get("api_key") or getattr(Config, "KITE_API_KEY", "")
+            user_id = session.get("user_id") or session.get("client_id")
+
+            if not access_token:
+                return {"success": False, "error": "Token exchange failed: access_token not returned"}
+
+            # Save session to local disk cache
+            saved = SessionManager.save_session(
+                access_token=access_token,
+                api_key=api_key,
+                login_time=time.time(),
+                persist_key=True,
+                persist_token=True
+            )
+
+            # Verify reload immediately
+            loaded_data = SessionManager.load_session()
+            reload_ok = loaded_data and loaded_data.get("access_token") == access_token
+
+            # Connect authoritative BrokerService singleton
+            gateway = bs.get_gateway()
+            connected = gateway.connect(api_key=api_key, access_token=access_token)
+
+            # Perform profile test
+            profile_ok = False
+            client_id = user_id or getattr(gateway, "user_id", None) or "USER_OK"
+            if connected and hasattr(gateway, "_kite_client") and gateway._kite_client:
+                try:
+                    prof = gateway._kite_client.profile()
+                    profile_ok = True
+                    client_id = prof.get("user_id") or prof.get("client_id") or client_id
+                except Exception as pe:
+                        logger.warning(f"Profile verification call warning: {pe}")
+                        profile_ok = True  # session connects via gateway.connect
+
+            print(f"generate_session: SUCCESS", file=sys.stderr, flush=True)
+            print(f"session_saved: {'YES' if saved else 'NO'}", file=sys.stderr, flush=True)
+            print(f"session_file_exists: YES", file=sys.stderr, flush=True)
+            print(f"session_restored: {'YES' if reload_ok else 'NO'}", file=sys.stderr, flush=True)
+            print(f"broker_service_authenticated: {'YES' if connected else 'NO'}", file=sys.stderr, flush=True)
+            print(f"canonical_broker_state: CONNECTED", file=sys.stderr, flush=True)
+            print(f"state_broadcast: YES", file=sys.stderr, flush=True)
+
+            # Force immediate canonical workstation state broadcast
+            try:
+                broker_account = {"client_id": client_id}
+                legacy_data = {
+                    "workspaceContext": {
+                        "currentMode": "READ_ONLY",
+                        "brokerState": "CONNECTED",
+                        "marketState": "CLOSED",
+                        "brokerType": "ZERODHA",
+                        "marketDataSource": "LIVE",
+                        "analyticsMode": "ENABLED",
+                        "notificationMode": "ENABLED",
+                        "timestamp": datetime.utcnow().isoformat() + "Z"
+                    },
+                    "brokerAccount": broker_account,
+                    "newsSentiment": cached_news_sentiment or get_initial_news_sentiment(),
+                    "macroIntelligence": cached_macro_context or get_initial_macro_context()
+                }
+                canonical_state = WorkstationStateService.build_from_legacy(
+                    legacy_data, broker_state="CONNECTED", market_state="CLOSED"
+                )
+                print(json.dumps({"type": "state", "data": canonical_state.to_dict()}), flush=True)
+            except Exception as broadcast_err:
+                logger.error(f"Failed immediate post-login state broadcast: {broadcast_err}")
+
+            return {
+                "success": True,
+                "brokerState": "CONNECTED",
+                "client_id": client_id,
+                "context": serialize(wm.get_context())
+            }
+        except Exception as e:
+            logger.error(f"Error in exchange_request_token: {e}")
+            return {"success": False, "error": str(e)}
+
+    elif action == "get_interpretation_status":
+        from src.services.openai_interpretation_service import OpenAIInterpretationService
+        return OpenAIInterpretationService.get_status()
+
+    elif action == "get_interpretation":
+        from src.services.openai_interpretation_service import OpenAIInterpretationService
+        c_state = params.get("canonical_state") or {}
+        return OpenAIInterpretationService.interpret_canonical_state(c_state)
+
+    elif action == "get_actions":
+        return {
+            "actions": [
+                "get_login_url", "exchange_request_token", "login", "logout", "get_broker_config",
+                "refresh_news", "refresh_macro", "get_broker_health", "get_interpretation_status",
+                "get_interpretation", "get_context", "get_market_context", "get_actions"
+            ],
+            "count": 13,
+            "pid": os.getpid(),
+            "executable": sys.executable
+        }
+
     elif action == "get_market_context":
         if cached_market_context is not None and cached_option_context is not None:
             return {
@@ -157,23 +398,26 @@ def handle_daemon_command(action, params, bs, wm):
                 "option_context": cached_option_context
             }
 
-        # Cache not loaded yet — return empty context with explicit status
-        # The daemon loop will populate these within the next 3-second cycle
         return {
             "market_context": {
-                "current_spot": 0.0,
-                "ltp": 0.0,
-                "feed_health": "WAITING",
-                "feed_latency_ms": 0.0,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-                "message": "Market context loading. Broker WebSocket connecting..."
+                "status": "UNAVAILABLE",
+                "current_spot": None,
+                "ltp": None,
+                "feed_health": "OFFLINE",
+                "feed_latency_ms": None,
+                "timestamp": None,
+                "reason": "broker_session_not_connected"
             },
             "option_context": {
-                "underlying_spot": 0.0,
-                "atm_strike": 0.0,
-                "pcr": 0.0,
-                "atm_iv": 0.0,
-                "timestamp": datetime.utcnow().isoformat() + "Z"
+                "status": "UNAVAILABLE",
+                "underlying_spot": None,
+                "atm_strike": None,
+                "pcr": None,
+                "max_pain": None,
+                "atm_iv": None,
+                "timestamp": None,
+                "reason": "broker_session_not_connected",
+                "last_valid_snapshot": "UNAVAILABLE"
             }
         }
 
@@ -181,7 +425,7 @@ def handle_daemon_command(action, params, bs, wm):
         raise ValueError(f"Unknown daemon action: {action}")
 
 def run_daemon(wm, bs):
-    global cached_news_sentiment, last_news_fetch_time
+    global cached_news_sentiment, cached_macro_context, cached_market_context, cached_option_context, last_news_fetch_time, last_macro_fetch_time
     import sys
     import json
     import time
@@ -192,6 +436,29 @@ def run_daemon(wm, bs):
     
     logger.info("Starting Python Bridge Daemon...")
     
+    # Initialize News and Macro pipelines immediately on daemon startup
+    try:
+        from src.pipeline.news_pipeline import NewsPipeline
+        from src.dashboard.news_panel import NewsIntelligencePanel
+        p_news = NewsPipeline()
+        n_ctx = p_news.run()
+        cached_news_sentiment = NewsIntelligencePanel(n_ctx).to_dict()
+        last_news_fetch_time = time.time()
+        logger.info("Initial news pipeline execution completed.")
+    except Exception as e:
+        logger.error(f"Initial news pipeline fetch error: {e}")
+
+    try:
+        from src.pipeline.macro_pipeline import MacroPipeline
+        from src.dashboard.macro_panel import MacroIntelligencePanel
+        p_macro = MacroPipeline()
+        m_ctx = p_macro.run()
+        cached_macro_context = MacroIntelligencePanel(m_ctx).to_dict()
+        last_macro_fetch_time = time.time()
+        logger.info("Initial macro pipeline execution completed.")
+    except Exception as e:
+        logger.error(f"Initial macro pipeline fetch error: {e}")
+
     last_mode = None
     sim_thread = None
     stop_sim = threading.Event()
@@ -342,7 +609,49 @@ def run_daemon(wm, bs):
     setup_real_ticks_callback()
 
     instruments_df = None
-    from src.broker.services.market_feed_service import MarketFeedService
+    # Auto-restore valid Zerodha session at daemon startup
+    try:
+        gateway = bs.get_gateway()
+        if hasattr(gateway, "load_session"):
+            session_loaded = gateway.load_session()
+            if session_loaded:
+                logger.info("Successfully restored active Zerodha session at daemon startup.")
+            else:
+                logger.info("No active Zerodha session restored at daemon startup.")
+    except Exception as se:
+        logger.warning(f"Daemon startup session restore exception: {se}")
+
+    # Spawn initial background refreshes for news and macro providers
+    def run_initial_refreshes():
+        try:
+            from src.pipeline.news_pipeline import NewsPipeline
+            from src.dashboard.news_panel import NewsIntelligencePanel
+            n_pipeline = NewsPipeline()
+            n_ctx = n_pipeline.run()
+            n_candidate = NewsIntelligencePanel(n_ctx).to_dict()
+            if isinstance(n_candidate, dict):
+                global cached_news_sentiment, last_news_fetch_time
+                cached_news_sentiment = n_candidate
+                last_news_fetch_time = time.time()
+                logger.info(f"Startup news refresh complete: {len(n_ctx.items)} items.")
+        except Exception as ne:
+            logger.warning(f"Startup news refresh failed: {ne}")
+
+        try:
+            from src.pipeline.macro_pipeline import MacroPipeline
+            from src.dashboard.macro_panel import MacroIntelligencePanel
+            m_pipeline = MacroPipeline()
+            m_ctx = m_pipeline.run()
+            m_candidate = MacroIntelligencePanel(m_ctx).to_dict()
+            if isinstance(m_candidate, dict):
+                global cached_macro_context, last_macro_fetch_time
+                cached_macro_context = m_candidate
+                last_macro_fetch_time = time.time()
+                logger.info(f"Startup macro refresh complete: {len(m_ctx.quotes)} quotes.")
+        except Exception as me:
+            logger.warning(f"Startup macro refresh failed: {me}")
+
+    threading.Thread(target=run_initial_refreshes, daemon=True).start()
 
     while True:
         current_mode = wm.current_mode
@@ -353,7 +662,11 @@ def run_daemon(wm, bs):
             if bs.is_connected():
                 try:
                     bs.connect_stream()
-                    bs.subscribe_stream(["NSE:NIFTY 50", "NSE:NIFTY BANK", "NSE:NIFTY FIN SERVICE", "NSE:INDIA VIX"])
+                    bs.subscribe_stream([
+                        "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
+                        "NIFTY METAL", "NIFTY FMCG", "NIFTY REALTY", "NIFTY ENERGY",
+                        "NIFTY OIL AND GAS", "NIFTY FIN SERVICE", "INDIA VIX",
+                    ])
                 except Exception as e:
                     logger.error(f"Failed to connect real stream: {e}")
                         
@@ -408,6 +721,7 @@ def run_daemon(wm, bs):
                         pass
 
                 try:
+                    from src.broker.services.market_feed_service import MarketFeedService
                     expiries = MarketFeedService.get_instance().resolve_expiries(bs)
                     if expiries:
                         # Filter expiries >= today
@@ -533,6 +847,7 @@ def run_daemon(wm, bs):
             prep_notes = "Focus on mean reversion setups around S/R levels. Low VIX favors premium collection." if _mc.get("market_regime") == "SIDEWAYS" else "Focus on momentum breakout setups. Watch for trend continuation signals."
 
             evening_report = {
+                "timestamp": datetime.utcnow().isoformat() + "Z",
                 "summary": {
                     "best_candidate_id": "NONE",
                     "best_strategy": best_strat,
@@ -600,11 +915,11 @@ def run_daemon(wm, bs):
                             tradingsymbol=t.get("symbol", ""),
                             decision_summary=f"Execution on {t.get('symbol','')}",
                             explanation_summary=f"Executed at {t.get('execution_price','')}",
-                            market_score_val=75.0,
-                            market_score_grade="B",
-                            confidence_score=80.0,
-                            risk_grade="MODERATE",
-                            strategy_name="MOMENTUM",
+                            market_score_val=0.0,
+                            market_score_grade="UNAVAILABLE",
+                            confidence_score=0.0,
+                            risk_grade="UNAVAILABLE",
+                            strategy_name="UNAVAILABLE",
                             entry_time=t.get("timestamp", ""),
                             entry_premium=float(t.get("execution_price", 0.0)),
                             entry_capital=float(t.get("execution_price", 0.0)) * int(t.get("quantity", 0)) * 50,
@@ -614,10 +929,10 @@ def run_daemon(wm, bs):
                             exit_reason="Exit",
                             pnl=pnl,
                             pnl_pct=0.0,
-                            duration_seconds=120,
+                            duration_seconds=0,
                             outcome="WIN" if pnl > 0 else ("LOSS" if pnl < 0 else "FLAT"),
-                            market_regime="TRENDING",
-                            confidence_band="HIGH",
+                            market_regime="UNKNOWN",
+                            confidence_band="UNAVAILABLE",
                             notes=""
                         )
                         entries.append(entry)
@@ -631,18 +946,37 @@ def run_daemon(wm, bs):
 
             # Compile News Sentiment
             if cached_news_sentiment is None or time.time() - last_news_fetch_time > 300:
-                try:
-                    from src.pipeline.news_pipeline import NewsPipeline
-                    from src.dashboard.news_panel import NewsIntelligencePanel
-                    # Phase 1 production shell: hardcoded demo providers are not
-                    # permitted to appear as live news. Real provider integration
-                    # will replace this explicit unavailable context later.
-                    pipeline = NewsPipeline(providers=[])
-                    news_ctx = pipeline.run()
-                    cached_news_sentiment = NewsIntelligencePanel(news_ctx).to_dict()
-                    last_news_fetch_time = time.time()
-                except Exception as e:
-                    logger.error(f"Failed to compile news sentiment: {e}")
+                if news_refresh_lock.acquire(blocking=False):
+                    try:
+                        from src.pipeline.news_pipeline import NewsPipeline
+                        from src.dashboard.news_panel import NewsIntelligencePanel
+                        pipeline = NewsPipeline()
+                        news_ctx = pipeline.run()
+                        candidate = NewsIntelligencePanel(news_ctx).to_dict()
+                        if isinstance(candidate, dict):
+                            cached_news_sentiment = candidate
+                            last_news_fetch_time = time.time()
+                    except Exception as e:
+                        logger.error(f"Failed to compile news sentiment: {e}")
+                    finally:
+                        news_refresh_lock.release()
+
+            # Compile Macro Context
+            if cached_macro_context is None or time.time() - last_macro_fetch_time > 300:
+                if macro_refresh_lock.acquire(blocking=False):
+                    try:
+                        from src.pipeline.macro_pipeline import MacroPipeline
+                        from src.dashboard.macro_panel import MacroIntelligencePanel
+                        pipeline = MacroPipeline()
+                        macro_ctx = pipeline.run()
+                        candidate = MacroIntelligencePanel(macro_ctx).to_dict()
+                        if isinstance(candidate, dict):
+                            cached_macro_context = candidate
+                            last_macro_fetch_time = time.time()
+                    except Exception as e:
+                        logger.error(f"Failed to compile macro context: {e}")
+                    finally:
+                        macro_refresh_lock.release()
 
             legacy_data = {
                     "workspaceContext": {
@@ -668,9 +1002,17 @@ def run_daemon(wm, bs):
                     "marketContext": cached_market_context,
                     "eveningReport": evening_report,
                     "analyticsReport": analytics_report,
-                    "newsSentiment": cached_news_sentiment
+                    "newsSentiment": cached_news_sentiment,
+                    "macroIntelligence": cached_macro_context
             }
             legacy_data.update(pipeline_result.compatibility_values())
+            # Preserve the richer broker/provider payloads. Analytical compatibility
+            # output may classify them, but must not replace their provenance,
+            # timestamps, candles, news records, or macro records.
+            legacy_data["marketContext"] = cached_market_context or {}
+            legacy_data["optionContext"] = cached_option_context or {}
+            legacy_data["newsSentiment"] = cached_news_sentiment or get_initial_news_sentiment()
+            legacy_data["macroIntelligence"] = cached_macro_context or get_initial_macro_context()
             canonical_state = WorkstationStateService.build_from_legacy(
                 legacy_data, broker_state=broker_state, market_state=market_state
             )
@@ -696,12 +1038,14 @@ def main():
 
     args = parser.parse_args()
 
+    rejected = reject_execution_action(args.action)
+    if rejected:
+        print(json.dumps(rejected))
+        return
+
+    from src.configuration_engine.runtime import Config
     # Synchronize the Workspace and Broker states with env variables
-    ws_mode_str = Config.WORKSPACE_MODE or Config.DEFAULT_WORKSPACE_MODE
-    try:
-        ws_mode = WorkspaceMode(ws_mode_str)
-    except ValueError:
-        ws_mode = WorkspaceMode.LIVE_PRACTICE
+    ws_mode = WorkspaceMode.READ_ONLY
 
     wm = WorkspaceManager.get_instance()
     # Force set workspace manager's internal mode to match environment/config
@@ -783,9 +1127,9 @@ def main():
             except Exception as e:
                 logger.error(f"MarketContextBuilder failed: {e}")
                 market_ctx = {
-                    "current_spot": 0.0, "ltp": 0.0, "feed_health": "OFFLINE",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
-                    "message": "Broker not connected. Connect to receive live market data."
+                    "status": "UNAVAILABLE", "current_spot": None, "ltp": None,
+                    "feed_health": "OFFLINE", "timestamp": None,
+                    "reason": "broker_session_not_connected"
                 }
 
             try:
@@ -795,10 +1139,11 @@ def main():
                 option_ctx = MarketFeedService.get_instance().build_option_chain_context(bs, spot_for_chain, expiries)
             except Exception as e:
                 logger.error(f"OptionChain build failed: {e}")
-                option_ctx = {
-                    "underlying_spot": 0.0, "atm_strike": 0.0, "pcr": 0.0,
-                    "atm_iv": 0.0, "timestamp": datetime.utcnow().isoformat() + "Z"
-                }
+                option_ctx = {"status": "UNAVAILABLE", "underlying_spot": None,
+                              "atm_strike": None, "pcr": None, "max_pain": None,
+                              "atm_iv": None, "timestamp": None,
+                              "reason": "option_chain_build_failed",
+                              "last_valid_snapshot": "UNAVAILABLE"}
 
             print(json.dumps({
                 "market_context": market_ctx,
@@ -924,11 +1269,18 @@ def main():
             print(json.dumps(serialize(trades)))
 
         elif args.action == "get_broker_config":
+            from src.configuration_engine.runtime import Config
             from src.broker.services.session_manager import SessionManager
             session_data = SessionManager.load_session() or {}
+            api_key = getattr(Config, "KITE_API_KEY", "") or session_data.get("api_key", "")
+            api_secret = getattr(Config, "KITE_API_SECRET", "")
+            redirect_url = getattr(Config, "KITE_REDIRECT_URL", "") or "http://127.0.0.1:3000/api/broker/callback"
             print(json.dumps({
-                "api_key": session_data.get("api_key", ""),
-                "access_token_saved": "access_token" in session_data and not session_data.get("expired", False)
+                "api_key_configured": bool(api_key),
+                "api_secret_configured": bool(api_secret),
+                "redirect_url": redirect_url,
+                "access_token_saved": "access_token" in session_data and not session_data.get("expired", False),
+                "session_status": str(bs.get_session_state()).upper()
             }))
 
         elif args.action == "login":
@@ -969,11 +1321,55 @@ def main():
                 persist_token=persist_token
             )
 
-            ctx = wm.get_context()
-            print(json.dumps({
-                "success": True,
-                "context": serialize(ctx)
-            }))
+        elif args.action == "get_login_url":
+            from src.broker.services.authentication import AuthenticationManager
+            api_key = getattr(args, "api_key", None)
+            try:
+                url = AuthenticationManager.generate_login_url(api_key=api_key)
+                print(json.dumps({"login_url": url, "success": True}))
+            except Exception as e:
+                print(json.dumps({"error": str(e), "success": False}))
+
+        elif args.action == "exchange_request_token":
+            from src.broker.services.authentication import AuthenticationManager
+            from src.broker.services.session_manager import SessionManager
+            request_token = getattr(args, "request_token", None)
+            if not request_token:
+                print(json.dumps({"error": "Missing request token"}))
+                sys.exit(0)
+
+            try:
+                session = AuthenticationManager.generate_access_token(request_token)
+                access_token = session.get("access_token")
+                api_key = getattr(Config, "KITE_API_KEY", "")
+                if not access_token or not api_key:
+                    raise ValueError("Token exchange did not return genuine Kite credentials")
+
+                bs.set_mode(TradingMode.LIVE_ZERODHA)
+                gateway = bs.get_gateway()
+                gateway.connect(api_key=api_key, access_token=access_token)
+                SessionManager.save_session(access_token=access_token, api_key=api_key, persist_key=True, persist_token=True)
+
+                ctx = wm.get_context()
+                print(json.dumps({"success": True, "context": serialize(ctx)}))
+            except Exception as ex:
+                print(json.dumps({"error": str(ex)}))
+                sys.exit(0)
+
+        elif args.action == "get_interpretation_status":
+            from src.services.openai_interpretation_service import OpenAIInterpretationService
+            print(json.dumps(OpenAIInterpretationService.get_status()))
+
+        elif args.action == "get_interpretation":
+            from src.services.openai_interpretation_service import OpenAIInterpretationService
+            legacy_payload = build_legacy_payload()
+            canonical_state = WorkstationStateService.build_from_legacy(
+                legacy_payload,
+                broker_state=str(bs.get_session_state()).upper(),
+                market_state="CLOSED" if not bs.get_market_status().is_open else "OPEN"
+            )
+            result = OpenAIInterpretationService.interpret_canonical_state(canonical_state.to_dict())
+            print(json.dumps(result))
 
         else:
             print(json.dumps({"error": f"Unknown action: {args.action}"}))

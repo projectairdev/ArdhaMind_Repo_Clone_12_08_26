@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock, Database, KeyRound, ShieldCheck } from "lucide-react";
+import { formatDate, formatDateTimeIST, formatNumber, safeArray, safeNumber, safeString } from "../utils/safeHelpers";
 import { useTheme } from "../context/ThemeContext";
 import { useWorkstationState } from "../context/WorkstationStateContext";
 import { connectBroker } from "../services/broker";
@@ -11,6 +12,12 @@ import { MarketStory } from "./MarketStory";
 import { NewsIntelligence } from "./NewsIntelligence";
 import { IntradayAssistant } from "./IntradayAssistant";
 import { DecisionEngine } from "./DecisionEngine";
+import { GlobalCuesWidget, InstitutionalFlowWidget, NiftyConstituentsWidget } from "./MacroIntelligence";
+import { OpenAIDiagnosticsWidget } from "./OpenAIDiagnosticsWidget";
+import { SystemReadinessWidget } from "./SystemReadinessWidget";
+import { NiftyLiveWorkspace as NiftyLiveView } from "./NiftyLiveWorkspace";
+import { SettingsDashboard } from "./SettingsDashboard";
+import { ErrorBoundary } from "./ErrorBoundary";
 
 export type ReadinessKind = "initializing" | "unavailable" | "stale" | "blocked" | "closed" | "expired" | "partial" | "error";
 
@@ -30,53 +37,149 @@ function Heading({ eyebrow, title, description }: { eyebrow: string; title: stri
   return <div className="text-left"><div className="text-[10px] font-black uppercase tracking-[0.22em] text-cyan-400">{eyebrow}</div><h2 className="mt-1 text-xl font-bold text-white">{title}</h2><p className="mt-1 text-xs text-neutral-500">{description}</p></div>;
 }
 
+function ClosedSessionIntelligence({ mode }: { mode: "analysis" | "assistant" }) {
+  const { canonicalState } = useWorkstationState();
+  const market: any = canonicalState?.market_data || {};
+  const macro: any = canonicalState?.macro_intelligence || {};
+  const news: any[] = safeArray(canonicalState?.news_intelligence?.items) as any[];
+  const clusters: any[] = safeArray(canonicalState?.news_intelligence?.event_clusters) as any[];
+  const candles: any[] = safeArray(market.candles) as any[];
+  const highs = candles.map(c => Number(c.h)).filter(Number.isFinite);
+  const lows = candles.map(c => Number(c.l)).filter(Number.isFinite);
+  const observed = canonicalState?.data_quality?.market_data?.observed_at;
+  const temporal: any = canonicalState?.news_intelligence?.workspace_temporal || {};
+  const sinceCloseIds = new Set(safeArray(temporal.since_close_item_ids).map(String));
+  const previousSessionIds = new Set(safeArray(temporal.previous_session_context_item_ids).map(String));
+  const sinceCloseClusterIds = new Set(safeArray(temporal.since_close_cluster_ids).map(String));
+  const sinceClose = news.filter(item => sinceCloseIds.has(String(item.id)));
+  const previousSession = news.filter(item => previousSessionIds.has(String(item.id)));
+  const clustersSinceClose = clusters.filter(cluster => sinceCloseClusterIds.has(String(cluster.event_cluster_id))).slice(0, 6);
+  const macroWorkspace: any = macro.workspace_context || {};
+  const selectedQuoteKeys: string[] = mode === "assistant"
+    ? safeArray(macroWorkspace.live_assistant_quote_keys).map(String)
+    : safeArray(macroWorkspace.todays_analysis_quote_keys).map(String);
+  const quotes = selectedQuoteKeys.map(key => macro.quotes?.[key]).filter(Boolean) as any[];
+  const economicEvents = safeArray(macro.economic_events) as any[];
+  const releasedEconomic = economicEvents.filter(event => safeString(event.status) === "RELEASED").sort((a, b) => new Date(b.scheduled_at).getTime() - new Date(a.scheduled_at).getTime());
+  const nextEconomic = economicEvents.filter(event => ["SCHEDULED", "UPCOMING", "DUE"].includes(safeString(event.status)) && ["HIGH", "CRITICAL"].includes(safeString(event.impact_level).toUpperCase()) && new Date(event.scheduled_at).getTime() >= Date.now()).sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())[0];
+  const summary = market.current_spot && highs.length && lows.length ? `NIFTY closed at ${formatNumber(market.current_spot, 2)}. Session high ${formatNumber(Math.max(...highs), 2)}, low ${formatNumber(Math.min(...lows), 2)}. Observed ${formatDate(observed)} via Kite Historical API.` : "No verified last-session price summary is available.";
+  const fiiIndexFutures: any = macro.institutional_derivatives?.positioning?.FII_INDEX_FUTURES;
+  const vix: any = macro.india_vix || {};
+  const optionIv: any = canonicalState?.option_intelligence || {};
+  const specializedContext = [
+    fiiIndexFutures ? `FII index futures ${safeString(fiiIndexFutures.positioning)} (${Number(fiiIndexFutures.net_position) >= 0 ? "+" : ""}${formatNumber(fiiIndexFutures.net_position, 0)} contracts)` : "FII index futures unavailable",
+    vix.value != null && vix.observation_timestamp ? `India VIX ${formatNumber(vix.value, 2)} (${safeString(vix.regime)}; ${safeString(vix.freshness)})` : "India VIX unavailable",
+    safeString(optionIv.iv_status).toUpperCase() === "AVAILABLE" ? `ATM option IV ${formatNumber(optionIv.atm_iv, 2)}% from ${safeNumber(optionIv.iv_rows, 0)} converged rows` : "Option IV unavailable",
+  ].join(" · ");
+  const cards = mode === "analysis" ? [
+    ["Last Session Summary", summary],
+    ["Trend / Structure", market.market_regime && market.market_regime !== "UNKNOWN" ? `${safeString(market.market_regime)} · ${safeString(market.trend_direction)} · VWAP ${market.vwap > 0 ? formatNumber(market.vwap, 2) : "unavailable"} · ATR ${market.atr > 0 ? formatNumber(market.atr, 2) : "unavailable"}` : "Insufficient validated candles for structural classification."],
+    ["Major Verified Developments", news.length ? news.slice(0, 3).map(n => safeString(n.headline)).join(" · ") : "No verified news developments available."],
+    ["Macro Context", quotes.length ? `${quotes.length} freshness-eligible cross-market observations. ${quotes.slice(0, 4).map(q => `${safeString(q.name || q.symbol)} ${formatNumber(q.change_pct, 2)}% (${safeString(q.freshness_status)})`).join(" · ")}` : "No freshness-eligible macro context available."],
+    ["Institutional & Volatility Context", `${specializedContext}. Context only; these observations do not establish causality.`],
+    ["Morning Expectations", "No canonical morning-plan snapshot is available for confirmation/invalidation comparison."],
+    ["End-of-Day State", `${safeString(market.trend_direction || "UNKNOWN")} · ${safeString(market.volatility_state || "UNKNOWN")} · MARKET_CLOSED`],
+  ] : [
+    ["Last Session Summary", summary],
+    ["Developments Since Close", sinceClose.length ? `${sinceClose.length} verified developments since the last Kite observation.` : "No verified updates available."],
+    ["News Since Close", sinceClose.length ? sinceClose.slice(0, 4).map(n => safeString(n.headline)).join(" · ") : "No verified updates available."],
+    ["Cross-Market Context Since Close", quotes.length ? quotes.slice(0, 6).map(q => `${safeString(q.name || q.symbol)} ${Number(q.change_pct) >= 0 ? "+" : ""}${formatNumber(q.change_pct, 2)}% vs source previous close (${safeString(q.freshness_status)})`).join(" · ") : "No global-market observation newer than the last Indian market observation is available."],
+    ["What Matters: Positioning & Volatility", `${specializedContext}. Watch whether volatility and price movement confirm one another; no execution action is generated.`],
+    ["Next Session Watch Items", news.length || quotes.length ? "Review verified news, global cues, and the opening gap before enabling intraday confirmation logic." : "No verified updates available."],
+  ];
+  const clusterCards = mode === "analysis" ? [
+    ["Last Session Summary", summary],
+    ["Trend / Structure", market.market_regime && market.market_regime !== "UNKNOWN" ? `${safeString(market.market_regime)} · ${safeString(market.trend_direction)} · VWAP ${market.vwap > 0 ? formatNumber(market.vwap, 2) : "unavailable"} · ATR ${market.atr > 0 ? formatNumber(market.atr, 2) : "unavailable"}` : "Insufficient validated candles for structural classification."],
+    ["Major Verified Developments", clustersSinceClose.length ? clustersSinceClose.slice(0, 3).map(cluster => safeString(cluster.canonical_headline)).join(" · ") : "No verified current or post-close news developments are available."],
+    ["Macro Context", quotes.length ? `${quotes.length} freshness-eligible cross-market observations. ${quotes.slice(0, 4).map(q => `${safeString(q.name || q.symbol)} ${formatNumber(q.change_pct, 2)}% (${safeString(q.freshness_status)})`).join(" · ")}` : "No freshness-eligible macro context available."],
+    ["Institutional & Volatility Context", `${specializedContext}. Context only; these observations do not establish causality.`],
+    ["Previous-Session Context", previousSession.length ? previousSession.slice(0, 3).map(item => safeString(item.headline)).join(" · ") : "No freshness-eligible previous-session context is available."],
+    ["End-of-Day State", `${safeString(market.trend_direction || "UNKNOWN")} · ${safeString(market.volatility_state || "UNKNOWN")} · MARKET_CLOSED`],
+  ] : [
+    ["Last Session Summary", summary],
+    ["Developments Since Close", clustersSinceClose.length ? `${clustersSinceClose.length} distinct NIFTY-relevant event clusters since the last Kite observation.` : "No verified event clusters since close."],
+    ["What Changed", clustersSinceClose.length ? clustersSinceClose.slice(0, 4).map(cluster => safeString(cluster.canonical_headline)).join(" · ") : "No verified event-cluster changes available."],
+    ["Cross-Market Context Since Close", quotes.length ? quotes.slice(0, 6).map(q => `${safeString(q.name || q.symbol)} ${Number(q.change_pct) >= 0 ? "+" : ""}${formatNumber(q.change_pct, 2)}% vs source previous close (${safeString(q.freshness_status)})`).join(" · ") : "No global-market observation newer than the last Indian market observation is available."],
+    ["What Matters: Positioning & Volatility", `${specializedContext}. Watch whether volatility and price movement confirm one another; no execution action is generated.`],
+    ["What Matters / What To Watch", nextEconomic ? `${safeString(nextEconomic.event_name)} scheduled ${formatDateTimeIST(nextEconomic.scheduled_at_ist || nextEconomic.scheduled_at)}. ${safeString(nextEconomic.reasoning)}` : clustersSinceClose.length ? clustersSinceClose.slice(0, 3).map(cluster => `${safeString(cluster.reasoning)} Monitor ${safeArray(cluster.affected_channels).join(", ") || "the stated transmission channel"}.`).join(" · ") : "No verified cluster-based or scheduled-event watch item is available."],
+  ];
+  return <div className="grid gap-4 md:grid-cols-2">{clusterCards.map(([title, body]) => <section key={title} className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">{title}</h3><p className="mt-2 text-xs leading-relaxed text-slate-300">{body}</p></section>)}</div>;
+}
+
 export function NiftyLiveWorkspace() {
   const [tab, setTab] = useState("Overview");
   const { marketContext, optionContext, loading } = useWorkstationState();
   const marketAvailable = Boolean(marketContext?.current_spot && marketContext?.last_tick_time);
-  return <div className="space-y-5"><Heading eyebrow="Live intelligence" title="NIFTY Live" description="Validated market, trend and option-chain intelligence. Read only."/><Tabs values={["Overview", "Price & Trend", "Options"]} active={tab} onChange={setTab}/>
-    {loading && !marketAvailable ? <ReadinessState kind="initializing" title="Initializing market intelligence" reason="Waiting for a validated Kite market observation."/> : !marketAvailable ? <ReadinessState kind="unavailable" title="Live market data unavailable" reason="Connect Kite or wait for a valid market snapshot. No fallback price is shown."/> : tab === "Overview" ? <><ExecutiveSummary/><MarketScoring/></> : tab === "Price & Trend" ? <MarketOverview/> : optionContext?.underlying_spot ? <MarketOverview/> : <ReadinessState kind="blocked" title="Options analysis blocked" reason="Waiting for a valid option chain and current expiry."/>}
-  </div>;
+  return <ErrorBoundary fallbackTitle="NIFTY Live Workspace Error">
+    <div className="space-y-5"><Heading eyebrow="Live intelligence" title="NIFTY Live" description="Validated market, trend and option-chain intelligence. Read only."/><Tabs values={["Overview", "Price & Trend", "Options"]} active={tab} onChange={setTab}/>
+      {loading && !marketAvailable ? <ReadinessState kind="initializing" title="Initializing market intelligence" reason="Waiting for a validated Kite market observation."/> : !marketAvailable ? <ReadinessState kind="unavailable" title="Live market data unavailable" reason="Connect Kite or wait for a valid market snapshot. No fallback price is shown."/> : <NiftyLiveView view={tab === "Price & Trend" ? "price-trend" : tab === "Options" ? "options" : "overview"} />}
+    </div>
+  </ErrorBoundary>;
 }
 
-export function PreMarketPlannerWorkspace() {
+function LegacyPreMarketPlannerWorkspace() {
   const [tab, setTab] = useState("Evening Outlook");
-  const { eveningReport } = useWorkstationState();
-  const available = Boolean(eveningReport?.timestamp);
-  return <div className="space-y-5"><Heading eyebrow="Next-session intelligence" title="Pre-Market Planner" description="Previous-session evidence and opening preparation without fabricated cues."/><Tabs values={["Evening Outlook", "8:50 AM Briefing", "Opening Checklist"]} active={tab} onChange={setTab}/>{available ? <TomorrowWorkspace/> : <ReadinessState kind="blocked" title={`${tab} unavailable`} reason="Waiting for historical data or a final validated session snapshot."/>}</div>;
+  const { eveningReport, canonicalState } = useWorkstationState();
+  const premarket = canonicalState?.workspace_readiness?.pre_market_850_readiness;
+  const available = Boolean(eveningReport?.timestamp && premarket?.is_full_premarket_ready);
+  const missing = Object.entries(premarket || {}).filter(([key, value]) => key !== "is_full_premarket_ready" && value !== "READY").map(([key]) => key.replaceAll("_", " "));
+  const plannerNews: any[] = safeArray(canonicalState?.news_intelligence?.items) as any[];
+  const events: any[] = safeArray(canonicalState?.macro_intelligence?.economic_events) as any[];
+  return (
+    <div className="space-y-5">
+      <Heading eyebrow="Next-session intelligence" title="Pre-Market Planner" description="Previous-session evidence and opening preparation without fabricated cues."/>
+      <Tabs values={["Evening Outlook", "8:50 AM Briefing", "Opening Checklist"]} active={tab} onChange={setTab}/>
+      <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Data Readiness Summary</h3><p className="mt-2 text-xs text-slate-300">Last session: {canonicalState?.market_data?.status === "market_closed" ? "READY" : "UNAVAILABLE"} · Macro quotes: {Object.keys(canonicalState?.macro_intelligence?.quotes || {}).length} · News: {plannerNews.length} · FII/DII: {safeArray(canonicalState?.macro_intelligence?.institutional_flows).length} · Options: {canonicalState?.option_intelligence?.status || "unavailable"}</p>{missing.length > 0 && <p className="mt-2 text-xs text-amber-400">Missing inputs: {missing.join(", ")}.</p>}</section>
+      <GlobalCuesWidget />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <InstitutionalFlowWidget />
+        <NiftyConstituentsWidget />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4"><section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Important News</h3><div className="mt-2 space-y-2 text-xs text-slate-300">{plannerNews.length ? plannerNews.slice(0, 4).map((item, i) => <p key={item.id || i}>{safeString(item.headline)} · {safeString(item.source_name)}</p>) : <p>No verified updates available.</p>}</div></section><section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Upcoming Events</h3><div className="mt-2 space-y-2 text-xs text-slate-300">{events.length ? events.slice(0, 4).map((event, i) => <p key={event.id || i}>{safeString(event.title || event.event_name)} · {formatDate(event.scheduled_at)}</p>) : <p>No verified upcoming events available.</p>}</div></section></div>
+      {available ? <TomorrowWorkspace/> : <ReadinessState kind="partial" title={`${tab} partially ready`} reason="Unsupported bias, confidence, volatility, strategy and support/resistance calculations are suppressed until all required canonical inputs are available."/>}
+    </div>
+  );
 }
 
 export function TodaysAnalysisWorkspace() {
-  const { marketContext } = useWorkstationState();
-  return <div className="space-y-5"><Heading eyebrow="Meaning, not headlines" title="Today’s Analysis" description="Why NIFTY is behaving as it is and which scenarios are confirming or failing."/>{marketContext?.current_spot ? <MarketStory/> : <ReadinessState kind="blocked" title="Today’s Analysis is waiting" reason="A validated market context is required before interpreting the session."/>}</div>;
+  const { marketContext, canonicalState } = useWorkstationState();
+  const closed = Boolean(canonicalState?.market_session?.is_closed);
+  if (closed) return <div className="space-y-5"><Heading eyebrow="Meaning, not headlines" title="Today's Analysis" description="Validated last-session and post-close context."/><ReadinessState kind="closed" title="LAST_SESSION_ANALYSIS" reason="Historical and post-close context only; live confirmation logic is disabled."/><ClosedSessionIntelligence mode="analysis"/></div>;
+  return <div className="space-y-5"><Heading eyebrow="Meaning, not headlines" title="Today’s Analysis" description="Why NIFTY is behaving as it is and which scenarios are confirming or failing."/>{marketContext?.current_spot && marketContext.feed_health === "HEALTHY" ? <MarketStory/> : <ReadinessState kind="blocked" title="Today’s Analysis is waiting" reason="A healthy current-session market feed is required before interpreting the session."/>}</div>;
 }
 
 export function NewsUpdatesWorkspace() {
-  const [tab, setTab] = useState("Live Feed");
-  const { newsSentiment } = useWorkstationState();
-  const available = Boolean(newsSentiment?.articles?.length && newsSentiment?.timestamp);
-  return <div className="space-y-5"><Heading eyebrow="What happened" title="NEWS & UPDATES" description="Source- and time-aware market updates. Analysis remains in Today’s Analysis."/><Tabs values={["Live Feed", "Market Impact", "Events", "Corporate", "Watchlist"]} active={tab} onChange={setTab}/>{available ? <NewsIntelligence/> : <ReadinessState kind="unavailable" title="News provider unavailable" reason="No verified live news records are available. Hardcoded publisher records are not displayed."/>}</div>;
+  return (
+    <div className="space-y-5">
+      <Heading eyebrow="What happened" title="NEWS & UPDATES" description="Source- and time-aware market updates. Analysis remains in Today’s Analysis."/>
+      <NewsIntelligence />
+    </div>
+  );
 }
 
 export function LiveAssistantWorkspace() {
-  const { marketContext, decisionReport } = useWorkstationState();
-  const ready = Boolean(marketContext?.current_spot && decisionReport?.timestamp);
-  return <div className="space-y-5"><Heading eyebrow="Plan versus live market" title="Live Assistant" description="Current scenario, confirmations, invalidations, changes and what to watch next."/>{ready ? <><IntradayAssistant/><DecisionEngine/></> : <ReadinessState kind="blocked" title="Live Assistant is waiting" reason="Validated market context and current analytical outputs are required. No journal or simulated trade state is used."/>}</div>;
+  const { canonicalState, marketContext } = useWorkstationState() as any;
+  const isClosed = Boolean(canonicalState?.market_session?.is_closed || marketContext?.session_mode === "LAST_SESSION");
+  if (isClosed) return <div className="space-y-5"><Heading eyebrow="Plan versus live market" title="Live Assistant" description="Closed-session intelligence from verified canonical inputs."/><ReadinessState kind="closed" title="CLOSED_SESSION_READY" reason="Live intraday confirmation, option-building and invalidation logic is disabled."/><ClosedSessionIntelligence mode="assistant"/></div>;
+  return (
+    <div className="space-y-5">
+      <Heading eyebrow="Plan versus live market" title="Live Assistant" description="Current scenario, confirmations, invalidations, changes and what to watch next."/>
+      {marketContext?.feed_health === "HEALTHY" ? <><IntradayAssistant/><DecisionEngine/></> : <ReadinessState kind="blocked" title="Live Assistant is waiting" reason="A healthy current-session market feed is required."/>}
+    </div>
+  );
 }
 
 export function SettingsWorkspace() {
-  const { themeClasses } = useTheme();
-  const { workspaceContext, marketContext, connectionState, syncBroker, brokerAccount } = useWorkstationState();
-  const [apiKey, setApiKey] = useState(""); const [accessToken, setAccessToken] = useState(""); const [message, setMessage] = useState("");
-  const connect = async () => { try { setMessage("Connecting read-only Kite session…"); await connectBroker(apiKey, accessToken, false, false); await syncBroker(); setMessage("Kite session connected. Order execution remains disabled."); } catch (error) { setMessage(error instanceof Error ? error.message : "Kite connection failed."); } };
-  const status = workspaceContext.brokerState;
-  return <div className="space-y-5"><Heading eyebrow="Configuration and diagnostics" title="Settings" description="Kite, OpenAI readiness, data sources, notifications, diagnostics, appearance and product information."/>
-    <div className="grid gap-4 lg:grid-cols-2">
-      <section className={`${themeClasses.card} rounded-xl border p-5 text-left`}><div className="flex items-center gap-2 font-bold text-white"><KeyRound size={16}/>Kite · Read Only</div><p className="mt-2 text-xs text-neutral-400">Session: <strong>{status}</strong> · Client: {brokerAccount?.client_id || "Unavailable"}</p><div className="mt-4 space-y-2"><input aria-label="Kite API key" value={apiKey} onChange={e=>setApiKey(e.target.value)} placeholder="Kite API key" className="w-full rounded border border-neutral-800 bg-neutral-950 p-2 text-xs"/><input aria-label="Kite access token" type="password" value={accessToken} onChange={e=>setAccessToken(e.target.value)} placeholder="Access token" className="w-full rounded border border-neutral-800 bg-neutral-950 p-2 text-xs"/><button onClick={connect} className="rounded bg-cyan-900 px-3 py-2 text-xs font-bold text-cyan-100">Connect / Reconnect</button>{message && <p className="text-xs text-neutral-400">{message}</p>}</div><div className="mt-4 flex items-center gap-2 text-xs text-emerald-400"><ShieldCheck size={14}/>Order placement, modification, cancellation and exits are unavailable.</div></section>
-      <section className={`${themeClasses.card} rounded-xl border p-5 text-left`}><div className="flex items-center gap-2 font-bold text-white"><Database size={16}/>Data Sources</div><p className="mt-3 text-xs text-neutral-400">REST: {status === "CONNECTED" ? "Connected" : "Unavailable"}</p><p className="mt-1 text-xs text-neutral-400">WebSocket: {connectionState}</p><p className="mt-1 text-xs text-neutral-400">Market feed: {marketContext?.feed_health || "Unavailable"}</p><p className="mt-1 text-xs text-neutral-400">Last observation: {marketContext?.last_tick_time || "Unavailable"}</p></section>
-      <section className={`${themeClasses.card} rounded-xl border p-5 text-left`}><div className="flex items-center gap-2 font-bold text-white"><CheckCircle2 size={16}/>OpenAI</div><p className="mt-3 text-xs text-neutral-400">Provider status: Not configured</p><p className="mt-1 text-xs text-neutral-400">Model: Unavailable</p><p className="mt-1 text-xs text-emerald-400">Deterministic explanation fallback: Available</p></section>
-      <section className={`${themeClasses.card} rounded-xl border p-5 text-left`}><div className="flex items-center gap-2 font-bold text-white"><Clock size={16}/>Diagnostics</div><p className="mt-3 text-xs text-neutral-400">Broker: {status}</p><p className="mt-1 text-xs text-neutral-400">Feed latency: {marketContext?.feed_latency_ms ? `${marketContext.feed_latency_ms} ms` : "Unavailable"}</p><p className="mt-1 text-xs text-neutral-400">Product: AIR ArdhaMind · Phase 1 read-only intelligence</p></section>
+  return (
+    <div className="space-y-5">
+      <Heading
+        eyebrow="Configuration and diagnostics"
+        title="Settings"
+        description="Kite, OpenAI readiness, data sources, notifications, diagnostics, system information and telemetry."
+      />
+      <SettingsDashboard />
     </div>
-  </div>;
+  );
 }
 
+export { PreMarketPlannerWorkspace } from "./PreMarketPlannerWorkspace";

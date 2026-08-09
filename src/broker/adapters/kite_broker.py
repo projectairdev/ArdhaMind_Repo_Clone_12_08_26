@@ -1,4 +1,5 @@
 from __future__ import annotations
+from datetime import datetime, timezone
 import time
 import logging
 from typing import List, Dict, Any, Optional
@@ -44,6 +45,7 @@ class KiteBrokerGateway(IBrokerGateway):
         self._connected = False
         self._last_error: Optional[str] = None
         self._last_latency: float = 0.0
+        self._last_profile_validation: Optional[str] = None
 
         # Auto-load session if configured
         if getattr(Config, "AUTO_LOAD_SESSION", True):
@@ -76,6 +78,7 @@ class KiteBrokerGateway(IBrokerGateway):
                 start_time = time.time()
                 kite.profile()
                 self._last_latency = (time.time() - start_time) * 1000.0
+                self._last_profile_validation = datetime.now(timezone.utc).isoformat()
             
             self.api_key = api_key
             self.access_token = access_token
@@ -244,7 +247,16 @@ class KiteBrokerGateway(IBrokerGateway):
             if "user_name" in normalized and "client_name" not in normalized:
                 normalized["client_name"] = normalized["user_name"]
             
-            print(json.dumps(normalized, indent=2, default=str), flush=True)
+            self._last_profile_validation = datetime.now(timezone.utc).isoformat()
+            normalized["profile_validated_at"] = self._last_profile_validation
+            session = SessionManager.load_session() or {}
+            login_timestamp = session.get("login_timestamp")
+            normalized["last_authenticated_at"] = (
+                datetime.fromtimestamp(float(login_timestamp), timezone.utc).isoformat()
+                if login_timestamp else None
+            )
+            normalized["session_valid"] = not bool(session.get("expired"))
+            print(json.dumps({"profile_validated": True, "latency_ms": latency}), flush=True)
             return normalized
         except Exception as e:
             latency = int((time.time() - start_time) * 1000.0)
@@ -498,13 +510,13 @@ class KiteBrokerGateway(IBrokerGateway):
             raise AuthenticationManager._map_exception(e)
 
     def place_order(self, **kwargs) -> Any:
-        raise NotImplementedError("Order placement is not implemented for this sprint.")
+        raise PermissionError("AIR ArdhaMind is read only; order placement is unavailable")
 
     def modify_order(self, **kwargs) -> Any:
-        raise NotImplementedError("Order modification is not implemented for this sprint.")
+        raise PermissionError("AIR ArdhaMind is read only; order modification is unavailable")
 
     def cancel_order(self, **kwargs) -> Any:
-        raise NotImplementedError("Order cancellation is not implemented for this sprint.")
+        raise PermissionError("AIR ArdhaMind is read only; order cancellation is unavailable")
 
     # --- Task 4 Broker Health Integration ---
 

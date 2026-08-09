@@ -266,7 +266,7 @@ class TestSprint33ManualExecution(unittest.TestCase):
         self.assertEqual(conf_cancel.status, "CANCELLED")
         self.assertEqual(len(ConfirmationManager.get_pending_requests()), 0)
 
-    def test_execution_manager_full_path_success(self) -> None:
+    def test_execution_manager_full_path_is_rejected(self) -> None:
         """
         Verify end-to-end processing of a validated, operator-confirmed order.
         """
@@ -292,8 +292,9 @@ class TestSprint33ManualExecution(unittest.TestCase):
         # 1. Validation and submission
         ExecutionValidator.clear_recent_orders_cache()
         val = ExecutionManager.submit_for_validation_and_confirmation(request)
-        self.assertTrue(val.is_valid)
-        self.assertEqual(len(ConfirmationManager.get_pending_requests()), 1)
+        self.assertFalse(val.is_valid)
+        self.assertIn("READ_ONLY_PRODUCT", val.errors[0])
+        self.assertEqual(len(ConfirmationManager.get_pending_requests()), 0)
 
         # Clear duplicate cache right before execution to pass late-stage pre-execution validation
         ExecutionValidator.clear_recent_orders_cache()
@@ -311,11 +312,7 @@ class TestSprint33ManualExecution(unittest.TestCase):
         audit_trail = ExecutionManager.get_audit_log()
         self.assertEqual(len(audit_trail), 1)
         
-        audit_entry = audit_trail[0]
-        self.assertEqual(audit_entry.operator, "pvpk06@gmail.com")
-        self.assertEqual(audit_entry.execution_outcome, "FAILED")
-        self.assertEqual(audit_entry.confirmation_result.status, "CONFIRMED")
-        self.assertEqual(audit_entry.validation_result.is_valid, True)
+        self.assertEqual(audit_trail[0].execution_outcome, "VALIDATION_FAILED")
 
     def test_execution_manager_cancel_path(self) -> None:
         """
@@ -343,17 +340,14 @@ class TestSprint33ManualExecution(unittest.TestCase):
         # Submit
         ExecutionValidator.clear_recent_orders_cache()
         val = ExecutionManager.submit_for_validation_and_confirmation(request)
-        self.assertTrue(val.is_valid)
-        
-        # Explicit cancel
-        conf_cancel = ConfirmationManager.cancel_request("REQ_CANCELLED", operator_name="pvpk06@gmail.com")
-        self.assertEqual(conf_cancel.status, "CANCELLED")
+        self.assertFalse(val.is_valid)
+        self.assertIn("READ_ONLY_PRODUCT", val.errors[0])
 
         # Execute
         result = ExecutionManager.execute_confirmed_request("REQ_CANCELLED", operator="pvpk06@gmail.com")
         self.assertEqual(result.status, "FAILED")
         self.assertEqual(len(result.receipts), 0)
-        self.assertTrue(any("already processed" in f.error_message.lower() for f in result.failures))
+        self.assertTrue(any("READ_ONLY_PRODUCT" in f.error_message for f in result.failures))
 
 
 if __name__ == "__main__":

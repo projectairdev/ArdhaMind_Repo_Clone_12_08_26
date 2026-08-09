@@ -1,5 +1,5 @@
 // src/frontend/services/workspace.ts
-export type WorkspaceMode = "LIVE_PRACTICE" | "LIVE_TRADING";
+export type WorkspaceMode = "READ_ONLY" | "LIVE_PRACTICE" | "LIVE_TRADING";
 
 export interface WorkspaceContext {
   currentMode: WorkspaceMode;
@@ -7,8 +7,8 @@ export interface WorkspaceContext {
   marketState: "PRE_OPEN" | "OPEN" | "CLOSED" | "HOLIDAY";
   brokerType: "ZERODHA";
   marketDataSource: "LIVE";
-  executionMode: "PAPER_EXECUTION" | "LIVE_BROKER";
-  portfolioSource: "BROKER";
+  executionMode: "READ_ONLY" | "PAPER_EXECUTION" | "LIVE_BROKER";
+  portfolioSource: "READ_ONLY_BROKER" | "BROKER";
   analyticsMode: "ENABLED" | "DISABLED";
   notificationMode: "ENABLED" | "DISABLED";
   timestamp: string;
@@ -24,7 +24,7 @@ export interface WorkspaceConfig {
 }
 
 // Retrieve from localStorage or fallback to standard LIVE_PRACTICE
-let currentMode: WorkspaceMode = (localStorage.getItem("workspace_mode") as WorkspaceMode) || "LIVE_PRACTICE";
+let currentMode: WorkspaceMode = "READ_ONLY";
 
 let cachedContext: WorkspaceContext = {
   currentMode: currentMode,
@@ -32,8 +32,8 @@ let cachedContext: WorkspaceContext = {
   marketState: "CLOSED",
   brokerType: "ZERODHA",
   marketDataSource: "LIVE",
-  executionMode: currentMode === "LIVE_TRADING" ? "LIVE_BROKER" : "PAPER_EXECUTION",
-  portfolioSource: "BROKER",
+  executionMode: "READ_ONLY",
+  portfolioSource: "READ_ONLY_BROKER",
   analyticsMode: "ENABLED",
   notificationMode: "ENABLED",
   timestamp: new Date().toISOString()
@@ -41,7 +41,7 @@ let cachedContext: WorkspaceContext = {
 
 const config: WorkspaceConfig = {
   workspaceMode: currentMode,
-  defaultWorkspaceMode: "LIVE_PRACTICE",
+  defaultWorkspaceMode: "READ_ONLY",
   allowLiveTrading: false, // Default to false initially, sync with backend
   requireConfirmation: true,
   showModeWarning: true,
@@ -84,13 +84,13 @@ function mapBackendContext(data: any): WorkspaceContext {
   const mStatus = data.market_session?.status || data.marketState || data.market_state || "CLOSED";
   const marketState = mStatus === "open" ? "OPEN" : mStatus === "holiday" ? "HOLIDAY" : mStatus;
   return {
-    currentMode: data.current_mode || data.currentMode || "LIVE_PRACTICE",
+    currentMode: "READ_ONLY",
     brokerState: brokerState,
     marketState: marketState,
     brokerType: "ZERODHA",
     marketDataSource: "LIVE",
-    executionMode: data.execution_mode || data.executionMode || "PAPER_EXECUTION",
-    portfolioSource: "BROKER",
+    executionMode: "READ_ONLY",
+    portfolioSource: "READ_ONLY_BROKER",
     analyticsMode: data.analytics_mode || data.analyticsMode || "ENABLED",
     notificationMode: data.notification_mode || data.notificationMode || "ENABLED",
     timestamp: data.generated_at || data.timestamp || new Date().toISOString()
@@ -137,11 +137,18 @@ export const workspaceService = {
   },
 
   async setMode(newMode: WorkspaceMode, operatorConfirmed: boolean = false): Promise<{ success: boolean; error?: string }> {
+    void operatorConfirmed;
+    if (newMode !== "READ_ONLY") {
+      return { success: false, error: "AIR ArdhaMind has one fixed read-only product mode." };
+    }
+    return { success: true };
+
+    /* Historical transport retained as unreachable compatibility context.
     if (newMode === "LIVE_TRADING") {
       if (config.requireConfirmation && !operatorConfirmed) {
         return { success: false, error: "Operator confirmation is required to enter LIVE_TRADING." };
       }
-    }
+    } */
 
     try {
       const resp = await fetch("/api/workspace/mode", {

@@ -1,8 +1,7 @@
 // src/frontend/components/IntradayAssistant.tsx
 import React from "react";
 import { useWorkstationState } from "../context/WorkstationStateContext";
-import { IntradayReport } from "../types";
-import { AlertCircle, Activity, ShieldCheck, Info, AlertTriangle } from "lucide-react";
+import { AlertCircle, Activity, ShieldCheck, Info } from "lucide-react";
 import {
   safeArray,
   safeNumber,
@@ -11,7 +10,8 @@ import {
 } from "../utils/safeHelpers";
 
 export function IntradayAssistant() {
-  const { intradayReport: report, syncBroker } = useWorkstationState();
+  const { intradayReport: report, syncBroker, market_session, marketContext, canonicalState, data } = useWorkstationState() as any;
+  const isClosed = Boolean(market_session?.is_closed || market_session?.status === "closed" || market_session?.status === "holiday" || marketContext?.session_mode === "LAST_SESSION");
   const loading = false;
   const error = null;
   const fetchIntraday = async () => { await syncBroker(true); };
@@ -21,6 +21,98 @@ export function IntradayAssistant() {
       <div id="intraday-loading" className="p-6 bg-slate-950 rounded-xl border border-slate-800 animate-pulse space-y-4">
         <div className="h-6 w-1/4 bg-slate-800 rounded"></div>
         <div className="h-44 bg-slate-900 rounded"></div>
+      </div>
+    );
+  }
+
+  if (isClosed) {
+    const spot = safeNumber(marketContext?.current_spot, 0);
+    const macroObj = canonicalState?.macro_intelligence || data?.macro_intelligence || {};
+    const vixContext: any = macroObj.india_vix || marketContext?.india_vix_context || {};
+    const vix = vixContext.value != null && vixContext.observation_timestamp ? safeNumber(vixContext.value, 0) : 0;
+    const macroQuotes = macroObj.quotes || {};
+    const newsObj = canonicalState?.news_intelligence || data?.news_intelligence || {};
+    const newsItems = newsObj.items || newsObj.articles || [];
+
+    return (
+      <div id="intraday-assistant-closed" className="p-6 bg-slate-950 rounded-xl border border-slate-800 space-y-6 text-left font-mono">
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-800 pb-4">
+          <div className="flex items-center gap-2">
+            <Activity size={18} className="text-cyan-400" />
+            <h3 className="font-bold text-white text-base">Live Assistant · Closed Session Mode</h3>
+          </div>
+          <span className="px-2.5 py-1 text-xs font-bold rounded bg-cyan-950 text-cyan-400 border border-cyan-800">
+            CLOSED_SESSION_READY
+          </span>
+        </div>
+
+        {/* 1. LAST SESSION SUMMARY */}
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs">
+            <ShieldCheck size={14} className="text-emerald-400" />
+            <span>LAST SESSION SUMMARY</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            <div className="p-2.5 bg-slate-950 rounded border border-slate-850">
+              <span className="text-[10px] text-slate-400 block">NIFTY Last Close</span>
+              <span className="font-bold text-white">{spot > 0 ? formatNumber(spot, 2) : "--"}</span>
+            </div>
+            <div className="p-2.5 bg-slate-950 rounded border border-slate-850">
+              <span className="text-[10px] text-slate-400 block">India VIX Close</span>
+              <span className="font-bold text-cyan-400">{vix > 0 ? formatNumber(vix, 2) : "--"}</span>
+            </div>
+            <div className="p-2.5 bg-slate-950 rounded border border-slate-850">
+              <span className="text-[10px] text-slate-400 block">Market Session</span>
+              <span className="font-bold text-amber-400">MARKET CLOSED</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. DEVELOPMENTS & MACRO/GLOBAL CHANGES */}
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs">
+            <Activity size={14} className="text-purple-400" />
+            <span>DEVELOPMENTS & MACRO CHANGES SINCE CLOSE</span>
+          </div>
+          {Object.keys(macroQuotes).length > 0 ? (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              {Object.values(macroQuotes).slice(0, 4).map((q: any) => (
+                <div key={q.symbol} className="p-2 bg-slate-950 rounded border border-slate-850">
+                  <span className="text-[10px] text-slate-400 block font-bold">{q.name || q.symbol}</span>
+                  <span className={`font-bold ${safeNumber(q.change_pct, 0) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                    {formatNumber(safeNumber(q.price, 0), 2)} ({safeNumber(q.change_pct, 0) >= 0 ? "+" : ""}{formatNumber(safeNumber(q.change_pct, 0), 2)}%)
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 font-sans">No global macro quote updates available since session close.</p>
+          )}
+        </div>
+
+        {/* 3. NEWS SINCE CLOSE */}
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs">
+            <Info size={14} className="text-cyan-400" />
+            <span>NEWS INTELLIGENCE SINCE CLOSE</span>
+          </div>
+          <p className="text-xs text-slate-300 font-sans leading-relaxed">
+            {newsItems.length > 0
+              ? `${newsItems.length} verified news item(s) ingested since last session. Check News & Updates workspace for full headlines.`
+              : "No new verified news items ingested since session close."}
+          </p>
+        </div>
+
+        {/* 4. NEXT SESSION WATCH ITEMS */}
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs">
+            <Info size={14} className="text-amber-400" />
+            <span>WHAT TO WATCH NEXT SESSION</span>
+          </div>
+          <p className="text-xs text-slate-300 font-sans leading-relaxed">
+            GIFT Nifty remains unavailable unless a genuine provider is configured. Treat freshness-eligible global observations as context only; intraday VWAP acceptance and live confirmation tracking activate from the Indian market feed.
+          </p>
+        </div>
       </div>
     );
   }
@@ -40,25 +132,20 @@ export function IntradayAssistant() {
     );
   }
 
-  // Safe checks and derived data from the actual IntradayReport schema
-  const planStatus = safeString(report.summary?.plan_status, "PLAN_ACTIVE");
+  const planStatus = safeString(report?.summary?.plan_status, "UNAVAILABLE");
   const isPlanValid = planStatus.toLowerCase().includes("valid") ?? true;
-  
-  const marketChanges = safeArray(report.market_changes) as any[];
-  // Find PCR change details if present in market_changes
-  const pcrChange = marketChanges.find((m) =>
-    safeString(m?.metric_name).toLowerCase().includes("pcr")
-  );
-  
-  const overallPcrShift = safeNumber(report.summary?.overall_pcr_shift);
-  const overallVixShift = safeNumber(report.summary?.overall_vix_shift);
-  const significantChangesCount = safeNumber(report.summary?.significant_market_changes_count);
-  const candidateChanges = safeArray(report.candidate_changes) as any[];
-  const validationReasons = safeArray(report.validation_reasons) as any[];
+  const overallPcrShift = safeNumber(report?.summary?.overall_pcr_shift);
+  const overallVixShift = safeNumber(report?.summary?.overall_vix_shift);
+  const significantChangesCount = safeNumber(report?.summary?.significant_market_changes_count);
+  const activeEventClusters = (safeArray(canonicalState?.news_intelligence?.event_clusters) as any[])
+    .filter(cluster => ["BREAKING", "RECENT", "ACTIVE_EVENT"].includes(safeString(cluster.recency_state).toUpperCase()))
+    .slice(0, 3);
+  const upcomingEconomicEvent = (safeArray(canonicalState?.macro_intelligence?.economic_events) as any[])
+    .filter(event => ["UPCOMING", "DUE", "SCHEDULED"].includes(safeString(event.status)) && new Date(event.scheduled_at).getTime() >= Date.now() && ["HIGH", "CRITICAL"].includes(safeString(event.impact_level).toUpperCase()))
+    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())[0];
 
   return (
     <div id="intraday-assistant" className="p-6 bg-slate-950 rounded-xl border border-slate-800 space-y-6 text-left">
-      {/* Title */}
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-800 pb-4">
         <div className="flex items-center gap-2">
           <Activity size={18} className="text-cyan-400" />
@@ -76,156 +163,36 @@ export function IntradayAssistant() {
         </div>
       </div>
 
-      {/* Intraday shifts gauges */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* PUT-CALL RATIO GAUGE */}
-        <div className="p-4 bg-slate-900/40 rounded-lg border border-slate-800 space-y-1">
-          <span className="text-[10px] font-mono text-slate-500 block uppercase">Put-Call Ratio (PCR) Shift</span>
-          <div className="text-lg font-mono font-bold text-white">
-            {pcrChange ? safeString(pcrChange.current_value) : "1.15"}
-          </div>
-          <p className="text-xs text-slate-400">
-            Intraday Shift: {overallPcrShift >= 0 ? "+" : ""}{formatNumber(overallPcrShift, 2)}
-            {pcrChange?.change_pct !== undefined ? ` (${safeNumber(pcrChange.change_pct) >= 0 ? "+" : ""}${formatNumber(pcrChange.change_pct, 1)}%)` : ""}
-          </p>
-        </div>
-
-        {/* INDIA VIX GAUGE */}
-        <div className="p-4 bg-slate-900/40 rounded-lg border border-slate-800 space-y-1">
-          <span className="text-[10px] font-mono text-slate-500 block uppercase">India VIX shift</span>
-          <div className="text-lg font-mono font-bold text-white">
-            {formatNumber(overallVixShift * 100, 1)}%
-          </div>
-          <p className="text-xs text-slate-400">
-            Bias: {overallVixShift <= 0 ? "Cooling Volatility" : "Rising Volatility"}
-          </p>
-        </div>
-
-        {/* ACTIVE TRIGGERS STATUS */}
-        <div className="p-4 bg-slate-900/40 rounded-lg border border-slate-800 space-y-1">
-          <span className="text-[10px] font-mono text-slate-500 block uppercase">Significant Market Changes</span>
-          <div className="text-lg font-mono font-bold text-cyan-400">
-            {significantChangesCount} Flagged
-          </div>
-          <p className="text-xs text-slate-400">
-            Out of {safeNumber(report.summary?.total_candidates_monitored)} active candidates
-          </p>
-        </div>
+      <div data-assistant-event-clusters className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs font-mono"><Info size={14} className="text-purple-400"/><span>CANONICAL GLOBAL EVENTS</span></div>
+        {activeEventClusters.length ? activeEventClusters.map(cluster => <div key={cluster.event_cluster_id} className="text-xs text-slate-300"><span className="font-semibold text-white">WHAT CHANGED:</span> {safeString(cluster.canonical_headline)} <span className="text-cyan-300">WHAT MATTERS:</span> {safeString(cluster.reasoning)} <span className="text-amber-300">WHAT TO WATCH:</span> {safeArray(cluster.affected_channels).join(", ") || "stated transmission channels"}.</div>) : <p className="text-xs text-slate-400">No current canonical event cluster meets the active-session recency rule.</p>}
       </div>
 
-      {/* Live Option Candidates status trackers */}
-      <div className="space-y-3">
-        <h4 className="text-xs font-mono font-semibold text-slate-400 uppercase tracking-wider">
-          Live Option Candidates Intraday Tracker
-        </h4>
-
-        <div className="overflow-x-auto rounded border border-slate-800 bg-slate-900/10">
-          <table className="w-full text-left border-collapse min-w-[600px]">
-            <thead>
-              <tr className="border-b border-slate-800 bg-slate-900 text-[10px] font-mono text-slate-500 uppercase">
-                <th className="px-4 py-2">Candidate ID</th>
-                <th className="px-4 py-2">Trading Symbol</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Previous Decision</th>
-                <th className="px-4 py-2">Suggested Action</th>
-                <th className="px-4 py-2">Reasoning & Alignment</th>
-              </tr>
-            </thead>
-            <tbody className="text-xs font-mono text-slate-300">
-              {candidateChanges.map((cand, idx) => {
-                const suggestedDecision = safeString(cand?.suggested_decision);
-                const isProceed = suggestedDecision === "BUY" || suggestedDecision === "PROCEED";
-                const statusStr = safeString(cand?.status);
-                return (
-                  <tr key={idx} className="border-b border-slate-800 hover:bg-slate-900/20">
-                    <td className="px-4 py-3 text-slate-500 text-xs">{safeString(cand?.candidate_id)}</td>
-                    <td className="px-4 py-3 text-cyan-400 font-semibold">{safeString(cand?.tradingsymbol)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                        statusStr === "UNCHANGED" 
-                          ? "bg-slate-800 text-slate-300 border border-slate-700"
-                          : "bg-amber-950/40 text-amber-400 border border-amber-900"
-                      }`}>
-                        {statusStr}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-400">{safeString(cand?.previous_decision)}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded border ${
-                        isProceed
-                          ? "bg-emerald-950/40 text-emerald-400 border-emerald-900"
-                          : "bg-rose-950/40 text-rose-400 border-rose-900"
-                      }`}>
-                        {suggestedDecision}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300 font-sans max-w-xs truncate" title={safeString(cand?.explanation)}>
-                      {safeString(cand?.explanation)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+      <div data-assistant-economic-risk className="p-4 bg-amber-950/15 border border-amber-900/50 rounded-xl text-xs text-slate-300">
+        <span className="font-bold text-amber-300">WHAT TO WATCH NEXT: </span>
+        {upcomingEconomicEvent ? `${safeString(upcomingEconomicEvent.event_name)} scheduled ${new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date(upcomingEconomicEvent.scheduled_at))} IST — ${safeString(upcomingEconomicEvent.session_timing).replace("_", " ").toLowerCase()}. Channels: ${safeArray(upcomingEconomicEvent.affected_channels).join(", ") || "UNAVAILABLE"}.` : "No upcoming HIGH/CRITICAL canonical economic event is currently in scope."}
       </div>
 
-      {/* Market changes detailed ledger */}
-      {marketChanges.length > 0 && (
-        <div className="space-y-3">
-          <h4 className="text-xs font-mono font-semibold text-slate-400 uppercase tracking-wider">
-            Intraday Metric Feed Ledger
-          </h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {marketChanges.map((metric, idx) => (
-              <div key={idx} className="p-4 bg-slate-900/20 border border-slate-800/80 rounded-lg flex items-start gap-3">
-                <div className={`p-1.5 rounded mt-0.5 ${
-                  metric?.is_significant ? "bg-amber-950/60 text-amber-400" : "bg-slate-800 text-slate-400"
-                }`}>
-                  {metric?.is_significant ? <AlertTriangle size={15} /> : <Info size={15} />}
-                </div>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono font-bold text-white">{safeString(metric?.metric_name)}</span>
-                    {metric?.is_significant && (
-                      <span className="text-[8px] font-mono font-bold text-amber-400 px-1 py-0.5 bg-amber-950 rounded">SIGNIFICANT</span>
-                    )}
-                  </div>
-                  <div className="text-[11px] font-mono text-slate-400">
-                    Prev: <span className="text-slate-300">{safeString(metric?.previous_value)}</span> • Curr: <span className="text-cyan-300 font-bold">{safeString(metric?.current_value)}</span>
-                    {metric?.change_pct !== undefined && (
-                      <span className={`ml-2 font-bold ${safeNumber(metric.change_pct) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                        ({safeNumber(metric.change_pct) >= 0 ? "+" : ""}{formatNumber(metric.change_pct, 2)}%)
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-slate-300 font-sans leading-relaxed pt-0.5">{safeString(metric?.message)}</p>
-                </div>
-              </div>
-            ))}
+      <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+        <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs font-mono">
+          <Activity size={14} className="text-cyan-400" />
+          <span>WHAT CHANGED IN THIS CYCLE</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+          <div className="p-2.5 bg-slate-950 rounded border border-slate-850">
+            <span className="text-[10px] text-slate-400 block">PCR Shift</span>
+            <span className="font-bold text-emerald-400">{overallPcrShift >= 0 ? "+" : ""}{formatNumber(overallPcrShift, 2)}</span>
+          </div>
+          <div className="p-2.5 bg-slate-950 rounded border border-slate-850">
+            <span className="text-[10px] text-slate-400 block">VIX Shift</span>
+            <span className="font-bold text-cyan-400">{formatNumber(overallVixShift * 100, 1)}%</span>
+          </div>
+          <div className="p-2.5 bg-slate-950 rounded border border-slate-850">
+            <span className="text-[10px] text-slate-400 block">Significant Changes</span>
+            <span className="font-bold text-amber-400">{significantChangesCount} Observed</span>
           </div>
         </div>
-      )}
-
-      {/* Validation Reasons & Strategic Safeguards */}
-      {validationReasons.length > 0 && (
-        <div className="space-y-2.5 pt-2">
-          <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-slate-400 uppercase">
-            <ShieldCheck size={14} className="text-cyan-400" />
-            <span>Plan Validation Reasons & Safeguards</span>
-          </div>
-          <div className="space-y-2">
-            {validationReasons.map((reason, idx) => (
-              <div key={idx} className="p-3 bg-slate-900/20 border border-slate-800 rounded text-xs text-slate-300 flex items-start gap-2.5 leading-relaxed">
-                <span className="mt-1.5 h-1.5 w-1.5 bg-emerald-400 rounded-full flex-shrink-0 animate-pulse" />
-                <p>{safeString(reason)}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
-
-export default IntradayAssistant;

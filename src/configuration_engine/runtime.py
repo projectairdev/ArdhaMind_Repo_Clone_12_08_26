@@ -5,7 +5,20 @@ try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+    if os.path.exists(env_path):
+        try:
+            with open(env_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#") and "=" in line:
+                        k, v = line.split("=", 1)
+                        k = k.strip()
+                        v = v.strip().strip("'").strip('"')
+                        if k and k not in os.environ:
+                            os.environ[k] = v
+        except Exception:
+            pass
 
 
 def load_scoring_yaml() -> dict[str, dict[str, float]]:
@@ -137,7 +150,7 @@ class Config:
 
     # Broker Abstraction Layer Config (Sprint 27)
     TRADING_MODE = os.getenv("TRADING_MODE", "LIVE_ZERODHA")
-    BROKER_TYPE = os.getenv("BROKER_TYPE", "MOCK")
+    BROKER_TYPE = "ZERODHA"
     CACHE_LOCATION = os.getenv("CACHE_LOCATION", "instrument_cache")
     
     try:
@@ -159,7 +172,7 @@ class Config:
     KITE_API_KEY = os.getenv("KITE_API_KEY", "")
     KITE_ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN", "")
     KITE_API_SECRET = os.getenv("KITE_API_SECRET", "")
-    KITE_REDIRECT_URL = os.getenv("KITE_REDIRECT_URL", "http://localhost:3000/api/broker/callback")
+    KITE_REDIRECT_URL = os.getenv("KITE_REDIRECT_URL", "http://127.0.0.1:3000/api/broker/callback")
     SESSION_CACHE_PATH = os.getenv("SESSION_CACHE_PATH", ".cache/session.json")
     AUTO_LOAD_SESSION = os.getenv("AUTO_LOAD_SESSION", "True").lower() == "true"
     AUTO_VALIDATE_SESSION = os.getenv("AUTO_VALIDATE_SESSION", "True").lower() == "true"
@@ -170,9 +183,9 @@ class Config:
         CONNECTION_TIMEOUT = 10.0
 
     # Workspace Operating Mode Config (Sprint 29)
-    WORKSPACE_MODE = os.getenv("WORKSPACE_MODE", "")
-    DEFAULT_WORKSPACE_MODE = os.getenv("DEFAULT_WORKSPACE_MODE", "LIVE_PRACTICE")
-    ALLOW_LIVE_TRADING = os.getenv("ALLOW_LIVE_TRADING", "True").lower() == "true"
+    WORKSPACE_MODE = "READ_ONLY"
+    DEFAULT_WORKSPACE_MODE = "READ_ONLY"
+    ALLOW_LIVE_TRADING = False
     REQUIRE_CONFIRMATION = os.getenv("REQUIRE_CONFIRMATION", "True").lower() == "true"
     SHOW_MODE_WARNING = os.getenv("SHOW_MODE_WARNING", "True").lower() == "true"
     AUTO_FALLBACK_TO_DEVELOPMENT = False
@@ -197,6 +210,13 @@ class Config:
     ENTRY_BUFFER_ATR = 0.10
     SL_ATR_MULT = 0.80
     TARGET_ATR_MULT = 1.60
+
+    KITE_API_KEY = os.getenv("KITE_API_KEY", "")
+    KITE_API_SECRET = os.getenv("KITE_API_SECRET", "")
+    KITE_REDIRECT_URL = os.getenv("KITE_REDIRECT_URL", "http://127.0.0.1:3000/api/broker/callback")
+
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
     MIN_OPTION_LTP = 5.0
     MAX_OPTION_LTP = 500.0

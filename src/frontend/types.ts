@@ -19,6 +19,7 @@ export interface MarketContext {
   atr: number;
   // Volatility
   india_vix: number;
+  india_vix_context?: Record<string, any>;
   volatility_state: string;
   // Options
   pcr: number;
@@ -54,7 +55,13 @@ export interface OptionContext {
   far_expiry?: string;
   all_expiries?: string[];
   time_to_expiry: number; // in days
-  atm_iv: number;
+  atm_iv: number | null;
+  atm_ce_iv?: number | null;
+  atm_pe_iv?: number | null;
+  iv_status?: string;
+  iv_rows?: number;
+  iv_skew?: Array<Record<string, any>>;
+  risk_free_rate?: Record<string, any>;
   expected_move: number;
   pcr: number;
   max_pain: number;
@@ -231,6 +238,151 @@ export interface GlobalContext {
   usdinr_trend?: string;
   crude_oil_trend?: string;
   is_available: boolean;
+}
+
+export interface MarketQuote {
+  symbol: string;
+  name: string;
+  category: "GLOBAL_INDEX" | "COMMODITY" | "FOREX" | "YIELD";
+  price: number;
+  change: number;
+  change_pct: number;
+  currency: string;
+  source_name: string;
+  source_attribution: string;
+  retrieved_at: string;
+  published_at: string;
+  freshness_status: string;
+}
+
+export interface InstitutionalFlowItem {
+  dataset_type: "FII_CASH" | "DII_CASH" | "FII_FUTURES" | "FII_OPTIONS";
+  date: string;
+  buy_value: number;
+  sell_value: number;
+  net_value: number;
+  currency: string;
+  source_name: string;
+  source_attribution: string;
+  retrieved_at: string;
+  freshness_status: string;
+}
+
+export interface EconomicCalendarEvent {
+  event_id: string;
+  provider_event_id?: string;
+  country: string;
+  event_name: string;
+  canonical_event_name?: string;
+  region?: "INDIA" | "US" | "EUROPE" | "ASIA" | "OTHER";
+  currency?: string;
+  category?: string;
+  actual?: string | number | null;
+  forecast?: string | number | null;
+  previous?: string | number | null;
+  scheduled_at: string;
+  scheduled_at_original?: string;
+  scheduled_at_ist?: string;
+  source_timezone?: string;
+  unit?: string | null;
+  impact_level: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" | "critical" | "high" | "medium" | "low";
+  source_name: string;
+  source_attribution: string;
+  source?: string;
+  source_authority?: "PRIMARY" | "DISCOVERY" | string;
+  source_url?: string;
+  status?: "SCHEDULED" | "UPCOMING" | "DUE" | "RELEASED" | "DELAYED" | "CANCELLED" | "STALE" | "UNAVAILABLE";
+  retrieved_at: string;
+  last_updated?: string;
+  freshness_status: string;
+  nifty_relevance?: number;
+  affected_channels?: string[];
+  reasoning?: string;
+  release_period?: string;
+  provider_provenance?: any[];
+  surprise_direction?: "ABOVE" | "BELOW" | "INLINE" | "NOT_APPLICABLE";
+  surprise_absolute?: number | null;
+  surprise_percentage?: number | null;
+  market_interpretation?: "POSITIVE" | "NEGATIVE" | "MIXED" | "UNCERTAIN";
+  refresh_window?: "FAR_FUTURE" | "NORMAL" | "APPROACHING" | "DUE" | "POST_RELEASE";
+  session_timing?: "BEFORE_OPEN" | "DURING_SESSION" | "AFTER_CLOSE" | "OVERNIGHT";
+}
+
+export interface CorporateActionRecord {
+  id: string;
+  symbol: string;
+  company_name: string;
+  action_type: string;
+  ex_date: string;
+  record_date: string;
+  details: string;
+  source_name: string;
+  source_attribution: string;
+  retrieved_at: string;
+  freshness_status: string;
+}
+
+export interface NiftyConstituentItem {
+  symbol: string;
+  company_name: string;
+  sector: string;
+  weight_pct?: number | null;
+  isin?: string;
+  effective_from?: string;
+  effective_to?: string;
+  metadata_version?: string;
+  source?: string;
+  retrieved_at?: string;
+  resolution_status?: string;
+  kite_trading_symbol?: string;
+  kite_instrument_token?: number | null;
+}
+
+export interface NiftyConstituentMetadata {
+  metadata_version: string;
+  effective_from: string;
+  retrieved_at: string;
+  verified_source: string;
+  source_attribution: string;
+  is_available: boolean;
+  constituents: NiftyConstituentItem[];
+  weights_status?: string;
+  weights_reason?: string;
+  effective_date_status?: string;
+  source_url?: string;
+  source_authority?: string;
+  resolution_count?: number;
+  effective_snapshot_date?: string;
+  reconstitution?: Record<string, any>;
+}
+
+export interface MacroContext {
+  scanned_at: string;
+  generated_at: string;
+  quotes: Record<string, MarketQuote>;
+  institutional_flows: InstitutionalFlowItem[];
+  economic_events: EconomicCalendarEvent[];
+  corporate_actions: CorporateActionRecord[];
+  earnings_events: any[];
+  ipo_events: any[];
+  constituent_metadata?: NiftyConstituentMetadata;
+  corporate_announcements?: any[];
+  board_meetings?: any[];
+  official_india_events?: any[];
+  additional_institutional_flows?: any[];
+  institutional_derivatives?: Record<string, any>;
+  india_vix?: Record<string, any>;
+  risk_free_rate?: Record<string, any>;
+  provider_contracts?: Record<string, any>;
+  dataset_health?: any[];
+  provider_health: Record<string, any>;
+  calendar_provider_health?: Record<string, any>;
+  calendar_coverage?: "FULL" | "PARTIAL" | "LIMITED" | "UNAVAILABLE";
+  calendar_metrics?: Record<string, any>;
+  domain_freshness: Record<string, string>;
+  errors: string[];
+  warnings: string[];
+  usable: boolean;
 }
 
 export interface OpportunityContext {
@@ -1398,7 +1550,7 @@ export interface CanonicalWorkstationState {
   deterministic_risk: any;
   decision_support: DecisionSupport;
   explanation: any;
-  news_intelligence: any;
+  news_intelligence: NewsIntelligence;
   read_only_account_summary: ReadOnlyAccountSummary | null;
   operations_health: any;
   workspace_readiness: Record<string, WorkspaceReadiness>;
@@ -1415,4 +1567,171 @@ export interface CanonicalWorkstationState {
   errors: string[];
 }
 
+export interface ProviderHealth {
+  provider_name: string;
+  status: "ready" | "degraded" | "stale" | "unavailable" | "blocked";
+  last_successful_fetch: string | null;
+  last_attempted_fetch: string | null;
+  item_count: number;
+  error_count: number;
+  operational_error_reason: "timeout" | "rate_limited" | "parse_error" | "connection_error" | "no_usable_records" | "provider_not_configured" | null;
+  failure_detail: string | null;
+  next_retry_at: string | null;
+  is_enabled: boolean;
+  raw_item_count?: number;
+  normalized_item_count?: number;
+  unique_item_count?: number;
+  event_cluster_count?: number;
+  discovery_streams?: string[];
+  rate_limit_state?: string;
+}
 
+export interface NewsItem {
+  id: string;
+  headline: string;
+  summary_snippet: string;
+  source_name: string;
+  source_type: "official" | "media" | "social" | "unknown";
+  original_url: string;
+  discovery_url: string;
+  discovered_via: string;
+  provider_id: string;
+  published_at: string;
+  received_at: string;
+  age_seconds: number;
+  freshness_status: "current" | "recent" | "stale" | "historical" | "invalid_timestamp" | "unavailable";
+  quality_status: "high" | "medium" | "low";
+  verification_status: "confirmed" | "developing" | "unverified" | "unavailable";
+  category: string;
+  event_type: string;
+  affected_symbols: string[];
+  affected_sectors: string[];
+  nifty_relevance_score: number;
+  expected_direction: "positive" | "negative" | "mixed" | "uncertain" | "not_assessed";
+  impact_strength: "high" | "medium" | "low";
+  impact_duration: "intraday" | "daily" | "weekly";
+  confidence: number;
+  discovery_query: string;
+  discovery_category: string;
+  why_it_matters: string;
+  assessment_reasons: string[];
+  rule_version: string;
+  duplicate_group_id: string | null;
+  warnings: string[];
+  error: string | null;
+  publisher?: string;
+  source_tier?: string;
+  discovery_stream?: string;
+  language?: string;
+  related_countries?: string[];
+  affected_channels?: string[];
+  recency_state?: string;
+  priority_score?: number;
+  updated_at?: string;
+  normalized_timestamp?: string;
+  timestamp_source?: string;
+  timestamp_validity?: string;
+  timestamp_confidence?: string;
+  temporal_class?: "CURRENT" | "RECENT" | "STALE" | "HISTORICAL" | "INVALID_TIMESTAMP";
+  canonical_eligible?: boolean;
+  workspace_eligible?: boolean;
+  cache_restored?: boolean;
+  age_minutes?: number | null;
+}
+
+export interface NewsEventCluster {
+  event_cluster_id: string;
+  canonical_headline: string;
+  category: string;
+  first_seen: string;
+  last_updated: string;
+  article_count: number;
+  publishers: string[];
+  primary_sources: string[];
+  related_countries: string[];
+  related_symbols: string[];
+  verification_strength: string;
+  nifty_relevance: number;
+  impact_level: string;
+  expected_direction: string;
+  reasoning: string;
+  affected_channels: string[];
+  article_ids: string[];
+  discovery_streams: string[];
+  recency_state: string;
+  priority_score: number;
+  latest_article_published_at?: string;
+  current_article_count?: number;
+  historical_article_count?: number;
+  temporal_class?: string;
+  canonical_eligible?: boolean;
+}
+
+export interface NewsCoverageRow {
+  stream: string;
+  sources: string[];
+  raw_items: number;
+  normalized_items: number;
+  unique_items: number;
+  clusters: number;
+  latest_timestamp: string;
+  status: string;
+}
+
+export interface ScheduledEvent {
+  id: string;
+  event_name: string;
+  description: string;
+  scheduled_at: string;
+  importance: "low" | "medium" | "high" | "critical";
+  source_name: string;
+  verification_status: "confirmed" | "developing" | "unverified" | "unavailable";
+  category: string;
+  expected_direction: "positive" | "negative" | "mixed" | "uncertain" | "not_assessed";
+  relevance_score: number;
+  status: "upcoming" | "completed";
+  warnings: string[];
+}
+
+export interface CorporateAnnouncement {
+  id: string;
+  company_symbol: string;
+  announcement_type: "earnings" | "dividend" | "board_meeting" | "action" | "filing" | "other";
+  headline: string;
+  description: string;
+  published_at: string;
+  source_name: string;
+  original_url: string;
+  verification_status: "confirmed" | "developing" | "unverified" | "unavailable";
+  nifty_relevance_score: number;
+  expected_direction: "positive" | "negative" | "mixed" | "uncertain" | "not_assessed";
+  warnings: string[];
+}
+
+export interface NewsIntelligence {
+  section_status: "ready" | "degraded" | "stale" | "unavailable" | "blocked";
+  items: NewsItem[];
+  top_headlines: NewsItem[];
+  high_impact_items: NewsItem[];
+  corporate_items: CorporateAnnouncement[];
+  event_items: ScheduledEvent[];
+  provider_health: Record<string, ProviderHealth>;
+  freshness: "fresh" | "stale" | "unavailable";
+  warnings: string[];
+  errors: string[];
+  generated_at: string;
+  event_clusters?: NewsEventCluster[];
+  coverage_matrix?: NewsCoverageRow[];
+  coverage_status?: string;
+  raw_article_count?: number;
+  normalized_article_count?: number;
+  unique_article_count?: number;
+  duplicate_article_count?: number;
+  ingestion_metrics?: Record<string, unknown>;
+  historical_items?: NewsItem[];
+  historical_event_clusters?: NewsEventCluster[];
+  temporal_diagnostics?: Record<string, any>;
+  last_market_close_boundary?: string;
+  current_window_hours?: number;
+  workspace_temporal?: Record<string, any>;
+}

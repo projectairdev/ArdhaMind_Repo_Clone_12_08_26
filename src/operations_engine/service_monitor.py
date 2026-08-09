@@ -92,7 +92,7 @@ class ServiceHealthMonitor:
         opt_chain_ok = mock_data.get("option_chain_retrieval", True) if is_mocked else True
         instrument_lookup_ok = mock_data.get("instrument_lookup", True) if is_mocked else True
         vix_avail = mock_data.get("vix_availability", True) if is_mocked else True
-        gift_nifty_avail = mock_data.get("gift_nifty_availability", True) if is_mocked else True
+        gift_nifty_avail = mock_data.get("gift_nifty_availability", False) if is_mocked else False
 
         latency = mock_data.get("latency_ms", 15.0) if is_mocked else (time.perf_counter() - start_time) * 1000.0
 
@@ -348,4 +348,3 @@ class ServiceHealthMonitor:
             last_checked=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         )
         return service_status, warnings
-

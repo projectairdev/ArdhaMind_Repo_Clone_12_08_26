@@ -135,12 +135,26 @@ class OrdersManager:
     @staticmethod
     def execute_request(request: ExecutionRequest, confirmed: bool = False) -> ExecutionReport:
         """
-        Processes an ExecutionRequest. 
-        CRITICAL: Requires explicit confirmed=True parameter to execute order.
+        Historical compatibility entry point. Execution is permanently disabled.
         """
         timestamp_str = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
         report_id = f"REP_{request.request_id}_{int(datetime.utcnow().timestamp())}"
-        
+
+        logger.warning("Rejected compatibility execution request %s: product is read only", request.request_id)
+        return ExecutionReport(
+            report_id=report_id,
+            request_id=request.request_id,
+            submitted_orders=[],
+            accepted_orders=[],
+            rejected_orders=list(request.orders),
+            exchange_order_id="",
+            broker_order_id="",
+            timestamp=timestamp_str,
+            failure_reason="READ_ONLY_PRODUCT: broker execution is permanently unavailable.",
+            status="FAILED",
+        )
+
+        # Retained below as unreachable historical implementation context.
         # 1. Force manual operator confirmation requirement
         if not confirmed:
             logger.warning(f"BLOCK: Execution request {request.request_id} rejected due to missing manual operator confirmation.")

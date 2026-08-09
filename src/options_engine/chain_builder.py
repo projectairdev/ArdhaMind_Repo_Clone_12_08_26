@@ -48,11 +48,13 @@ def build_option_chain(
     # 1. Resolve expiry and strike step
     step = InstrumentManager.resolve_strike_step(instruments_df, symbol)
     if step is None:
-        step = 50.0  # Fallback for NIFTY
+        logger.warning("Strike spacing could not be inferred from the instrument master.")
+        return []
 
     atm_strike = InstrumentManager.resolve_atm_strike(instruments_df, symbol, spot_price)
     if atm_strike is None:
-        atm_strike = round(spot_price / step) * step
+        logger.warning("ATM strike could not be resolved from actual contracts.")
+        return []
 
     expiries_list = expiry if isinstance(expiry, list) else [expiry]
     all_filtered_rows = []

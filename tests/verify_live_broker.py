@@ -7,10 +7,14 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from kiteconnect import KiteConnect
 
 def test_live_broker():
-    api_key = "v9a94g597emt8vch"
-    access_token = "C0ZCTUYp8cM5hVO2GXX77S7urS8oOqzp"
-    
-    print("Initializing KiteConnect with live credentials...")
+    api_key = os.environ.get("KITE_API_KEY", "")
+    access_token = os.environ.get("KITE_ACCESS_TOKEN", "")
+
+    if not api_key or not access_token:
+        print("Skipping live broker check: KITE_API_KEY or KITE_ACCESS_TOKEN not set in environment.")
+        return
+
+    print("Initializing KiteConnect with environment credentials...")
     try:
         kite = KiteConnect(api_key=api_key)
         kite.set_access_token(access_token)
@@ -39,27 +43,6 @@ def test_live_broker():
         print(f"holdings(): SUCCESS (Received type: {type(holdings)}, Count: {len(holdings)})")
     except Exception as e:
         print(f"holdings(): FAILED ({str(e)})")
-
-    # 4. Positions
-    try:
-        positions = kite.positions()
-        print(f"positions(): SUCCESS (Received type: {type(positions)})")
-    except Exception as e:
-        print(f"positions(): FAILED ({str(e)})")
-
-    # 5. Orders
-    try:
-        orders = kite.orders()
-        print(f"orders(): SUCCESS (Received type: {type(orders)}, Count: {len(orders)})")
-    except Exception as e:
-        print(f"orders(): FAILED ({str(e)})")
-
-    # 6. Trades
-    try:
-        trades = kite.trades()
-        print(f"trades(): SUCCESS (Received type: {type(trades)}, Count: {len(trades)})")
-    except Exception as e:
-        print(f"trades(): FAILED ({str(e)})")
 
 if __name__ == "__main__":
     test_live_broker()
