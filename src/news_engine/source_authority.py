@@ -12,13 +12,14 @@ PRIMARY_NAMES = {
 
 TIER_B_NAMES = {
     "reuters", "bloomberg", "associated press", "ap news", "dow jones newswires",
-    "financial times", "the wall street journal", "wall street journal", "nikkei asia",
+    "financial times", "the wall street journal", "wall street journal", "wsj", "nikkei asia",
 }
 
 TIER_C_NAMES = {
     "cnbc", "bbc", "the economic times", "economic times", "business standard",
     "businessline", "the hindu businessline", "moneycontrol", "ndtv profit", "fortune",
     "forbes", "marketwatch", "barron's", "yahoo finance", "hindustan times", "livemint",
+    "livemint.com", "economictimes",
 }
 
 PRIMARY_DOMAINS = {

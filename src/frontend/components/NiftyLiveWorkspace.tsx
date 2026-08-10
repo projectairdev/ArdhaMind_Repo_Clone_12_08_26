@@ -45,11 +45,16 @@ function SpotSummary() {
   const spot = rawSpot != null ? safeNumber(rawSpot, 0) : null;
   const dq = canonicalState?.data_quality?.market_data || {};
   const isClosed = Boolean(canonicalState?.market_session?.is_closed || marketContext?.session_mode === "LAST_SESSION" || marketContext?.session_mode === "LAST_VALID_SESSION");
-  const hasComparison = typeof marketContext?.spot_change === "number" && typeof marketContext?.spot_change_pct === "number";
-  const change = safeNumber(marketContext?.spot_change, 0);
+  const mData = canonicalState?.market_data || {};
+  const rawChange = marketContext?.spot_change ?? mData.change_points ?? mData.spot_change;
+  const rawChangePct = marketContext?.spot_change_pct ?? mData.change_percent ?? mData.spot_change_pct;
+  const prevClose = marketContext?.previous_close ?? mData.previous_close;
+  const hasComparison = typeof rawChange === "number" && typeof rawChangePct === "number";
+  const change = safeNumber(rawChange, 0);
+  const changePct = safeNumber(rawChangePct, 0);
+  const isPositive = change >= 0;
   const flash = useNumericFlash(spot);
   const [showDetails, setShowDetails] = useState(false);
-
   const qualityStatus = safeString(dq.quality_status).toLowerCase();
   const freshnessStatus = safeString(dq.freshness_status).toLowerCase();
   const hasMaterialWarning = ["stale", "degraded", "partial", "not_configured", "license_required"].some(s => qualityStatus.includes(s) || freshnessStatus.includes(s));
@@ -64,7 +69,16 @@ function SpotSummary() {
       </div>
       <div className="air-data text-right">
         <div className="text-3xl font-bold tracking-tight text-white sm:text-4xl">{spot != null ? formatNumber(spot, 2) : "--"}</div>
-        <div className="text-xs text-slate-400">{hasComparison ? `${change >= 0 ? "+" : ""}${formatNumber(change, 2)} pts` : "Previous-session comparison unavailable"}</div>
+        <div className={`text-xs font-mono font-bold mt-0.5 ${hasComparison ? (isPositive ? "text-emerald-400" : "text-rose-400") : "text-slate-400"}`}>
+          {hasComparison ? (
+            <span>
+              {isPositive ? "+" : ""}{formatNumber(change, 2)} pts &nbsp;({isPositive ? "+" : ""}{formatNumber(changePct, 2)}%)
+              {prevClose ? <span className="ml-2 text-[10px] text-slate-400 font-normal">Prev Close {formatNumber(prevClose, 2)}</span> : null}
+            </span>
+          ) : (
+            "Previous-session comparison unavailable"
+          )}
+        </div>
       </div>
     </div>
     <div className="mt-3 flex flex-wrap items-center justify-between gap-4 text-[11px] font-mono text-slate-400">
@@ -91,7 +105,7 @@ function SpotSummary() {
   </div>;
 }
 
-function OverviewPanel() {
+export function OverviewPanel() {
   const { marketContext, optionContext, canonicalState } = useWorkstationState() as any;
   const news = safeArray(canonicalState?.news_intelligence?.items) as any[];
   const sectors = safeArray(marketContext?.sectors);
@@ -120,7 +134,7 @@ function OverviewPanel() {
   </div>;
 }
 
-function PriceTrendPanel() {
+export function PriceTrendPanel() {
   const { marketContext, canonicalState } = useWorkstationState() as any;
   const candles = safeArray(marketContext?.candles) as any[];
   const highs = candles.map(c => safeNumber(c.h, NaN)).filter(Number.isFinite);
@@ -140,7 +154,7 @@ function PriceTrendPanel() {
   </div>;
 }
 
-function OptionsPanel() {
+export function OptionsPanel() {
   const { canonicalState, optionContext } = useWorkstationState() as any;
   const options = canonicalState?.option_intelligence || optionContext || {};
   const status = safeString(options.status || "unavailable").toUpperCase();
@@ -158,7 +172,55 @@ function OptionsPanel() {
 }
 
 export function NiftyLiveWorkspace({ view = "overview" }: { view?: NiftyLiveView }) {
-  return <div className="space-y-5">
-    {view === "price-trend" ? <PriceTrendPanel /> : view === "options" ? <OptionsPanel /> : <OverviewPanel />}
-  </div>;
+  const [activeTab, setActiveTab] = useState<NiftyLiveView>(view);
+
+  return (
+    <div className="space-y-5">
+      {/* ── NIFTY LIVE SUB-TABS NAVIGATION BAR ── */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3" data-testid="nifty-live-tabs">
+        <button
+          onClick={() => setActiveTab("overview")}
+          aria-selected={activeTab === "overview"}
+          className={`rounded-lg border px-4 py-2 text-xs font-bold font-mono transition ${
+            activeTab === "overview"
+              ? "border-cyan-500 bg-cyan-950/40 text-cyan-300 shadow-sm"
+              : "border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+          }`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab("price-trend")}
+          aria-selected={activeTab === "price-trend"}
+          className={`rounded-lg border px-4 py-2 text-xs font-bold font-mono transition ${
+            activeTab === "price-trend"
+              ? "border-cyan-500 bg-cyan-950/40 text-cyan-300 shadow-sm"
+              : "border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+          }`}
+        >
+          Price &amp; Trend
+        </button>
+        <button
+          onClick={() => setActiveTab("options")}
+          aria-selected={activeTab === "options"}
+          className={`rounded-lg border px-4 py-2 text-xs font-bold font-mono transition ${
+            activeTab === "options"
+              ? "border-cyan-500 bg-cyan-950/40 text-cyan-300 shadow-sm"
+              : "border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+          }`}
+        >
+          Options
+        </button>
+      </div>
+
+      {/* RENDER SELECTED TAB PANEL */}
+      {activeTab === "price-trend" ? (
+        <PriceTrendPanel />
+      ) : activeTab === "options" ? (
+        <OptionsPanel />
+      ) : (
+        <OverviewPanel />
+      )}
+    </div>
+  );
 }

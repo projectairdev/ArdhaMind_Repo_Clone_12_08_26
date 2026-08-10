@@ -244,19 +244,31 @@ class MarketContextBuilder:
             spread = round(ask - bid, 2)
             ts = nifty_tick.get("timestamp")
             last_tick_time = str(ts) if ts else now_str
-        else:
-            # Fallback to REST LTP when WebSocket ticks are not active (e.g. market closed)
-            if bs.is_connected():
-                try:
-                    ltps = bs.get_ltp(["NSE:NIFTY 50"])
-                    if ltps and "NSE:NIFTY 50" in ltps:
-                        spot = float(ltps["NSE:NIFTY 50"].get("last_price", 0.0))
+        previous_close = None
+        if bs.is_connected():
+            try:
+                nq = bs.get_quote(["NSE:NIFTY 50"])
+                if nq and "NSE:NIFTY 50" in nq:
+                    n_data = nq["NSE:NIFTY 50"]
+                    if spot <= 0.0:
+                        spot = float(n_data.get("last_price", 0.0))
                         ltp = spot
                         bid = spot
                         ask = spot
                         last_tick_time = now_str
-                except Exception:
-                    pass
+                    prev_raw = (n_data.get("ohlc") or {}).get("close")
+                    if prev_raw is not None and float(prev_raw) > 0:
+                        previous_close = float(prev_raw)
+            except Exception:
+                pass
+
+        if previous_close is None and (cached_macro_context or {}).get("nifty_previous_close"):
+            pc_val = (cached_macro_context or {}).get("nifty_previous_close")
+            if pc_val and float(pc_val) > 0:
+                previous_close = float(pc_val)
+
+        spot_change = round(spot - previous_close, 2) if (spot > 0 and previous_close and previous_close > 0) else None
+        spot_change_pct = round(spot_change / previous_close * 100.0, 4) if (spot_change is not None and previous_close and previous_close > 0) else None
 
         # ---- ATR, VWAP and Candles from intraday candle buffer ----
         try:
@@ -384,6 +396,11 @@ class MarketContextBuilder:
             # Spot & Tick
             "current_spot": spot,
             "ltp": ltp,
+            "previous_close": previous_close,
+            "spot_change": spot_change,
+            "spot_change_pct": spot_change_pct,
+            "change_points": spot_change,
+            "change_percent": spot_change_pct,
             "last_tick_time": last_tick_time,
             "session_mode": session_mode,
             "candles": candles_payload,

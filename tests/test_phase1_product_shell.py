@@ -11,7 +11,7 @@ BRIDGE = (ROOT / "src/server_bridge.py").read_text(encoding="utf-8")
 
 
 def test_exact_primary_navigation_order():
-    labels = ["NIFTY Live", "Pre-Market Planner", "Today’s Analysis", "NEWS & UPDATES", "Live Assistant", "Settings"]
+    labels = ["NIFTY Live", "Market Pulse", "Today’s Analysis", "NEWS & UPDATES", "Live Assistant", "Settings"]
     positions = [LAYOUT.index(f'label: "{label}"') for label in labels]
     assert positions == sorted(positions)
     assert LAYOUT.count("label:") == 6

@@ -20,7 +20,7 @@ import {
 
 export function TomorrowWorkspace() {
   const { themeClasses, accentClasses, fontClasses } = useTheme();
-  const { eveningReport: report, loading, error, syncBroker } = useWorkstationState();
+  const { eveningReport: report, loading, error, syncBroker, canonicalState, marketContext } = useWorkstationState() as any;
 
   if (loading && !report) {
     return (
@@ -94,16 +94,52 @@ export function TomorrowWorkspace() {
         </div>
       </div>
 
-      {/* ── 8:50 AM BRIEFING & GLOBAL CUES SECTION ── */}
-      <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs">
-          <Compass className="h-4 w-4 text-cyan-400" />
-          <span>8:50 AM Pre-Market Briefing & Opening Preparation</span>
+      {/* ── 8:50 AM BRIEFING & SESSION VALIDATION SECTION ── */}
+      {Boolean(canonicalState?.market_session?.status === "open" || marketContext?.session_mode === "LIVE" || marketContext?.trading_session === "OPEN") ? (
+        <div className="p-5 bg-slate-900/80 border border-cyan-800/60 rounded-xl space-y-4 text-left font-mono">
+          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 border-b border-slate-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Compass className="h-5 w-5 text-cyan-400" />
+              <h3 className="font-bold text-white text-sm uppercase tracking-wider">PRE-MARKET PLAN VS LIVE MARKET</h3>
+            </div>
+            <span className="px-2.5 py-1 text-xs font-extrabold rounded bg-emerald-950/60 text-emerald-400 border border-emerald-800/60">
+              LIVE SESSION VALIDATION ACTIVE
+            </span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold block">Pre-Market View</span>
+              <span className="font-bold text-cyan-300 text-sm mt-0.5 block">{directionalBias}</span>
+            </div>
+            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold block">Actual Opening / Live Spot</span>
+              <span className="font-bold text-white text-sm mt-0.5 block">
+                {marketContext?.current_spot ? formatNumber(marketContext.current_spot, 2) : "--"}
+              </span>
+            </div>
+            <div className="p-3 bg-slate-950 rounded-lg border border-slate-800">
+              <span className="text-[10px] text-slate-400 uppercase font-bold block">Validation Status</span>
+              <span className="font-bold text-amber-400 text-sm mt-0.5 block">
+                {canonicalState?.unified_intelligence?.alignment?.state === "BEARISH_ALIGNMENT" ? "PARTIALLY CONFIRMED" : "HOLDING"}
+              </span>
+            </div>
+          </div>
+          <div className="text-xs text-slate-300 font-sans leading-relaxed">
+            <span className="font-bold text-cyan-300">Pre-Market Expectations vs Live Performance: </span>
+            Pre-Market setup was <span className="font-semibold">{directionalBias}</span>. Live session alignment is currently <span className="font-semibold text-white">{safeString(canonicalState?.unified_intelligence?.overall_view || "Mixed Setup")}</span> based on live breadth and option positioning.
+          </div>
         </div>
-        <p className="text-xs text-slate-300 font-sans leading-relaxed">
-          NIFTY opening context uses freshness-eligible global observations, available official institutional-flow records, and verified regulatory news. GIFT Nifty is included only when a genuine provider observation exists.
-        </p>
-      </div>
+      ) : (
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs">
+            <Compass className="h-4 w-4 text-cyan-400" />
+            <span>8:50 AM Pre-Market Briefing & Opening Preparation</span>
+          </div>
+          <p className="text-xs text-slate-300 font-sans leading-relaxed">
+            NIFTY opening context uses freshness-eligible global observations, available official institutional-flow records, and verified regulatory news. GIFT Nifty is included only when a genuine provider observation exists.
+          </p>
+        </div>
+      )}
 
       {/* ── MAIN BENTO GRID ARCHITECTURE ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

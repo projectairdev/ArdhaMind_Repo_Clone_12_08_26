@@ -117,81 +117,139 @@ export function IntradayAssistant() {
     );
   }
 
-  if (error || !report) {
-    return (
-      <div id="intraday-error" className="p-6 bg-slate-950 rounded-xl border border-rose-950 space-y-3">
-        <div className="flex items-center gap-2 text-rose-400">
-          <AlertCircle size={18} />
-          <h3 className="font-semibold">Intraday Assistant Offline</h3>
-        </div>
-        <p className="text-xs text-slate-400">{error || "Could not retrieve real-time alerts."}</p>
-        <button onClick={fetchIntraday} className="px-3 py-1 bg-slate-900 text-xs text-slate-300 border border-slate-800 rounded">
-          Sync Assistant
-        </button>
-      </div>
-    );
-  }
-
-  const planStatus = safeString(report?.summary?.plan_status, "UNAVAILABLE");
-  const isPlanValid = planStatus.toLowerCase().includes("valid") ?? true;
-  const overallPcrShift = safeNumber(report?.summary?.overall_pcr_shift);
-  const overallVixShift = safeNumber(report?.summary?.overall_vix_shift);
-  const significantChangesCount = safeNumber(report?.summary?.significant_market_changes_count);
-  const activeEventClusters = (safeArray(canonicalState?.news_intelligence?.event_clusters) as any[])
-    .filter(cluster => ["BREAKING", "RECENT", "ACTIVE_EVENT"].includes(safeString(cluster.recency_state).toUpperCase()))
-    .slice(0, 3);
-  const upcomingEconomicEvent = (safeArray(canonicalState?.macro_intelligence?.economic_events) as any[])
-    .filter(event => ["UPCOMING", "DUE", "SCHEDULED"].includes(safeString(event.status)) && new Date(event.scheduled_at).getTime() >= Date.now() && ["HIGH", "CRITICAL"].includes(safeString(event.impact_level).toUpperCase()))
-    .sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())[0];
+  const monitor = canonicalState?.unified_intelligence?.live_assistant_monitor || canonicalState?.live_assistant_monitor || {};
+  const currentView = monitor.current_market_view || canonicalState?.unified_intelligence?.overall_view || "Mixed Setup";
+  const conviction = monitor.conviction || canonicalState?.unified_intelligence?.conviction || "Moderate Conviction";
+  const bestBehavior = monitor.best_supported_behavior || canonicalState?.unified_intelligence?.preferred_setup?.description || "Wait for opening range and breadth confirmation.";
+  const confirms = monitor.what_confirms_it || safeArray(canonicalState?.unified_intelligence?.supports);
+  const weakens = monitor.what_weakens_it || safeArray(canonicalState?.unified_intelligence?.invalidation_conditions);
+  const decisionAreas = monitor.decision_areas || safeArray(canonicalState?.unified_intelligence?.decision_zones);
+  const whatChangedList = monitor.what_changed || ["Waiting for the next validated intelligence update."];
+  const nextWatchList = monitor.next_watch || ["Watch price action around key decision zones."];
 
   return (
-    <div id="intraday-assistant" className="p-6 bg-slate-950 rounded-xl border border-slate-800 space-y-6 text-left">
+    <div id="intraday-assistant" className="p-6 bg-slate-950 rounded-xl border border-slate-800 space-y-6 text-left font-mono">
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-800 pb-4">
         <div className="flex items-center gap-2">
           <Activity size={18} className="text-cyan-400" />
-          <h3 className="font-bold text-white text-base">Intraday Assistant Live Alerts</h3>
+          <h3 className="font-bold text-white text-base">Live Assistant · Real-Time Market Monitor</h3>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs font-mono text-slate-500">Plan Validity State:</span>
-          <span className={`px-2 py-0.5 text-xs font-mono font-bold rounded border ${
-            isPlanValid
-              ? "bg-emerald-950/40 text-emerald-400 border-emerald-800/50"
-              : "bg-rose-950/40 text-rose-400 border-rose-800/50"
-          }`}>
-            {planStatus.toUpperCase()}
+          <span className="text-xs text-slate-400 font-extrabold">{currentView.toUpperCase()}</span>
+          <span className="px-2.5 py-0.5 text-xs font-bold rounded bg-cyan-950 text-cyan-400 border border-cyan-800">
+            {conviction.toUpperCase()}
           </span>
         </div>
       </div>
 
-      <div data-assistant-event-clusters className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
-        <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs font-mono"><Info size={14} className="text-purple-400"/><span>CANONICAL GLOBAL EVENTS</span></div>
-        {activeEventClusters.length ? activeEventClusters.map(cluster => <div key={cluster.event_cluster_id} className="text-xs text-slate-300"><span className="font-semibold text-white">WHAT CHANGED:</span> {safeString(cluster.canonical_headline)} <span className="text-cyan-300">WHAT MATTERS:</span> {safeString(cluster.reasoning)} <span className="text-amber-300">WHAT TO WATCH:</span> {safeArray(cluster.affected_channels).join(", ") || "stated transmission channels"}.</div>) : <p className="text-xs text-slate-400">No current canonical event cluster meets the active-session recency rule.</p>}
+      {/* 1. WHAT IS NIFTY DOING NOW */}
+      <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2 font-sans">
+        <div className="flex items-center gap-2 text-cyan-300 font-bold text-xs font-mono">
+          <Activity size={14} />
+          <span>WHAT IS NIFTY DOING NOW?</span>
+        </div>
+        <p className="text-xs text-slate-200 leading-relaxed">
+          {monitor.nifty_action_summary || `NIFTY spot is ${marketContext?.current_spot ? formatNumber(marketContext.current_spot, 2) : "--"}. Market context is ${currentView.toLowerCase()} with ${conviction.toLowerCase()}.`}
+        </p>
       </div>
-
-      <div data-assistant-economic-risk className="p-4 bg-amber-950/15 border border-amber-900/50 rounded-xl text-xs text-slate-300">
-        <span className="font-bold text-amber-300">WHAT TO WATCH NEXT: </span>
-        {upcomingEconomicEvent ? `${safeString(upcomingEconomicEvent.event_name)} scheduled ${new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" }).format(new Date(upcomingEconomicEvent.scheduled_at))} IST — ${safeString(upcomingEconomicEvent.session_timing).replace("_", " ").toLowerCase()}. Channels: ${safeArray(upcomingEconomicEvent.affected_channels).join(", ") || "UNAVAILABLE"}.` : "No upcoming HIGH/CRITICAL canonical economic event is currently in scope."}
-      </div>
-
-      <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+      {/* CANONICAL GLOBAL EVENTS */}
+      <div data-assistant-event-clusters className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3 font-sans">
         <div className="flex items-center gap-2 border-b border-slate-800 pb-2 text-white font-bold text-xs font-mono">
-          <Activity size={14} className="text-cyan-400" />
+          <Info size={14} className="text-purple-400" />
+          <span>CANONICAL GLOBAL EVENTS</span>
+        </div>
+        {(safeArray(canonicalState?.news_intelligence?.event_clusters) as any[])
+          .filter(cluster => ["BREAKING", "RECENT", "ACTIVE_EVENT"].includes(safeString(cluster.recency_state).toUpperCase()))
+          .length ? (
+            (safeArray(canonicalState?.news_intelligence?.event_clusters) as any[])
+              .filter(cluster => ["BREAKING", "RECENT", "ACTIVE_EVENT"].includes(safeString(cluster.recency_state).toUpperCase()))
+              .slice(0, 3)
+              .map(cluster => (
+                <div key={cluster.event_cluster_id} className="text-xs text-slate-300">
+                  <span className="font-semibold text-white">WHAT CHANGED:</span> {safeString(cluster.canonical_headline)}{" "}
+                  <span className="text-cyan-300">WHAT MATTERS:</span> {safeString(cluster.reasoning)}{" "}
+                  <span className="text-amber-300">WHAT TO WATCH:</span> {safeArray(cluster.affected_channels).join(", ") || "stated transmission channels"}.
+                </div>
+              ))
+          ) : (
+            <p className="text-xs text-slate-400">No current canonical event cluster meets the active-session recency rule.</p>
+          )}
+      </div>
+
+      {/* 2 & 3. BEST-SUPPORTED BEHAVIOR TO WATCH */}
+      <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2 font-sans">
+        <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs font-mono">
+          <ShieldCheck size={14} />
+          <span>BEST-SUPPORTED BEHAVIOR TO WATCH</span>
+        </div>
+        <p className="text-xs text-slate-200 leading-relaxed font-semibold">
+          {bestBehavior}
+        </p>
+      </div>
+
+      {/* 4 & 5. WHAT CONFIRMS IT & WHAT WEAKENS IT */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">
+          <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs font-mono">
+            <Info size={14} />
+            <span>WHAT CONFIRMS IT</span>
+          </div>
+          <ul className="text-xs text-slate-300 space-y-1.5 font-sans">
+            {confirms.length ? confirms.map((item: any, idx: number) => <li key={idx}>• {safeString(item)}</li>) : <li>• Waiting for quantitative evidence confirmation.</li>}
+          </ul>
+        </div>
+        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">
+          <div className="flex items-center gap-2 text-rose-400 font-bold text-xs font-mono">
+            <AlertCircle size={14} />
+            <span>WHAT WEAKENS / INVALIDATES IT</span>
+          </div>
+          <ul className="text-xs text-slate-300 space-y-1.5 font-sans">
+            {weakens.length ? weakens.map((item: any, idx: number) => <li key={idx}>• {safeString(item)}</li>) : <li>• No explicit invalidation condition triggered.</li>}
+          </ul>
+        </div>
+      </div>
+
+      {/* 6. DECISION AREAS */}
+      <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3">
+        <div className="flex items-center gap-2 text-purple-400 font-bold text-xs font-mono">
+          <Activity size={14} />
+          <span>KEY DECISION ZONES NOW</span>
+        </div>
+        {decisionAreas.length ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+            {decisionAreas.slice(0, 3).map((zone: any, i: number) => (
+              <div key={i} className="p-2.5 bg-slate-950 rounded border border-slate-850">
+                <span className="text-[10px] text-slate-400 block font-bold">{zone.role || "DECISION ZONE"}</span>
+                <span className="font-bold text-cyan-300">{zone.lower ? `${formatNumber(zone.lower, 1)} – ${formatNumber(zone.upper, 1)}` : formatNumber(zone.center || zone.value, 1)}</span>
+                <span className="text-[9px] text-slate-500 block mt-0.5">{zone.contributing_count || 2} contributing level(s)</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400 font-sans">Decision zones being calculated from live structure.</p>
+        )}
+      </div>
+
+      {/* 7. WHAT CHANGED */}
+      <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-2">
+        <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs font-mono">
+          <Activity size={14} />
           <span>WHAT CHANGED IN THIS CYCLE</span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
-          <div className="p-2.5 bg-slate-950 rounded border border-slate-850">
-            <span className="text-[10px] text-slate-400 block">PCR Shift</span>
-            <span className="font-bold text-emerald-400">{overallPcrShift >= 0 ? "+" : ""}{formatNumber(overallPcrShift, 2)}</span>
-          </div>
-          <div className="p-2.5 bg-slate-950 rounded border border-slate-850">
-            <span className="text-[10px] text-slate-400 block">VIX Shift</span>
-            <span className="font-bold text-cyan-400">{formatNumber(overallVixShift * 100, 1)}%</span>
-          </div>
-          <div className="p-2.5 bg-slate-950 rounded border border-slate-850">
-            <span className="text-[10px] text-slate-400 block">Significant Changes</span>
-            <span className="font-bold text-amber-400">{significantChangesCount} Observed</span>
-          </div>
+        <ul className="text-xs text-slate-300 space-y-1 font-sans">
+          {whatChangedList.map((item: any, idx: number) => <li key={idx}>• {safeString(item)}</li>)}
+        </ul>
+      </div>
+
+      {/* 8. NEXT WATCH */}
+      <div className="p-4 bg-amber-950/15 border border-amber-900/50 rounded-xl space-y-2">
+        <div className="flex items-center gap-2 text-amber-300 font-bold text-xs font-mono">
+          <Info size={14} />
+          <span>NEXT WATCH CONDITIONS</span>
         </div>
+        <ul className="text-xs text-slate-300 space-y-1 font-sans">
+          {nextWatchList.map((item: any, idx: number) => <li key={idx}>• {safeString(item)}</li>)}
+        </ul>
       </div>
     </div>
   );

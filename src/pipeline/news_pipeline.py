@@ -185,7 +185,7 @@ class NewsPipeline:
             published_at=story["published_at"], received_at=str(story.get("received_at") or ""),
             age_seconds=age, freshness_status=temporal.temporal_class.lower(),
             quality_status="high" if tier in {"TIER_A_PRIMARY", "TIER_B_HIGH_TRUST"} else "medium" if tier == "TIER_C_ESTABLISHED_MEDIA" else "discovery",
-            verification_status="confirmed" if tier == "TIER_A_PRIMARY" else str(story.get("verification_status") or "unverified"),
+            verification_status="confirmed" if tier == "TIER_A_PRIMARY" else "verified" if tier == "TIER_B_HIGH_TRUST" else str(story.get("verification_status") or "unverified"),
             category=category, event_type=category, affected_symbols=symbols,
             affected_sectors=[], nifty_relevance_score=relevance["nifty_relevance_score"],
             expected_direction=relevance["expected_direction"], impact_strength=relevance["impact_level"].lower(),

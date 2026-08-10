@@ -186,4 +186,5 @@ export function SettingsWorkspace() {
   );
 }
 
+export { MarketPulseWorkspace } from "./MarketPulseWorkspace";
 export { PreMarketPlannerWorkspace } from "./PreMarketPlannerWorkspace";

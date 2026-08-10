@@ -1008,12 +1008,18 @@ def run_daemon(wm, bs):
                     "newsSentiment": cached_news_sentiment,
                     "macroIntelligence": cached_macro_context
             }
+            m_comp = pipeline_result.compatibility_values().get("marketContext") or {}
             legacy_data.update(pipeline_result.compatibility_values())
-            # Preserve the richer broker/provider payloads. Analytical compatibility
-            # output may classify them, but must not replace their provenance,
-            # timestamps, candles, news records, or macro records.
-            legacy_data["marketContext"] = cached_market_context or {}
-            legacy_data["optionContext"] = cached_option_context or {}
+            legacy_data["marketContext"] = {
+                **(cached_market_context or {}),
+                **m_comp,
+                "breadth": (cached_market_context or {}).get("breadth") or m_comp.get("breadth"),
+                "constituent_instruments": (cached_market_context or {}).get("constituent_instruments") or m_comp.get("constituent_instruments"),
+                "previous_close": (cached_market_context or {}).get("previous_close") or m_comp.get("previous_close"),
+                "spot_change": (cached_market_context or {}).get("spot_change") or m_comp.get("spot_change"),
+                "spot_change_pct": (cached_market_context or {}).get("spot_change_pct") or m_comp.get("spot_change_pct"),
+            }
+            legacy_data["optionContext"] = {**(cached_option_context or {}), **(pipeline_result.compatibility_values().get("optionContext") or {})}
             legacy_data["newsSentiment"] = cached_news_sentiment or get_initial_news_sentiment()
             legacy_data["macroIntelligence"] = cached_macro_context or get_initial_macro_context()
             canonical_state = WorkstationStateService.build_from_legacy(

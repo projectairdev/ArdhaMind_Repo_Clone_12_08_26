@@ -130,7 +130,7 @@ class KiteIntelligenceService:
                 continue
             delta = ltp - previous
             observations.append({
-                "symbol": member.get("symbol"),
+                "symbol": member.get("symbol") or member.get("trading_symbol"),
                 "last_price": ltp,
                 "previous_close": previous,
                 "change": delta,
@@ -179,12 +179,14 @@ class KiteIntelligenceService:
         try:
             observed = datetime.fromisoformat(value.replace("Z", "+00:00"))
             if observed.tzinfo is None:
-                observed = observed.replace(tzinfo=timezone.utc)
+                # Naive timestamps from Zerodha Kite API are in IST (Asia/Kolkata, UTC+5:30)
+                ist = timezone(timedelta(hours=5, minutes=30))
+                observed = observed.replace(tzinfo=ist)
             current = now or datetime.now(timezone.utc)
             if current.tzinfo is None:
                 current = current.replace(tzinfo=timezone.utc)
             age = current - observed.astimezone(timezone.utc)
-            return "FRESH" if timedelta(0) <= age <= timedelta(minutes=15) else "STALE"
+            return "FRESH" if timedelta(seconds=-300) <= age <= timedelta(minutes=15) else "STALE"
         except (TypeError, ValueError):
             return "UNAVAILABLE"
 
@@ -249,6 +251,16 @@ class KiteIntelligenceService:
         instrument_service.load_instruments(broker_service)
         metadata = constituent_metadata or {}
         members = (metadata.get("constituents") or []) if metadata.get("is_available") else []
+        if not members:
+            # Fallback to cached NIFTY 50 membership snapshot when constituent_metadata is missing
+            snapshot_path = Path(".cache/nifty50_membership_snapshots.json")
+            if snapshot_path.exists():
+                try:
+                    snapshots = json.loads(snapshot_path.read_text(encoding="utf-8"))
+                    if snapshots and isinstance(snapshots, list):
+                        members = snapshots[-1].get("constituents") or []
+                except Exception:
+                    pass
         universe = cls.resolve_constituents(instrument_service._instruments, members)
         keys = [f"NSE:{row['trading_symbol']}" for row in universe["members"] if row["resolution_status"] == "RESOLVED"]
         try:

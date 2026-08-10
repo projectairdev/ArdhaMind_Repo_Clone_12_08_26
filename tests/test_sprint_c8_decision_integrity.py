@@ -458,6 +458,7 @@ def test_holiday_handling_preserves_verification_truthfulness():
 
 def test_unverified_news_remains_unverified():
     from src.application.workstation_state_service import WorkstationStateService
+    now = datetime(2026, 8, 9, 10, 0, tzinfo=timezone.utc)
     payload = {
         "marketContext": {"current_spot": 24500.0, "last_tick_time": "2026-08-09T10:00:00Z"},
         "newsSentiment": {
@@ -471,7 +472,7 @@ def test_unverified_news_remains_unverified():
             ]
         }
     }
-    canonical = WorkstationStateService.build_from_legacy(payload, market_state="CLOSED")
+    canonical = WorkstationStateService.build_from_legacy(payload, market_state="CLOSED", now=now)
     items = canonical.news_intelligence.get("items", [])
     assert items[0]["verification_status"] == "UNVERIFIED"
 

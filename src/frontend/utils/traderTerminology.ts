@@ -81,6 +81,10 @@ export function mapTraderEnum(val: unknown, domain: TermDomain = "general"): str
     "UNAVAILABLE": "Unavailable",
     "DEGRADED": "Degraded Data Source",
     "STALE": "Stale Data",
+    "FII_CASH": "FII Cash",
+    "DII_CASH": "DII Cash",
+    "TIER_D_DISCOVERY": "Discovery Tier",
+    "UNKNOWN": "Pending Observation",
 
     // Market Alignment / Bias
     "CONFLICTED": "Mixed Signals",

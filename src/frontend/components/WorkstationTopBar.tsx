@@ -28,7 +28,8 @@ export function WorkstationTopBar({ mobileOpen, onToggleMobile }: { mobileOpen: 
   const feedHealth = stateObj?.market_feed_status?.status || "offline";
   const feedLatencyMs = stateObj?.data_quality?.market_data?.age_seconds ? stateObj.data_quality.market_data.age_seconds * 1000 : 0;
   const isClosedSession = marketStateStr === "CLOSED" || marketStateStr === "HOLIDAY" || Boolean(stateObj?.market_session?.is_closed);
-  const feed = isClosedSession ? "Closed" : marketConnection === "DISCONNECTED" ? "Offline" : marketConnection === "CONNECTING" ? "Connecting" : feedHealth === "healthy" ? "Live" : feedHealth === "degraded" ? `Delayed${feedLatencyMs ? ` ${Math.ceil(feedLatencyMs / 1000)}s` : ""}` : "Degraded";
+  const coreFeedReady = Boolean(stateObj?.market_data?.current_spot || stateObj?.market_data?.status === "ready" || feedHealth === "healthy" || feedHealth === "ready");
+  const feed = isClosedSession ? "Closed" : marketConnection === "DISCONNECTED" ? "Offline" : marketConnection === "CONNECTING" ? "Connecting" : coreFeedReady ? "LIVE" : feedHealth === "degraded" ? `Delayed${feedLatencyMs ? ` ${Math.ceil(feedLatencyMs / 1000)}s` : ""}` : "Degraded";
 
   const providerHealth = { ...(stateObj?.news_intelligence?.provider_health || {}), ...(stateObj?.macro_intelligence?.provider_health || {}) } as Record<string, any>;
   const degradedProviders = Object.entries(providerHealth).filter(([, value]) => !["ready", "disabled", "available"].includes(String(value?.status || "").toLowerCase()));

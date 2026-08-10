@@ -49,7 +49,7 @@ class UnifiedNiftyIntelligenceBuilder:
         scenarios = cls._scenarios(signals, levels, session)
         invalidations = cls._invalidations(alignment, signals, levels)
         explanation = cls._explanation(session, alignment, signals, regime, risk)
-        outlook = cls._outlook(session, alignment, confidence, risk, signals, scenarios, levels, current)
+        outlook = cls._outlook(session, alignment, confidence, risk, signals, scenarios, levels, current, market=market, decision_zones=decision_zones, invalidations=invalidations)
         readiness = "READY" if confidence == "HIGH" else "PARTIAL" if eligible else "BLOCKED"
         mode = {"PRE_OPEN": "PRE_MARKET_INTELLIGENCE", "MARKET_OPEN": "LIVE_MARKET_INTELLIGENCE",
                 "POST_CLOSE": "SESSION_REVIEW"}.get(session, "NEXT_SESSION_CONTEXT")
@@ -65,6 +65,13 @@ class UnifiedNiftyIntelligenceBuilder:
             "evidence_items": evidence_items,
             "scenarios": scenarios,
             "invalidation_conditions": invalidations, "risk": risk, "confidence": confidence,
+            "overall_view": outlook.get("overall_view"),
+            "conviction": outlook.get("conviction"),
+            "preferred_setup": outlook.get("preferred_setup"),
+            "supports": outlook.get("supports"),
+            "caution": outlook.get("caution"),
+            "opposes": outlook.get("opposes"),
+            "live_assistant_monitor": outlook.get("live_assistant_monitor"),
             "outlook": outlook,
             "premarket_view_validation": {
                 "status": "PENDING",
@@ -97,7 +104,9 @@ class UnifiedNiftyIntelligenceBuilder:
     def _price(cls, market, technical, session, meta):
         trend = str(technical.get("trend_direction") or market.get("trend_direction") or "").upper()
         observed = market.get("last_tick_time") or market.get("timestamp")
-        fresh = str(meta.get("freshness_status") or ("fresh" if observed else "unavailable")).lower()
+        raw_fresh = meta.get("freshness_status")
+        fresh_str = raw_fresh.value if hasattr(raw_fresh, "value") else str(raw_fresh or ("fresh" if observed else "unavailable"))
+        fresh = fresh_str.lower()
         eligible = bool(observed and market.get("current_spot")) and (session != "MARKET_OPEN" or fresh in cls.LIVE_FRESHNESS)
         state = "BULLISH" if trend in {"UP", "UPTREND", "BULLISH"} else "BEARISH" if trend in {"DOWN", "DOWNTREND", "BEARISH"} else "NEUTRAL"
         return cls._signal(state if eligible else "UNAVAILABLE", [f"Validated price structure is {state.lower()}."] if eligible else [],
@@ -158,7 +167,9 @@ class UnifiedNiftyIntelligenceBuilder:
     def _options(cls, options, session, meta):
         pcr=options.get("pcr"); mp=options.get("max_pain"); atm=options.get("atm_strike")
         observed=options.get("provider_timestamp") or options.get("snapshot_timestamp") or options.get("timestamp")
-        fresh=str(meta.get("freshness_status") or ("fresh" if observed else "unavailable")).lower()
+        raw_fresh = meta.get("freshness_status")
+        fresh_str = raw_fresh.value if hasattr(raw_fresh, "value") else str(raw_fresh or ("fresh" if observed else "unavailable"))
+        fresh = fresh_str.lower()
         eligible=pcr is not None and mp is not None and bool(observed) and (session != "MARKET_OPEN" or fresh in cls.LIVE_FRESHNESS)
         if not eligible: return cls._signal("UNAVAILABLE", [], source="canonical.option_intelligence", eligible=False, reason="fresh session-appropriate option aggregate unavailable", freshness=fresh)
         p = float(pcr); bias = str(options.get("market_option_bias") or "").upper()
@@ -262,14 +273,66 @@ class UnifiedNiftyIntelligenceBuilder:
         if any(not s["eligible"] for s in signals.values()): return "MODERATE"
         return "HIGH"
 
+    _prior_snapshot: Optional[Dict[str, Any]] = None
+
     @classmethod
     def _scenarios(cls, signals, levels, session):
-        if session not in {"PRE_OPEN","WEEKEND","HOLIDAY"}: return []
-        opening=signals["opening"]["state"]
-        names=("GAP_UP_HOLD","GAP_UP_FADE") if opening=="POSITIVE" else ("GAP_DOWN_RECOVERY","GAP_DOWN_CONTINUATION") if opening=="NEGATIVE" else ("FLAT_OPEN_BREAKOUT","FLAT_OPEN_RANGE")
-        common=["opening range is established from genuine current-session prices","breadth has at least 40/50 coverage"]
-        return [{"name":names[0],"priority":"PRIMARY_CONTEXT","prediction":False,"confirmation_conditions":common+["price sustains beyond the opening range with breadth confirmation"],"invalidation_conditions":["opening indication is retraced and validated structure is lost"]},
-                {"name":names[1],"priority":"ALTERNATE","prediction":False,"confirmation_conditions":common+["opening move fails to sustain and price returns through the opening range"],"invalidation_conditions":["price reclaims the opening extreme with breadth confirmation"]}]
+        if session not in {"PRE_OPEN", "WEEKEND", "HOLIDAY", "POST_CLOSE", "MARKET_OPEN"}:
+            return []
+        if session == "MARKET_OPEN":
+            if not any(s.get("eligible", True) and s.get("state") not in {None, "UNAVAILABLE"} for s in signals.values()):
+                return []
+            supports = [x["value"] for x in levels if x.get("role") == "SUPPORT"]
+            resistances = [x["value"] for x in levels if x.get("role") == "RESISTANCE"]
+            sup_str = f"{min(supports):g}–{max(supports):g}" if supports else "support zone"
+            res_str = f"{min(resistances):g}–{max(resistances):g}" if resistances else "resistance zone"
+            common = ["Intraday NIFTY spot maintains structure", "Constituent breadth coverage is at least 40/50"]
+            if signals.get("breadth", {}).get("state") == "OPPOSING" or signals.get("options", {}).get("state") == "OPPOSING":
+                return [
+                    {
+                        "name": "BEARISH_CONTINUATION", "priority": "PRIMARY_CONTEXT", "prediction": False,
+                        "confirmation_conditions": common + [f"NIFTY trades below {res_str} with net advances under 25", "Option PCR remains below 0.85"],
+                        "invalidation_conditions": [f"Price reclaims {res_str} with advances exceeding 30", "India VIX contracts below 12.0"]
+                    },
+                    {
+                        "name": "SUPPORT_DEFENCE_REBOUND", "priority": "ALTERNATE", "prediction": False,
+                        "confirmation_conditions": common + [f"Price holds {sup_str} with advancing constituents improving above 25"],
+                        "invalidation_conditions": [f"Price breaks below {sup_str} with declines dominating"]
+                    }
+                ]
+            elif signals.get("breadth", {}).get("state") == "CONFIRMING" or signals.get("options", {}).get("state") == "CONFIRMING":
+                return [
+                    {
+                        "name": "BULLISH_BREAKOUT_HOLD", "priority": "PRIMARY_CONTEXT", "prediction": False,
+                        "confirmation_conditions": common + [f"NIFTY sustains above {sup_str} with advances exceeding 30", "Option PCR improves above 1.10"],
+                        "invalidation_conditions": [f"Price loses {sup_str} with advances falling below 25"]
+                    },
+                    {
+                        "name": "RESISTANCE_REJECTION_PULLBACK", "priority": "ALTERNATE", "prediction": False,
+                        "confirmation_conditions": common + [f"Price rejects at {res_str} with breadth weakening"],
+                        "invalidation_conditions": [f"Price breaks out above {res_str} with volume expansion"]
+                    }
+                ]
+            else:
+                return [
+                    {
+                        "name": "RANGE_BOUND_CONSOLIDATION", "priority": "PRIMARY_CONTEXT", "prediction": False,
+                        "confirmation_conditions": common + [f"NIFTY oscillates between {sup_str} and {res_str}"],
+                        "invalidation_conditions": [f"Directional breakout past {res_str} or {sup_str} with breadth expansion"]
+                    },
+                    {
+                        "name": "DIRECTIONAL_BREAKOUT_BUILDUP", "priority": "ALTERNATE", "prediction": False,
+                        "confirmation_conditions": common + [f"Consolidation tightens near {res_str} or {sup_str}"],
+                        "invalidation_conditions": ["Mean reversion back to mid-range VWAP"]
+                    }
+                ]
+        opening = signals["opening"]["state"]
+        names = ("GAP_UP_HOLD", "GAP_UP_FADE") if opening == "POSITIVE" else ("GAP_DOWN_RECOVERY", "GAP_DOWN_CONTINUATION") if opening == "NEGATIVE" else ("FLAT_OPEN_BREAKOUT", "FLAT_OPEN_RANGE")
+        common = ["opening range is established from genuine current-session prices", "breadth has at least 40/50 coverage"]
+        return [
+            {"name": names[0], "priority": "PRIMARY_CONTEXT", "prediction": False, "confirmation_conditions": common + ["price sustains beyond the opening range with breadth confirmation"], "invalidation_conditions": ["opening indication is retraced and validated structure is lost"]},
+            {"name": names[1], "priority": "ALTERNATE", "prediction": False, "confirmation_conditions": common + ["opening move fails to sustain and price returns through the opening range"], "invalidation_conditions": ["price reclaims the opening extreme with breadth confirmation"]}
+        ]
 
     @staticmethod
     def _invalidations(alignment, signals, levels):
@@ -399,7 +462,11 @@ class UnifiedNiftyIntelligenceBuilder:
     @classmethod
     def _outlook(cls, session: str, alignment: dict[str, Any], confidence: str, risk: dict[str, Any],
                  signals: dict[str, Any], scenarios: list[dict[str, Any]], levels: list[dict[str, Any]],
-                 now: datetime) -> dict[str, Any]:
+                 now: datetime, market: Optional[dict[str, Any]] = None, decision_zones: Optional[list[dict[str, Any]]] = None,
+                 invalidations: Optional[list[str]] = None) -> dict[str, Any]:
+        market = market or {}
+        decision_zones = decision_zones or []
+        invalidations = invalidations or []
         current_utc = now.astimezone(timezone.utc)
         status_report = MarketStatusService.get_instance().get_market_status(current_utc)
 
@@ -499,6 +566,53 @@ class UnifiedNiftyIntelligenceBuilder:
             {"item": "Is there any sudden volatility expansion or scheduled event risk?", "source_rule": "signals.volatility"}
         ]
 
+        current_snap = {
+            "spot": market.get("current_spot"),
+            "advances": (signals.get("breadth", {}).get("evidence") or [""])[0],
+            "pcr": (signals.get("options", {}).get("evidence") or [""])[0],
+            "vix": market.get("india_vix"),
+            "alignment": align_state,
+            "confidence": confidence,
+        }
+
+        what_changed = []
+        if cls._prior_snapshot:
+            p_spot = cls._prior_snapshot.get("spot")
+            c_spot = market.get("current_spot")
+            if p_spot and c_spot and p_spot != c_spot:
+                diff = round(c_spot - p_spot, 2)
+                what_changed.append(f"NIFTY Spot moved: {c_spot:g} ({diff:+g} pts from prior cycle)")
+
+            p_align = cls._prior_snapshot.get("alignment")
+            if p_align and p_align != align_state:
+                what_changed.append(f"Market Alignment shifted from {p_align.replace('_', ' ')} to {align_state.replace('_', ' ')}")
+
+            p_conf = cls._prior_snapshot.get("confidence")
+            if p_conf and p_conf != confidence:
+                what_changed.append(f"Confidence changed from {p_conf} to {confidence}")
+
+        if not what_changed:
+            what_changed = ["Waiting for the next validated intelligence update."]
+
+        cls._prior_snapshot = current_snap
+
+        live_assistant_monitor = {
+            "nifty_action_summary": f"NIFTY spot is {market.get('current_spot', '--')} ({overall_view}). {pref_desc}",
+            "current_market_view": overall_view,
+            "conviction": conviction,
+            "best_supported_behavior": f"{pref_title} — {pref_desc}",
+            "what_confirms_it": confirming_ev if confirming_ev else ["Waiting for directional evidence confirmation."],
+            "what_weakens_it": invalidations if invalidations else ["No explicit invalidation triggered."],
+            "decision_areas": decision_zones,
+            "what_changed": what_changed,
+            "next_watch": [
+                f"Watch support zone ({decision_zones[0]['lower']:g}–{decision_zones[0]['upper']:g})" if decision_zones else "Watch price action around key levels",
+                "Breadth should improve above 30 advances for bullish confirmation",
+                "Monitor option PCR and IV shifts",
+                "Watch for volatility or macro news expansion",
+            ],
+        }
+
         return {
             "target_session_date": date_str,
             "target_session_relation": relation,
@@ -513,4 +627,5 @@ class UnifiedNiftyIntelligenceBuilder:
             "caution": key_concerns,
             "opposes": opposing_ev,
             "at_the_open": at_the_open,
+            "live_assistant_monitor": live_assistant_monitor,
         }

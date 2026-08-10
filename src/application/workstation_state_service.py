@@ -51,6 +51,7 @@ class WorkstationStateService:
         if tech.get("trend_direction") in {None, "", "UNKNOWN"}:
             tech["trend_reason"] = "Insufficient validated historical candles to establish technical trend direction."
         payload["technicalAnalysis"] = tech
+        payload["marketContext"] = market
 
         options = sanitize_read_only(payload.get("optionContext") or {})
         market_observed = cls._timestamp(market)
@@ -114,6 +115,8 @@ class WorkstationStateService:
         vix_context = sanitize_read_only(market.get("india_vix_context") or {})
         if vix_context.get("value") is not None and vix_context.get("observation_timestamp"):
             macro["india_vix"] = vix_context
+        elif macro.get("india_vix") and macro["india_vix"].get("value") is not None:
+            macro["india_vix"].setdefault("status", "AVAILABLE")
         else:
             macro["india_vix"] = {
                 **vix_context, "status": "UNAVAILABLE", "value": None,
@@ -154,7 +157,13 @@ class WorkstationStateService:
         }
 
         gift = macro_quotes.get("GIFT_NIFTY") or {}
-        nifty_reference = market.get("previous_close") or market.get("current_spot")
+        nifty_reference = (
+            market.get("previous_close")
+            or market.get("current_spot")
+            or macro.get("nifty_previous_close")
+            or options.get("underlying_spot")
+            or (payload.get("eveningReport") or {}).get("market_summary", {}).get("spot_price")
+        )
         gap_session_eligible = market_closed or str(market_state).upper() in {"PRE_OPEN", "PRE_MARKET"}
         gap_ready = (
             gap_session_eligible
@@ -200,6 +209,7 @@ class WorkstationStateService:
         payload = {**payload, "optionContext": options}
         broker_account = sanitize_read_only(payload.get("brokerAccount") or {})
 
+        core_market_ready = market_status in {SectionStatus.READY, SectionStatus.MARKET_CLOSED} and not expired
         overall_state = "NOT_READY" if expired or market_status == SectionStatus.BLOCKED else ("DEGRADED" if news_status != SectionStatus.READY or not has_macro_cues else "READY")
 
         premarket_inputs = {
@@ -217,6 +227,8 @@ class WorkstationStateService:
         premarket_state = "READY" if full_premarket else "PARTIAL_READY" if ready_count >= 4 else "BLOCKED" if not market_available else "UNAVAILABLE"
         readiness = {
             "overall_state": overall_state,
+            "core_market_feed_state": "READY" if core_market_ready else "UNAVAILABLE",
+            "intelligence_providers_state": "READY" if news_status == SectionStatus.READY and has_macro_cues else "DEGRADED",
             "pre_market_850_readiness": {
                 **premarket_inputs,
                 "overall_state": premarket_state,
@@ -293,9 +305,21 @@ class WorkstationStateService:
         }
         def section(name: str, status: SectionStatus, fallback: Any = None) -> dict[str, Any]:
             value = sanitize_read_only(payload.get(name) or fallback or {})
-            if status == SectionStatus.UNAVAILABLE and name in {"marketContext", "optionContext"}:
+            if status == SectionStatus.UNAVAILABLE and name in {"marketContext", "optionContext"} and not (isinstance(value, dict) and (value.get("current_spot") or value.get("breadth"))):
                 return {"status": status.value}
             if isinstance(value, dict):
+                if name == "marketContext":
+                    pc = value.get("previous_close") or nifty_reference
+                    if pc and float(pc) > 0:
+                        value["previous_close"] = float(pc)
+                        sp = value.get("current_spot")
+                        if sp and float(sp) > 0:
+                            chg = round(float(sp) - float(pc), 2)
+                            chg_pct = round(chg / float(pc) * 100.0, 4)
+                            value.setdefault("spot_change", chg)
+                            value.setdefault("spot_change_pct", chg_pct)
+                            value.setdefault("change_points", chg)
+                            value.setdefault("change_percent", chg_pct)
                 return {**value, "status": status.value}
             return {"status": status.value, "value": value}
         return CanonicalWorkstationState(
