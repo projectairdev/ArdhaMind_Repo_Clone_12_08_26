@@ -1,8 +1,9 @@
 // src/frontend/components/visualizations/OptionChainLadder.tsx
-import React from "react";
+import React, { useState, useMemo } from "react";
 import { useWorkstationState } from "../../context/WorkstationStateContext";
 import { Layers, AlertTriangle } from "lucide-react";
 import { safeNumber, safeString, formatNumber } from "../../utils/safeHelpers";
+import { formatTimestampIST } from "../../utils/timeFormatting";
 
 export function OptionChainLadder() {
   const { optionContext, marketContext, canonicalState } = useWorkstationState() as any;
@@ -11,7 +12,17 @@ export function OptionChainLadder() {
   const strikes = Array.isArray(rawStrikes) ? rawStrikes : [];
   const quality = canonicalState?.data_quality?.option_intelligence;
   const expiry = optionContext?.current_weekly_expiry || optionContext?.expiry;
+
+  const [strikeSortDir, setStrikeSortDir] = useState<"asc" | "desc">("asc");
+
   const isAvailable = Boolean(rawSpot && quality?.source && quality?.observed_at && expiry && strikes.length > 0);
+
+  const sortedStrikes = useMemo(() => {
+    return [...strikes].sort((a: any, b: any) => {
+      const diff = safeNumber(a.strike) - safeNumber(b.strike);
+      return strikeSortDir === "asc" ? diff : -diff;
+    });
+  }, [strikes, strikeSortDir]);
 
   if (!isAvailable) {
     return (
@@ -30,6 +41,7 @@ export function OptionChainLadder() {
   const atmStrike = optionContext?.atm_strike != null ? safeNumber(optionContext.atm_strike, 0) : null;
   const pcr = optionContext?.pcr != null ? safeNumber(optionContext.pcr, 0) : null;
   const maxPain = optionContext?.max_pain != null ? safeNumber(optionContext.max_pain, 0) : null;
+  const obsTime = quality?.observed_at ? formatTimestampIST(quality.observed_at) : "UNAVAILABLE";
 
   return (
     <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-xl space-y-4 text-left font-sans">
@@ -39,7 +51,7 @@ export function OptionChainLadder() {
           <h3 className="font-bold text-white text-xs uppercase tracking-wider font-mono">Option Chain Matrix & OI Ladder</h3>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono">
-          <span className="text-slate-400">{quality?.freshness_status === "market_closed" ? "Last Valid Snapshot" : safeString(quality?.freshness_status || "UNAVAILABLE").replaceAll("_", " ")} · {expiry}</span>
+          <span className="text-slate-400">{quality?.freshness_status === "market_closed" ? "Last Valid Snapshot" : safeString(quality?.freshness_status || "UNAVAILABLE").replaceAll("_", " ")} · {expiry} · {obsTime}</span>
           <span className="text-emerald-400 font-bold">PCR: {pcr != null ? formatNumber(pcr, 2) : "--"}</span>
           <span className="text-cyan-400 font-bold">Max Pain: {maxPain != null ? maxPain : "--"}</span>
           <span className="text-amber-400 font-bold">IV: {safeString(optionContext?.iv_status).toUpperCase() === "AVAILABLE" ? `${formatNumber(optionContext?.atm_iv, 2)}% ATM` : "UNAVAILABLE"}</span>
@@ -54,7 +66,9 @@ export function OptionChainLadder() {
               <th className="p-2 text-right text-rose-400">CALL CHG</th>
               <th className="p-2 text-right text-rose-400">CALL LTP / VOL</th>
               <th className="p-2 text-right text-rose-400">CALL IV</th>
-              <th className="p-2 text-center text-white bg-slate-900">STRIKE</th>
+              <th className="p-2 text-center text-white bg-slate-900 cursor-pointer select-none" onClick={() => setStrikeSortDir(d => d === "asc" ? "desc" : "asc")}>
+                STRIKE {strikeSortDir === "asc" ? "↑" : "↓"}
+              </th>
               <th className="p-2 text-left text-emerald-400">PUT LTP / VOL</th>
               <th className="p-2 text-left text-emerald-400">PUT IV</th>
               <th className="p-2 text-left text-emerald-400">PUT CHG</th>
@@ -62,7 +76,7 @@ export function OptionChainLadder() {
             </tr>
           </thead>
           <tbody>
-            {strikes.map((s) => {
+            {sortedStrikes.map((s) => {
               const isAtm = atmStrike != null && s.strike === atmStrike;
               const isMaxPain = maxPain != null && s.strike === maxPain;
               return (

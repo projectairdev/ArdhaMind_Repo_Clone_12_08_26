@@ -2,10 +2,11 @@ import React, { useEffect, useState } from "react";
 import { AlertTriangle, Bell, CheckCircle2, Info, Menu, RefreshCw, X } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useWorkstationState, useBrokerStatus } from "../context/WorkstationStateContext";
+import { mapTraderEnum, mapFreshness, getTraderMarketStatus } from "../utils/traderTerminology";
+import { formatTimestampIST } from "../utils/timeFormatting";
 
-function marketLabel(value: string) {
-  const norm = (value || "").toUpperCase();
-  return ({ PRE_OPEN: "PRE-OPEN", OPEN: "MARKET OPEN", CLOSED: "MARKET CLOSED", HOLIDAY: "TRADING HOLIDAY" } as Record<string, string>)[norm] || "INITIALIZING";
+function marketLabel(value: string, observedAt?: string | null) {
+  return getTraderMarketStatus(value, observedAt);
 }
 
 type ToastState = { kind: "info" | "success" | "error"; message: string };
@@ -33,13 +34,13 @@ export function WorkstationTopBar({ mobileOpen, onToggleMobile }: { mobileOpen: 
 
   const providerHealth = { ...(stateObj?.news_intelligence?.provider_health || {}), ...(stateObj?.macro_intelligence?.provider_health || {}) } as Record<string, any>;
   const degradedProviders = Object.entries(providerHealth).filter(([, value]) => !["ready", "disabled", "available"].includes(String(value?.status || "").toLowerCase()));
-  const notificationTime = String(stateObj?.generated_at || lastSyncTime || "Current state");
+  const notificationTime = stateObj?.generated_at ? formatTimestampIST(stateObj.generated_at) : (lastSyncTime || "Current state");
   const alerts: OperationalAlert[] = [];
   if (degradedProviders.length) alerts.push({ id: "provider-summary", kind: "warning", title: `${degradedProviders.length} provider${degradedProviders.length === 1 ? "" : "s"} degraded`, detail: degradedProviders.map(([name, value]) => String(value?.provider_name || name)).join(", "), timestamp: notificationTime });
   if (broker?.status !== "connected") alerts.unshift({ id: "kite", kind: "warning", title: "Kite connection", detail: kite, timestamp: notificationTime });
   if (!isClosedSession && !["healthy", "ready"].includes(String(feedHealth).toLowerCase())) alerts.unshift({ id: "feed", kind: "error", title: "Market feed", detail: feed, timestamp: notificationTime });
   const freshness = String(stateObj?.data_quality?.market_data?.freshness_status || "UNAVAILABLE").toUpperCase();
-  if (["STALE", "BLOCKED", "UNAVAILABLE"].includes(freshness)) alerts.push({ id: "freshness", kind: "warning", title: "Market-data freshness", detail: freshness.replaceAll("_", " "), timestamp: notificationTime });
+  if (["STALE", "BLOCKED", "UNAVAILABLE"].includes(freshness)) alerts.push({ id: "freshness", kind: "warning", title: "Market-data freshness", detail: mapTraderEnum(freshness), timestamp: notificationTime });
 
   const showToast = (next: ToastState) => setToast(current => current?.kind === next.kind && current.message === next.message ? current : next);
   const refresh = async () => {
@@ -60,10 +61,10 @@ export function WorkstationTopBar({ mobileOpen, onToggleMobile }: { mobileOpen: 
     <header data-testid="phase1-top-bar" className="relative z-50 flex min-h-14 items-center gap-2 border-b border-[var(--air-line)] bg-[var(--air-overlay)] px-3 backdrop-blur-md sm:px-4">
       <button aria-label="Toggle navigation" title="Toggle navigation" className="rounded p-1.5 text-slate-400 hover:bg-slate-900 lg:hidden" onClick={onToggleMobile}>{mobileOpen ? <X size={18}/> : <Menu size={18}/>}</button>
       <div className="mr-auto min-w-0"><div className="truncate text-sm font-extrabold tracking-tight text-white">AIR <span className={accentClasses.text}>ArdhaMind</span></div><div className="hidden text-[8px] font-medium tracking-[.16em] text-slate-500 sm:block">NIFTY INTELLIGENCE · READ ONLY</div></div>
-      <div data-market-session-status className="flex items-center gap-1.5 whitespace-nowrap text-[9px] text-slate-300 sm:text-[10px]">{statusDot(!isClosedSession, isClosedSession)}<span>{marketLabel(marketStateStr)}</span></div>
+      <div data-market-session-status className="flex items-center gap-1.5 whitespace-nowrap text-[9px] text-slate-300 sm:text-[10px]">{statusDot(!isClosedSession, isClosedSession)}<span>{marketLabel(mStatus, stateObj?.market_session?.observed_at)}</span></div>
       <time className="air-data hidden whitespace-nowrap text-[10px] text-slate-400 md:block">{clock}</time>
       <div className="hidden items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-400 lg:flex">{statusDot(broker?.status === "connected")}<span>{kite}</span></div>
-      <div className="hidden items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-400 xl:flex">{statusDot(!isClosedSession && feed === "Live", isClosedSession)}<span>Feed {feed}</span><span className="hidden text-slate-600 2xl:inline">· {freshness.replaceAll("_", " ")}</span></div>
+      <div className="hidden items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-400 xl:flex">{statusDot(!isClosedSession && feed === "Live", isClosedSession)}<span>Feed {feed}</span><span className="hidden text-slate-600 2xl:inline">· {mapTraderEnum(freshness)}</span></div>
       <button aria-label="Refresh canonical workstation" onClick={refresh} disabled={syncing || refreshing} title={lastSyncTime ? `Last canonical update ${lastSyncTime}` : "Check canonical stream"} className="rounded border border-[var(--air-line)] p-2 text-slate-400 hover:border-cyan-800 hover:text-cyan-300 disabled:opacity-50"><RefreshCw size={14} className={syncing || refreshing ? "animate-spin" : ""}/></button>
       <button aria-label={`Notifications${alerts.length ? `, ${alerts.length} active` : ""}`} title="Operational notifications" aria-expanded={notifications} onClick={() => setNotifications(!notifications)} className="relative rounded border border-[var(--air-line)] p-2 text-slate-400 hover:border-cyan-800 hover:text-cyan-300"><Bell size={14}/>{alerts.length > 0 && <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-amber-500 px-1 text-center text-[8px] font-bold text-slate-950">{alerts.length}</span>}</button>
     </header>

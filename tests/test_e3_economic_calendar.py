@@ -165,7 +165,8 @@ def test_workspace_ui_contains_required_calendar_surfaces():
     news_ui = (root / "NewsIntelligence.tsx").read_text(encoding="utf-8")
     for label in ("TODAY", "TOMORROW", "THIS WEEK", "NIFTY RELEVANT"):
         assert label in news_ui
-    assert "WHAT TO WATCH NEXT" in (root / "IntradayAssistant.tsx").read_text(encoding="utf-8")
+    assistant = (root / "IntradayAssistant.tsx").read_text(encoding="utf-8")
+    assert "WHAT MATTERS NEXT" in assistant and "nearestSupport" in assistant and "nearestResistance" in assistant
     assert "Economic Calendar Provider Health" in (root / "SettingsDashboard.tsx").read_text(encoding="utf-8")
 
 

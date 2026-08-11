@@ -2,7 +2,7 @@ import React from "react";
 import { useWorkstationState } from "../context/WorkstationStateContext";
 import { formatNumber, safeArray, safeString } from "../utils/safeHelpers";
 import { mapTraderEnum } from "../utils/traderTerminology";
-import { DecisionZonesPanel, EvidenceList, ExplicitState, KeyLevelsPanel, ScenarioCard, SemanticBadge } from "./intelligence/CanonicalPresentation";
+import { DecisionAreasPanel, DecisionZonesPanel, EvidenceList, ExplicitState, KeyLevelsPanel, ScenarioCard, SemanticBadge, nearestDecisionLevels } from "./intelligence/CanonicalPresentation";
 
 function useCanonicalIntelligence() {
   const { canonicalState } = useWorkstationState();
@@ -13,7 +13,7 @@ function UnavailableView({ name }: { name: string }) {
   return <section data-unified-intelligence={name} className="rounded-xl border border-amber-900/50 bg-amber-950/15 p-4 text-left text-xs text-amber-300">Unified canonical intelligence is not yet available.</section>;
 }
 
-function ScenarioGrid({ scenarios }: { scenarios: any[] }) {
+function AnalysisScenarioSummary({ scenarios }: { scenarios: any[] }) {
   return scenarios.length ? <div><div className="mb-2 text-[9px] font-bold uppercase text-slate-500">Primary and alternate scenarios</div><div className="grid gap-3 md:grid-cols-2">{scenarios.map(scenario => <ScenarioCard key={scenario.name} scenario={scenario}/>)}</div></div> : <ExplicitState title="Active scenarios" state="UNAVAILABLE" reason="No canonical scenario is eligible."/>;
 }
 
@@ -64,7 +64,7 @@ export function PreMarketIntelligenceView() {
   return <section data-unified-intelligence="PRE_MARKET" data-intelligence-view="next-session-setup" data-intelligence-engine={intelligence.engine} className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-left">
     <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-400">Tomorrow's Market Setup</div><h3 className="mt-1 text-sm font-bold text-white">Pre-Market Setup</h3></div><SemanticBadge value={intelligence.readiness} kind="readiness"/></div>
     <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{context.map(([title, state, reason]) => <ExplicitState key={String(title)} title={String(title)} state={state} reason={reason}/>)}</div>
-    <ScenarioGrid scenarios={scenarios}/><div className="grid gap-3 md:grid-cols-2"><EvidenceList title="What Supports the Setup" items={intelligence.confirming_signals} toneClass="text-emerald-300"/><EvidenceList title="What Could Break the Setup" items={[...safeArray(intelligence.opposing_signals), ...safeArray(intelligence.risk?.reasons)]} toneClass="text-rose-300"/></div>
+    <AnalysisScenarioSummary scenarios={scenarios}/><div className="grid gap-3 md:grid-cols-2"><EvidenceList title="What Supports the Setup" items={intelligence.confirming_signals} toneClass="text-emerald-300"/><EvidenceList title="What Could Break the Setup" items={[...safeArray(intelligence.opposing_signals), ...safeArray(intelligence.risk?.reasons)]} toneClass="text-rose-300"/></div>
   </section>;
 }
 
@@ -80,6 +80,11 @@ export function TodaysAnalysisSynthesis() {
   const confirmingEv = evidenceItems.filter(e => e.stance === "CONFIRMING");
   const opposingEv = evidenceItems.filter(e => e.stance === "OPPOSING");
   const neutralEv = evidenceItems.filter(e => e.stance === "NEUTRAL" || e.stance === "UNAVAILABLE");
+
+  const spot = canonicalState?.market_data?.current_spot || null;
+  const { nearestSupport, nearestResistance } = nearestDecisionLevels(zones, spot);
+  const primaryScenario = scenarios.find((s: any) => safeString(s.priority).toUpperCase().includes("PRIMARY")) || scenarios[0];
+  const primaryScenarioName = primaryScenario ? mapTraderEnum(primaryScenario.name) : "UNAVAILABLE";
 
   const rawChangeStatus = change.status || "UNAVAILABLE";
   const changeStatus = rawChangeStatus === "UNAVAILABLE" ? "PREVIOUS_COMPARISON_NOT_AVAILABLE_YET" : rawChangeStatus;
@@ -161,8 +166,41 @@ export function TodaysAnalysisSynthesis() {
         </div>
       </div>
 
-      <DecisionZonesPanel zones={zones} rawLevels={intelligence.key_levels}/>
-      <ScenarioGrid scenarios={scenarios}/>
+      {/* COMPACT KEY STRUCTURE & SCENARIO CONTEXT REFERENCES */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 font-mono">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 border-b border-slate-800/60 pb-1.5 mb-2">
+            Key Structure
+          </div>
+          <div className="space-y-1 text-xs">
+            <div><span className="text-slate-400">Support:</span> <span className="font-semibold text-emerald-400">{nearestSupport ? nearestSupport.display_range : "UNAVAILABLE"}</span></div>
+            <div><span className="text-slate-400">Resistance:</span> <span className="font-semibold text-rose-400">{nearestResistance ? nearestResistance.display_range : "UNAVAILABLE"}</span></div>
+            <div className="mt-2 pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-sans font-normal">
+              View full Decision Areas in: <br />
+              <span className="text-cyan-400 font-bold">NIFTY Live → Price & Trend</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3 font-mono">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 border-b border-slate-800/60 pb-1.5 mb-2">
+            Scenario Context
+          </div>
+          <div className="space-y-1 text-xs">
+            <div>
+              <span className="text-slate-400">Primary scenario:</span>{" "}
+              <span className="font-semibold text-white">{primaryScenarioName}</span>
+              <span className="ml-2 px-1.5 py-0.5 rounded text-[8px] font-bold border border-slate-700 bg-slate-800/50 text-slate-400 font-sans font-mono">
+                PREVIOUS SESSION — FINALIZED
+              </span>
+            </div>
+            <div className="mt-2 pt-2 border-t border-slate-800/60 text-[10px] text-slate-500 font-sans font-normal">
+              See active monitoring in: <br />
+              <span className="text-cyan-400 font-bold">Live Assistant</span>
+            </div>
+          </div>
+        </div>
+      </div>
       <ExplicitState title="What Could Change This View" state={intelligence.risk?.state} reason={riskReason}/>
     </section>
   );
@@ -187,6 +225,9 @@ export function LiveAssistantExplanationView() {
   const opposingEv = evidenceItems.filter(e => e.stance === "OPPOSING" || e.stance === "NEUTRAL" || e.stance === "UNAVAILABLE");
   const change = intelligence.change_intelligence || {};
   const missing = safeArray(intelligence.evidence_completeness?.critical_missing).join(" · ") || safeArray(intelligence.unavailable_or_ineligible_signals).join(" · ") || "No critical missing data reported for this session mode.";
+
+  const spot = canonicalState?.market_data?.current_spot || null;
+  const { nearestSupport, nearestResistance } = nearestDecisionLevels(zones, spot);
 
   return (
     <section data-unified-intelligence="LIVE_ASSISTANT" data-intelligence-view="explanation-console" data-intelligence-engine={intelligence.engine} className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-5 text-left">
@@ -277,9 +318,25 @@ export function LiveAssistantExplanationView() {
         </div>
       </div>
 
-      {/* DECISION ZONES */}
-      <DecisionZonesPanel zones={zones} rawLevels={intelligence.key_levels}/>
-      <ScenarioGrid scenarios={scenarios}/>
+      {/* COMPACT NEAREST LEVELS */}
+      <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 font-mono">
+        <div className="text-[10px] font-bold uppercase tracking-wider text-cyan-400 mb-2">Nearest Support / Resistance</div>
+        <div className="grid grid-cols-2 gap-4 text-xs">
+          <div>
+            <span className="text-slate-400 block text-[9px] uppercase">Nearest Support</span>
+            <span className="font-semibold text-emerald-400 text-sm mt-0.5 block">{nearestSupport ? nearestSupport.display_range : "UNAVAILABLE"}</span>
+          </div>
+          <div>
+            <span className="text-slate-400 block text-[9px] uppercase">Nearest Resistance</span>
+            <span className="font-semibold text-rose-400 text-sm mt-0.5 block">{nearestResistance ? nearestResistance.display_range : "UNAVAILABLE"}</span>
+          </div>
+        </div>
+        <div className="mt-3 pt-2 border-t border-slate-800/60 text-[9px] text-slate-500 font-sans font-normal">
+          Source: <span className="text-cyan-400 font-semibold">NIFTY Live → Price & Trend</span>
+        </div>
+      </div>
+
+      <AnalysisScenarioSummary scenarios={scenarios}/>
 
       <div className="text-[9px] text-slate-600 border-t border-slate-800/60 pt-2">
         Invalidation conditions remain inside each scenario · Human decision required · Read only decision support

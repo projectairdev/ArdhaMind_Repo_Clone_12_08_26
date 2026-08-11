@@ -2,7 +2,7 @@ import React from "react";
 import { AlertTriangle, CheckCircle2, ChevronRight, XCircle } from "lucide-react";
 import { safeArray, safeString } from "../../utils/safeHelpers";
 import { mapTraderEnum } from "../../utils/traderTerminology";
-import { DecisionZonesPanel, ScenarioCard, SemanticBadge } from "./CanonicalPresentation";
+import { DecisionAreasPanel, DecisionZonesPanel, ScenarioCard, SemanticBadge } from "./CanonicalPresentation";
 
 interface OutlookCardProps {
   intelligence: any;
@@ -210,13 +210,13 @@ export function TomorrowsOutlookCard({ intelligence, macro }: OutlookCardProps) 
 
       {/* LEVEL 3 — PLAN (SCENARIOS, WATCHLIST, DECISION ZONES & LEVELS) */}
       <div className="space-y-3 border-t border-slate-800/80 pt-3">
-        {/* Scenarios */}
+        {/* Scenarios (Compact Context) */}
         {scenarios.length > 0 && (
-          <div>
-            <div className="mb-2 text-[10px] font-bold uppercase text-slate-400">Market Scenarios</div>
-            <div className="grid gap-3 md:grid-cols-2">
-              {scenarios.map((sc: any) => (
-                <ScenarioCard key={sc.name} scenario={sc} />
+          <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-xs font-mono">
+            <div className="text-[10px] font-bold uppercase text-slate-400 mb-1">Market Scenarios (Context)</div>
+            <div className="space-y-0.5 text-[11px] text-slate-300">
+              {scenarios.map((sc: any, idx: number) => (
+                <div key={idx}>• <span className="font-bold text-cyan-300">{mapTraderEnum(sc.name)}</span> ({mapTraderEnum(sc.priority)})</div>
               ))}
             </div>
           </div>
@@ -234,8 +234,22 @@ export function TomorrowsOutlookCard({ intelligence, macro }: OutlookCardProps) 
           </div>
         )}
 
-        {/* Key Decision Zones & Levels */}
-        <DecisionZonesPanel zones={decisionZones} rawLevels={rawLevels} />
+        {/* Key Decision Zones & Levels (Compact Reference) */}
+        <div className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-xs font-mono">
+          <div className="text-[10px] font-bold uppercase text-cyan-400 mb-1">Key Support / Resistance Zones</div>
+          <div className="space-y-1">
+            {decisionZones.length > 0 ? (
+              decisionZones.map((z: any, idx: number) => (
+                <div key={idx} className="flex justify-between items-center text-[11px]">
+                  <span className="text-slate-400">{z.role === "SUPPORT" ? "Support" : z.role === "RESISTANCE" ? "Resistance" : "Reference"}:</span>
+                  <span className="font-bold text-white">{z.display_range}</span>
+                </div>
+              ))
+            ) : (
+              <span className="text-slate-500 italic">No consolidated decision zones available.</span>
+            )}
+          </div>
+        </div>
       </div>
     </section>
   );

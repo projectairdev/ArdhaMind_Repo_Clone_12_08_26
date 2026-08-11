@@ -105,9 +105,38 @@ export function getCanonicalQuote(
     sourceName: foundRaw.source_name || foundRaw.source || null,
     observedAt: foundRaw.observation_timestamp || foundRaw.observed_at || foundRaw.observedAt || null,
     freshnessStatus: foundRaw.freshness_status || foundRaw.freshness || null,
-    sessionContext: foundRaw.session_context || foundRaw.sessionContext || null,
+    sessionContext: getGlobalSessionLabel(canonicalKey, foundRaw),
     currency: foundRaw.currency || null,
     unit: meta.unit || null,
     isAvailable: true,
   };
+}
+
+export function getGlobalSessionLabel(key: string, q: any): string {
+  if (!q) return "Observation Pending";
+
+  const isAvail = q.isAvailable ?? (q.price != null || q.value != null || q.price_str != null);
+  if (!isAvail) return "Observation Pending";
+
+  const upperKey = key.toUpperCase();
+  const freshnessStr = String(q.freshness_status || q.freshnessStatus || q.freshness || q.session_context || "").toUpperCase();
+
+  if (freshnessStr.includes("STALE")) return "Stale Data";
+
+  if (upperKey.includes("S&P") || upperKey.includes("NASDAQ") || upperKey.includes("DOW")) {
+    return "Previous US Session";
+  }
+  if (upperKey.includes("NIKKEI") || upperKey.includes("HANG_SENG") || upperKey.includes("HANGSENG") || upperKey.includes("HSI") || upperKey.includes("N225")) {
+    return "Current Asian Session";
+  }
+  if (upperKey.includes("GIFT")) {
+    return "Current Session";
+  }
+  if (upperKey.includes("BRENT") || upperKey.includes("GOLD") || upperKey.includes("USD_INR") || upperKey.includes("DXY") || upperKey.includes("US_10Y")) {
+    return "Global Telemetry";
+  }
+  if (freshnessStr.includes("LAST_VALID") || freshnessStr.includes("PREVIOUS")) {
+    return "Previous Trading Session";
+  }
+  return "Global Telemetry";
 }

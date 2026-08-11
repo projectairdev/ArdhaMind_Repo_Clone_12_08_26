@@ -58,7 +58,9 @@ def test_all_decision_workspaces_share_canonical_primitives_but_not_one_experien
     nifty = source("NiftyLiveWorkspace.tsx")
     assert '<PreMarketIntelligenceView' in premarket
     assert '<TodaysAnalysisSynthesis' in phase
-    assert '<LiveAssistantExplanationView' in phase
+    live_workspace = phase.split("export function LiveAssistantWorkspace()", 1)[1].split("export function SettingsWorkspace()", 1)[0]
+    assert '<IntradayAssistant />' in live_workspace
+    assert 'LiveAssistantExplanationView' not in live_workspace
     assert '<NiftyIntelligenceStrip' not in nifty
 
 
@@ -76,7 +78,7 @@ def test_change_intelligence_unavailable_is_explicit():
 
 def test_news_workspace_prioritizes_and_preserves_provider_isolation():
     text = source("NewsIntelligence.tsx")
-    assert "Market-moving" in text and "Market Impact" in text
+    assert "Market Moving" in text and "Impact DESC" in text
     assert "Partial provider coverage" in text
     assert "Healthy-provider items remain available" in text
 
@@ -90,7 +92,7 @@ def test_news_items_keep_source_time_and_impact_metadata():
 def test_settings_hides_broker_identifier_and_bounded_diagnostics():
     text = source("SettingsDashboard.tsx")
     assert "PROFILE VALIDATED — IDENTIFIER HIDDEN" in text
-    assert "brokerStatus: {" in text
+    assert "const brokerStatus = {" in text and "brokerStatus," in text
     assert "brokerStatus: broker" not in text
 
 

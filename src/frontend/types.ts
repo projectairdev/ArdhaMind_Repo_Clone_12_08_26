@@ -1533,6 +1533,71 @@ export interface ReadOnlyAccountSummary {
   [key: string]: any;
 }
 
+export interface LiveAssistantComparison {
+  requested_window: "1 MIN" | "5 MIN" | "15 MIN" | "SINCE OPEN";
+  available: boolean;
+  actual_duration?: string;
+  diff_spot?: number;
+  diff_pcr?: number;
+  diff_vix?: number;
+  diff_adv?: number;
+  spot_status?: string;
+  breadth_status?: string;
+  pcr_status?: string;
+  vix_status?: string;
+  hw_status?: string;
+  interpretation?: string;
+  reason?: string;
+}
+
+export interface LiveAssistantConfirmationFamily {
+  family: string;
+  bias: string;
+  status: string;
+  trend: string;
+  evidence_count: number;
+  observed_at: string | null;
+}
+
+export interface LiveAssistantMaterialEvent {
+  id: string;
+  occurred_at: string;
+  family: string;
+  event_type: string;
+  previous_state: string;
+  current_state: string;
+  materiality: "high" | "low";
+  description: string;
+  source_state_sequence: number;
+}
+
+export interface LiveAssistantTemporalState {
+  generated_at: string;
+  current: LiveAssistantSnapshot | null;
+  comparisons: LiveAssistantComparison[];
+  confirmation_families: LiveAssistantConfirmationFamily[];
+  behavior_state: {
+    preferred_setup: Record<string, unknown>;
+    supports: unknown[];
+    opposes: unknown[];
+  };
+  scenario_monitoring: { scenarios: unknown[] };
+  material_events: LiveAssistantMaterialEvent[];
+}
+
+export interface LiveAssistantSnapshot {
+  generated_at: string;
+  state_sequence: number;
+  market_state: string;
+  spot: number | null;
+  regime: string;
+  alignment: string;
+  advances: number | null;
+  declines: number | null;
+  pcr: number | null;
+  india_vix: number | null;
+}
+
 export interface CanonicalWorkstationState {
   schema_version: string;
   state_sequence: number;
@@ -1568,6 +1633,7 @@ export interface CanonicalWorkstationState {
   analytics_report: any;
   macro_intelligence?: any;
   unified_intelligence?: any;
+  live_assistant_temporal_state?: LiveAssistantTemporalState | null;
   warnings: string[];
   errors: string[];
 }

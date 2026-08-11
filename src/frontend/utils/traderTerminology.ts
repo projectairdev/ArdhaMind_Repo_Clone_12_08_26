@@ -23,6 +23,10 @@ export function mapTraderEnum(val: unknown, domain: TermDomain = "general"): str
   const upper = raw.toUpperCase();
 
   // Context-specific mappings
+  if (["CLOSED", "MARKET_CLOSED", "HOLIDAY", "TRADING_HOLIDAY", "WEEKEND", "POST_CLOSE"].includes(upper)) {
+    return getTraderMarketStatus(upper, null);
+  }
+
   if (domain === "confidence") {
     if (upper === "LOW") return "Low Conviction";
     if (upper === "MODERATE") return "Moderate Conviction";
@@ -62,8 +66,8 @@ export function mapTraderEnum(val: unknown, domain: TermDomain = "general"): str
     "CLOSED": "Market Closed",
     "LAST_VALID_SESSION": "Previous Trading Session",
     "LAST_SESSION": "Previous Session",
-    "HOLIDAY": "Trading Holiday",
-    "WEEKEND": "Market Closed · Weekend",
+    "HOLIDAY": "Holiday",
+    "WEEKEND": "Weekend",
     "POST_CLOSE": "Market Closed",
     "PRE_OPEN": "Pre-Market",
     "PRE-OPEN": "Pre-Market",
@@ -85,6 +89,9 @@ export function mapTraderEnum(val: unknown, domain: TermDomain = "general"): str
     "DII_CASH": "DII Cash",
     "TIER_D_DISCOVERY": "Discovery Tier",
     "UNKNOWN": "Pending Observation",
+    "FRESH": "Fresh / Current Observation",
+    "RECENT": "Recent Observation",
+    "SEMI_ANNUAL": "Semi-Annual",
 
     // Market Alignment / Bias
     "CONFLICTED": "Mixed Signals",
@@ -156,4 +163,32 @@ export function mapFreshness(freshness: unknown): string {
   if (str === "FRESH" || str === "LIVE") return "Live / Current Session";
   if (str === "STALE") return "Stale Data";
   return mapTraderEnum(str, "freshness");
+}
+
+export function getTraderMarketStatus(status: string, observedAt?: string | null): string {
+  const upper = String(status || "").toUpperCase();
+  if (upper === "OPEN" || upper === "MARKET_OPEN") {
+    return "Market Open";
+  }
+  if (upper === "PRE_OPEN" || upper === "PRE-OPEN") {
+    return "Pre-Market";
+  }
+
+  let dateObj = new Date();
+  if (observedAt) {
+    const parsed = new Date(observedAt);
+    if (!isNaN(parsed.getTime())) {
+      dateObj = parsed;
+    }
+  }
+
+  const dayStr = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", weekday: "short" }).format(dateObj);
+  const isWeekend = dayStr === "Sat" || dayStr === "Sun";
+  if (isWeekend) {
+    return "Weekend";
+  }
+  if (upper === "HOLIDAY" || upper === "TRADING_HOLIDAY") {
+    return "Holiday";
+  }
+  return "Market Closed";
 }

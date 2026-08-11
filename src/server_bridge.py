@@ -606,19 +606,20 @@ def run_daemon(wm, bs):
         
         orch._on_tick_received = new_on_ticks
 
-    setup_real_ticks_callback()
-
     instruments_df = None
     # Auto-restore valid Zerodha session at daemon startup
     try:
         gateway = bs.get_gateway()
         if hasattr(gateway, "load_session"):
             session_loaded = gateway.load_session()
-            if session_loaded:
+            if session_loaded and gateway.validate_session():
                 logger.info("Successfully restored active Zerodha session at daemon startup.")
+                setup_real_ticks_callback()
             else:
+                gateway.disconnect()
                 logger.info("No active Zerodha session restored at daemon startup.")
     except Exception as se:
+        bs.disconnect()
         logger.warning(f"Daemon startup session restore exception: {se}")
 
     # Spawn initial background refreshes for news and macro providers
@@ -1031,7 +1032,7 @@ def run_daemon(wm, bs):
             }
             print(json.dumps(state_payload), flush=True)
         except Exception as err:
-            logger.error(f"Daemon state generation failed: {err}")
+            logger.exception(f"Daemon state generation failed: {err}")
             
         time.sleep(3.0)
 
@@ -1064,9 +1065,10 @@ def main():
     bs = BrokerService.get_instance()
     bs.set_mode(TradingMode.LIVE_ZERODHA)
     try:
-        bs.load_session()
+        if not bs.load_session() or not bs.validate_session():
+            bs.disconnect()
     except Exception:
-        pass
+        bs.disconnect()
 
     try:
         if args.action == "daemon":
@@ -1392,6 +1394,7 @@ def main():
 
     except Exception as e:
         # Return error gracefully as JSON on stdout and exit 0 to avoid triggering server-side stderr crash alerts
+        logger.exception("Bridge action failed")
         print(json.dumps({"error": str(e)}))
         sys.exit(0)
 

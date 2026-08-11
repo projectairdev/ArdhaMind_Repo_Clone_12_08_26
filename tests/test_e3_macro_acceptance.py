@@ -158,11 +158,13 @@ def test_10_canonical_macro_serialization_has_required_provenance() -> None:
     assert required <= set(quote)
 
 
-def test_11_nifty_live_consumes_curated_compact_quote_keys() -> None:
+def test_11_global_telemetry_is_owned_by_market_pulse() -> None:
     state = _workspace(_context([_raw(), _raw("NASDAQ", "^IXIC")]))
     assert state["macro_intelligence"]["workspace_context"]["nifty_live_quote_keys"] == ["S&P 500", "NASDAQ"]
-    source = Path("src/frontend/components/NiftyLiveWorkspace.tsx").read_text(encoding="utf-8")
-    assert "<GlobalMarketsDashboard compact />" in source
+    nifty = Path("src/frontend/components/NiftyLiveWorkspace.tsx").read_text(encoding="utf-8")
+    pulse = Path("src/frontend/components/MarketPulseWorkspace.tsx").read_text(encoding="utf-8")
+    assert "GlobalMarketsDashboard" not in nifty
+    assert "GLOBAL CUES" in pulse and "MACRO &amp; CROSS-ASSET" in pulse
 
 
 def test_12_evening_outlook_consumes_only_since_close_macro_keys() -> None:

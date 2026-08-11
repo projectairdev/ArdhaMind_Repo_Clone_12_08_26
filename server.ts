@@ -148,6 +148,11 @@ let pyDaemon: ChildProcess | null = null;
 let pendingRequests: Map<string, { resolve: (val: any) => void; reject: (err: any) => void }> = new Map();
 let requestCounter = 0;
 
+function rejectPendingDaemonRequests(error: Error) {
+  pendingRequests.forEach(({ reject }) => reject(error));
+  pendingRequests.clear();
+}
+
 function startPythonDaemon() {
   if (pyDaemon) {
     console.log("Terminating existing Python Daemon process...");
@@ -220,8 +225,14 @@ function startPythonDaemon() {
     console.error("Python Daemon stderr output:", data.toString().trim());
   });
 
+  pyDaemon.stdin!.on("error", (error) => {
+    console.warn(`Python Daemon stdin unavailable: ${error.message}`);
+    rejectPendingDaemonRequests(new Error("Python bridge daemon is currently offline"));
+  });
+
   pyDaemon.on("close", (code) => {
     console.warn(`Python Daemon closed with exit code ${code}. Respawning in 3 seconds...`);
+    rejectPendingDaemonRequests(new Error(`Python bridge daemon closed with exit code ${code}`));
     pyDaemon = null;
     setTimeout(startPythonDaemon, 3000);
   });
@@ -232,13 +243,17 @@ startPythonDaemon();
 
 function sendDaemonRequest(action: string, params: any = {}): Promise<any> {
   return new Promise((resolve, reject) => {
-    if (!pyDaemon) {
+    if (!pyDaemon?.stdin?.writable || pyDaemon.stdin.destroyed) {
       return reject(new Error("Python bridge daemon is currently offline"));
     }
     const requestId = `REQ-${++requestCounter}-${Date.now()}`;
     pendingRequests.set(requestId, { resolve, reject });
     
-    pyDaemon.stdin!.write(JSON.stringify({ requestId, action, params }) + "\n");
+    pyDaemon.stdin.write(JSON.stringify({ requestId, action, params }) + "\n", (error) => {
+      if (!error) return;
+      pendingRequests.delete(requestId);
+      reject(new Error(`Python bridge request failed: ${error.message}`));
+    });
   });
 }
 

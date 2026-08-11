@@ -72,7 +72,7 @@ def test_nifty_metrics_and_movers_use_dense_responsive_grids():
     text = read("frontend/components/NiftyLiveWorkspace.tsx")
     assert "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5" in text
     assert "Top constituent movers" in text and "Gainers" in text and "Losers" in text
-    assert "index+1" in text and "change_pct" in text
+    assert "sortedGainers" in text and "sortedLosers" in text and "rows.map" in text and "change_pct" in text
 
 
 def test_no_mover_sparkline_without_real_series():
@@ -97,8 +97,8 @@ def test_premarket_risk_stream_has_operational_columns():
 
 def test_news_feed_uses_dense_rows_and_progressive_disclosure():
     text = read("frontend/components/NewsIntelligence.tsx")
-    assert "Context and transmission" in text
-    assert "border-b border-[var(--air-line)] px-3 py-2.5" in text
+    assert "why_it_matters" in text and "View details" in text
+    assert "border-b border-[var(--air-line)] px-4 py-3" in text
     assert "published_at" in text and "source_name" in text
 
 

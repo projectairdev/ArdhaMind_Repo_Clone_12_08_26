@@ -14,6 +14,7 @@ import {
 import { useTheme } from "../context/ThemeContext";
 import { useWorkstationState, useMarketData, useOptionIntelligence, useNewsIntelligence } from "../context/WorkstationStateContext";
 import { safeArray, safeString, safeNumber, stripHtml, formatDate, formatNumber } from "../utils/safeHelpers";
+import { getTraderMarketStatus } from "../utils/traderTerminology";
 
 export function MarketStory() {
   const { themeClasses, accentClasses, fontClasses, densityClasses } = useTheme();
@@ -40,6 +41,8 @@ export function MarketStory() {
   const expectedMove = oc?.expected_move || 0;
   const feedHealth = mc?.feed_health || "OFFLINE";
   const isClosed = Boolean(market_session?.is_closed || market_session?.status === "closed" || market_session?.status === "holiday" || mc?.session_mode === "LAST_SESSION");
+  const sessionStatus = market_session?.status || (isClosed ? "closed" : "open");
+  const sessionLabel = getTraderMarketStatus(sessionStatus, market_session?.observed_at);
   const macro = canonicalState?.macro_intelligence || {};
   const macroKeys: string[] = safeArray(macro.workspace_context?.todays_analysis_quote_keys).map(String);
   const macroQuotes: any[] = macroKeys.map(key => macro.quotes?.[key]).filter(Boolean);
@@ -53,7 +56,7 @@ export function MarketStory() {
   // Construct dynamic intelligence narrative based ONLY on observed parameters
   let dynamicNarrative = "";
   if (isClosed && spot > 0) {
-    dynamicNarrative = `NIFTY Last Session Close was ${spot.toFixed(2)}. Market session is currently CLOSED/HOLIDAY.${vix != null ? ` India VIX was ${vix.toFixed(2)} at the verified observation timestamp.` : " India VIX is unavailable."} Real-time intraday tracking and scenario confirmations will resume on the next trading session.`;
+    dynamicNarrative = `NIFTY Last Session Close was ${spot.toFixed(2)}. Market session is currently ${sessionLabel.toUpperCase()}.${vix != null ? ` India VIX was ${vix.toFixed(2)} at the verified observation timestamp.` : " India VIX is unavailable."} Real-time intraday tracking and scenario confirmations will resume on the next trading session.`;
   } else if (spot > 0 && feedHealth === "HEALTHY") {
     dynamicNarrative = `NIFTY Spot Index is trading at ${spot.toFixed(2)}. The price is trading ${
       spot >= vwap ? "above" : "below"
@@ -67,7 +70,7 @@ export function MarketStory() {
       dynamicNarrative += ` Cross-market context: ${macroQuotes.slice(0, 5).map(quote => `${safeString(quote.name || quote.symbol)} ${safeNumber(quote.change_pct) >= 0 ? "+" : ""}${formatNumber(quote.change_pct, 2)}% (${safeString(quote.freshness_status)})`).join("; ")}. These observations are contextual and do not establish causality.`;
     }
   } else {
-    dynamicNarrative = "TODAY'S ANALYSIS UNAVAILABLE — NO ACTIVE SESSION. Market feed is currently offline or session is closed.";
+    dynamicNarrative = `TODAY'S ANALYSIS UNAVAILABLE — ${sessionLabel.toUpperCase()}. Market feed is currently offline or session is closed.`;
   }
 
   return (
@@ -91,7 +94,7 @@ export function MarketStory() {
           <span className={`px-2.5 py-1 text-xs font-mono font-bold rounded ${
             isClosed ? "bg-amber-950/40 text-amber-400 border border-amber-800/30" : (feedHealth === "HEALTHY" ? "bg-emerald-950/40 text-emerald-400 border border-emerald-800/30" : "bg-rose-950/40 text-rose-400 border border-rose-900/30")
           }`}>
-            {isClosed ? "Session: CLOSED / HOLIDAY" : `Feed: ${feedHealth}`}
+            {isClosed ? `Session: ${sessionLabel}` : `Feed: ${feedHealth}`}
           </span>
         </div>
       </div>
@@ -104,10 +107,10 @@ export function MarketStory() {
           <div className="lg:col-span-12 p-5 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3 font-mono text-xs">
             <div className="flex items-center gap-2 text-amber-400 font-bold">
               <AlertTriangle size={16} />
-              <span>TODAY'S ANALYSIS UNAVAILABLE — NO ACTIVE SESSION</span>
+              <span>TODAY'S ANALYSIS — {sessionLabel.toUpperCase()}</span>
             </div>
             <p className="text-slate-400">
-              Intraday scenario confirmations and live VWAP acceptance tracking are disabled during market closed/holiday hours.
+              Intraday scenario confirmations and live VWAP acceptance tracking are disabled while market is {sessionLabel.toLowerCase()}.
             </p>
           </div>
         ) : null}

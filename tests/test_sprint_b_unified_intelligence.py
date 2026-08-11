@@ -237,7 +237,10 @@ def test_frontend_workspaces_consume_shared_canonical_field_without_core_recompu
     phase = (root / "PhaseOneWorkspaces.tsx").read_text(encoding="utf-8")
     pre = (root / "PreMarketPlannerWorkspace.tsx").read_text(encoding="utf-8")
     assert "canonicalState?.unified_intelligence" in panel
-    assert "TodaysAnalysisSynthesis" in phase and "LiveAssistantExplanationView" in phase
+    assert "TodaysAnalysisSynthesis" in phase and "IntradayAssistant" in phase
+    live_workspace = phase.split("export function LiveAssistantWorkspace()", 1)[1].split("export function SettingsWorkspace()", 1)[0]
+    assert "<IntradayAssistant />" in live_workspace
+    assert "LiveAssistantExplanationView" not in live_workspace
     assert "PreMarketIntelligenceView" in pre
     assert all(name in panel for name in ("NiftyIntelligenceStrip", "PreMarketIntelligenceView", "TodaysAnalysisSynthesis", "LiveAssistantExplanationView"))
     assert "BREADTH_MIN_COVERAGE" not in panel and "fetch(" not in panel

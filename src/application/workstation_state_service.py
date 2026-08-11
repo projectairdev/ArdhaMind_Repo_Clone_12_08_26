@@ -20,6 +20,8 @@ class WorkstationStateService:
     _sequence = 0
     _lock = Lock()
     _runtime_id = str(uuid4())
+    _snapshots_history: list[dict[str, Any]] = []
+    _live_event_stream: list[dict[str, Any]] = []
 
     @classmethod
     def _next_sequence(cls) -> int:
@@ -322,6 +324,340 @@ class WorkstationStateService:
                             value.setdefault("change_percent", chg_pct)
                 return {**value, "status": status.value}
             return {"status": status.value, "value": value}
+
+        # ── SPRINT D.0.2 TEMPORAL MONITORING ──
+        spot = market.get("current_spot")
+        if spot is not None:
+            spot = float(spot)
+        breadth_data = market.get("breadth") or {}
+        adv = breadth_data.get("advances")
+        dec = breadth_data.get("declines")
+        pcr_val = options.get("pcr")
+        if pcr_val is not None:
+            pcr_val = float(pcr_val)
+        vix_val = macro.get("india_vix", {}).get("value")
+        if vix_val is not None:
+            vix_val = float(vix_val)
+
+        hw_list = market.get("heavyweights") or []
+        hw_total = len(hw_list)
+        hw_up = len([h for h in hw_list if float(h.get("change") or 0.0) >= 0.0])
+
+        snap = {
+            "timestamp": generated,
+            "runtime_id": cls._runtime_id,
+            "state_sequence": cls._sequence + 1,
+            "market_state": "OPEN" if not market_closed else "CLOSED",
+            "spot": spot,
+            "breadth": {
+                "advances": int(adv) if adv is not None else None,
+                "declines": int(dec) if dec is not None else None,
+                "coverage": (int(adv) + int(dec)) if (adv is not None and dec is not None) else 0
+            },
+            "options": {
+                "pcr": pcr_val,
+                "max_pain": options.get("max_pain"),
+                "atm_strike": options.get("atm_strike"),
+                "atm_iv": options.get("atm_iv")
+            },
+            "vix": vix_val,
+            "regime": unified.get("market_regime"),
+            "alignment": unified.get("alignment"),
+            "heavyweight_ratio": hw_up / hw_total if hw_total > 0 else 0.5
+        }
+
+        # Parse helper
+        def parse_iso(ts):
+            if not ts:
+                return None
+            try:
+                s = ts.replace("Z", "")
+                if "." in s:
+                    s = s.split(".")[0]
+                return datetime.fromisoformat(s)
+            except Exception:
+                return None
+
+        now_dt = parse_iso(generated)
+        comparisons = []
+
+        for win_label, seconds in [("1 MIN", 60), ("5 MIN", 300), ("15 MIN", 900), ("SINCE OPEN", -1)]:
+            match_snap = None
+            if seconds == -1:
+                open_snaps = [s for s in cls._snapshots_history if s.get("market_state") == "OPEN"]
+                if open_snaps:
+                    match_snap = open_snaps[0]
+            else:
+                if now_dt:
+                    target_dt = now_dt.timestamp() - seconds
+                    best_diff = 999999.0
+                    for s in cls._snapshots_history:
+                        s_dt = parse_iso(s.get("timestamp"))
+                        if s_dt:
+                            diff = abs(s_dt.timestamp() - target_dt)
+                            if diff < best_diff and diff <= 30.0:
+                                best_diff = diff
+                                match_snap = s
+
+            if match_snap and now_dt:
+                from_dt = parse_iso(match_snap.get("timestamp"))
+                if from_dt:
+                    dur_sec = int(abs(now_dt.timestamp() - from_dt.timestamp()))
+                    dur_min = dur_sec // 60
+                    dur_remain_sec = dur_sec % 60
+                    actual_duration = f"{dur_min}m {dur_remain_sec}s" if dur_min > 0 else f"{dur_remain_sec}s"
+
+                    diff_spot = (spot - match_snap["spot"]) if (spot is not None and match_snap["spot"] is not None) else 0.0
+                    diff_pcr = (pcr_val - match_snap["options"]["pcr"]) if (pcr_val is not None and match_snap["options"]["pcr"] is not None) else 0.0
+                    diff_vix = (vix_val - match_snap["vix"]) if (vix_val is not None and match_snap["vix"] is not None) else 0.0
+
+                    p_adv = match_snap["breadth"]["advances"]
+                    c_adv = snap["breadth"]["advances"]
+                    diff_adv = (c_adv - p_adv) if (c_adv is not None and p_adv is not None) else 0
+
+                    spot_status = "Improving" if diff_spot > 2.0 else "Weakening" if diff_spot < -2.0 else "Stable"
+                    breadth_status = "Improving" if diff_adv > 0 else "Weakening" if diff_adv < 0 else "Stable"
+                    pcr_status = "Improving" if diff_pcr > 0.01 else "Weakening" if diff_pcr < -0.01 else "Stable"
+                    vix_status = "Supportive" if diff_vix < -0.05 else "Elevated" if diff_vix > 0.05 else "Stable"
+
+                    p_ratio = match_snap.get("heavyweight_ratio", 0.5)
+                    c_ratio = snap["heavyweight_ratio"]
+                    hw_status = "Improving" if c_ratio > p_ratio + 0.02 else "Weakening" if c_ratio < p_ratio - 0.02 else "Stable"
+
+                    interpretation = "Market metrics are trading within stable range boundaries."
+                    if diff_spot > 5.0:
+                        if breadth_status == "Improving" or hw_status == "Improving":
+                            interpretation = "Participation strengthened alongside the upward spot expansion."
+                        else:
+                            interpretation = "Price advanced but constituent breadth showed divergence."
+                    elif diff_spot < -5.0:
+                        if breadth_status == "Weakening" or hw_status == "Weakening":
+                            interpretation = "Spot price declined with expanding constituent distribution."
+                        else:
+                            interpretation = "Price declined but heavyweight support restricted further drop."
+                    else:
+                        if breadth_status == "Improving" and pcr_status == "Improving":
+                            interpretation = "Underlying breadth and option writer support are consolidating positively."
+
+                    comparisons.append({
+                        "requested_window": win_label,
+                        "actual_duration": actual_duration,
+                        "from_timestamp": match_snap.get("timestamp"),
+                        "to_timestamp": generated,
+                        "diff_spot": round(diff_spot, 2),
+                        "diff_pcr": round(diff_pcr, 4),
+                        "diff_vix": round(diff_vix, 2),
+                        "diff_adv": diff_adv,
+                        "spot_status": spot_status,
+                        "breadth_status": breadth_status,
+                        "pcr_status": pcr_status,
+                        "vix_status": vix_status,
+                        "hw_status": hw_status,
+                        "interpretation": interpretation,
+                        "available": True
+                    })
+                else:
+                    comparisons.append({
+                        "requested_window": win_label,
+                        "actual_duration": "Unavailable",
+                        "available": False
+                    })
+            else:
+                comparisons.append({
+                    "requested_window": win_label,
+                    "actual_duration": "Unavailable",
+                    "available": False
+                })
+
+        # Event stream transitions
+        if cls._snapshots_history:
+            prev = cls._snapshots_history[-1]
+            time_only_str = now_dt.strftime("%H:%M:%S IST") if now_dt else "00:00:00 IST"
+
+            if prev["regime"] and snap["regime"] and prev["regime"] != snap["regime"]:
+                cls._live_event_stream.insert(0, {
+                    "id": f"regime-{cls._sequence}-{len(cls._live_event_stream)}",
+                    "occurred_at": time_only_str,
+                    "family": "REGIME",
+                    "event_type": "SHIFT",
+                    "previous_state": str(prev["regime"]),
+                    "current_state": str(snap["regime"]),
+                    "materiality": "high",
+                    "description": f"Regime shifted from {prev['regime']} to {snap['regime']}",
+                    "source_state_sequence": cls._sequence
+                })
+
+            if prev["alignment"] and snap["alignment"] and prev["alignment"] != snap["alignment"]:
+                cls._live_event_stream.insert(0, {
+                    "id": f"align-{cls._sequence}-{len(cls._live_event_stream)}",
+                    "occurred_at": time_only_str,
+                    "family": "ALIGNMENT",
+                    "event_type": "SHIFT",
+                    "previous_state": str(prev["alignment"]),
+                    "current_state": str(snap["alignment"]),
+                    "materiality": "high",
+                    "description": f"Market Alignment shifted to {snap['alignment']}",
+                    "source_state_sequence": cls._sequence
+                })
+
+            if prev["options"]["pcr"] is not None and snap["options"]["pcr"] is not None:
+                pcr_diff = snap["options"]["pcr"] - prev["options"]["pcr"]
+                if abs(pcr_diff) >= 0.02:
+                    cls._live_event_stream.insert(0, {
+                        "id": f"pcr-{cls._sequence}-{len(cls._live_event_stream)}",
+                        "occurred_at": time_only_str,
+                        "family": "OPTIONS",
+                        "event_type": "PCR_SHIFT",
+                        "previous_state": f"{prev['options']['pcr']:.2f}",
+                        "current_state": f"{snap['options']['pcr']:.2f}",
+                        "materiality": "low",
+                        "description": f"Option PCR shifted from {prev['options']['pcr']:.2f} to {snap['options']['pcr']:.2f}",
+                        "source_state_sequence": cls._sequence
+                    })
+
+            if prev["vix"] is not None and snap["vix"] is not None:
+                vix_diff = snap["vix"] - prev["vix"]
+                if abs(vix_diff) >= 0.1:
+                    cls._live_event_stream.insert(0, {
+                        "id": f"vix-{cls._sequence}-{len(cls._live_event_stream)}",
+                        "occurred_at": time_only_str,
+                        "family": "VOLATILITY",
+                        "event_type": "VIX_SHIFT",
+                        "previous_state": f"{prev['vix']:.2f}",
+                        "current_state": f"{snap['vix']:.2f}",
+                        "materiality": "low",
+                        "description": f"India VIX shifted from {prev['vix']:.2f} to {snap['vix']:.2f}",
+                        "source_state_sequence": cls._sequence
+                    })
+
+            if prev["breadth"]["advances"] is not None and snap["breadth"]["advances"] is not None:
+                adv_diff = snap["breadth"]["advances"] - prev["breadth"]["advances"]
+                if abs(adv_diff) >= 3:
+                    cls._live_event_stream.insert(0, {
+                        "id": f"breadth-{cls._sequence}-{len(cls._live_event_stream)}",
+                        "occurred_at": time_only_str,
+                        "family": "BREADTH",
+                        "event_type": "ADVANCES_SHIFT",
+                        "previous_state": str(prev["breadth"]["advances"]),
+                        "current_state": str(snap["breadth"]["advances"]),
+                        "materiality": "low",
+                        "description": f"Breadth advances changed from {prev['breadth']['advances']} to {snap['breadth']['advances']}",
+                        "source_state_sequence": cls._sequence
+                    })
+
+            if prev["spot"] is not None and snap["spot"] is not None:
+                spot_diff = snap["spot"] - prev["spot"]
+                if abs(spot_diff) >= 20.0:
+                    cls._live_event_stream.insert(0, {
+                        "id": f"spot-{cls._sequence}-{len(cls._live_event_stream)}",
+                        "occurred_at": time_only_str,
+                        "family": "PRICE_STRUCTURE",
+                        "event_type": "SPOT_SHIFT",
+                        "previous_state": f"{prev['spot']:.1f}",
+                        "current_state": f"{snap['spot']:.1f}",
+                        "materiality": "high",
+                        "description": f"NIFTY spot shifted from {prev['spot']:.1f} to {snap['spot']:.1f}",
+                        "source_state_sequence": cls._sequence
+                    })
+
+            cls._live_event_stream = cls._live_event_stream[:50]
+        else:
+            time_only_str = now_dt.strftime("%H:%M:%S IST") if now_dt else "00:00:00 IST"
+            cls._live_event_stream = [{
+                "id": f"init-{cls._sequence}",
+                "occurred_at": time_only_str,
+                "family": "REGIME",
+                "event_type": "INITIALIZE",
+                "previous_state": "NONE",
+                "current_state": str(snap["regime"]),
+                "materiality": "high",
+                "description": "Workstation state synchronized. Live Assistant active.",
+                "source_state_sequence": cls._sequence
+            }]
+
+        cls._snapshots_history.append(snap)
+        cls._snapshots_history = cls._snapshots_history[-300:]
+
+        # Build confirmation families list
+        unified_signals = unified.get("signals") or {}
+        confirmation_families = []
+
+        hw_list = market.get("heavyweights") or []
+        hw_total = len(hw_list)
+        hw_up = len([h for h in hw_list if float(h.get("change") or 0.0) >= 0.0])
+
+        for fam_name, sig_key in [
+            ("PRICE", "price"),
+            ("BREADTH", "breadth"),
+            ("OPTIONS", "options"),
+            ("VOLATILITY", "volatility"),
+            ("HEAVYWEIGHTS", "heavyweights"),
+            ("GLOBAL / MACRO", "global"),
+            ("NEWS / EVENT RISK", "news")
+        ]:
+            if fam_name == "HEAVYWEIGHTS":
+                if hw_total > 0:
+                    ratio = hw_up / hw_total
+                    bias = "Bullish" if ratio >= 0.6 else "Bearish" if ratio <= 0.4 else "Mixed"
+                    status = "READY"
+                    evidence = [f"{hw_up}/{hw_total} heavyweight symbols advancing"]
+                else:
+                    bias = "UNAVAILABLE"
+                    status = "UNAVAILABLE"
+                    evidence = []
+                observed_at = market_observed
+            else:
+                sig = unified_signals.get(sig_key) or {}
+                status = "READY" if sig.get("eligible") else "UNAVAILABLE"
+                if sig.get("eligible"):
+                    raw_stance = str(sig.get("stance") or "").upper()
+                    if raw_stance in {"BULLISH", "POSITIVE", "STRONG_POSITIVE", "SUPPORTIVE"}:
+                        bias = "Bullish"
+                    elif raw_stance in {"BEARISH", "NEGATIVE", "STRONG_NEGATIVE", "RISK"}:
+                        bias = "Bearish"
+                    else:
+                        bias = "Neutral"
+                else:
+                    bias = "UNAVAILABLE"
+                evidence = sig.get("evidence") or []
+                observed_at = sig.get("observed_at") or market_observed
+
+            confirmation_families.append({
+                "family": fam_name,
+                "bias": bias,
+                "status": status,
+                "trend": "Stable",
+                "evidence_count": len(evidence),
+                "observed_at": observed_at
+            })
+
+        live_assistant_temporal_state = {
+            "generated_at": generated,
+            "current": {
+                "generated_at": snap["timestamp"],
+                "state_sequence": snap["state_sequence"],
+                "market_state": snap["market_state"],
+                "spot": snap["spot"],
+                "regime": snap["regime"] or "UNKNOWN",
+                "alignment": snap["alignment"] or "UNKNOWN",
+                "advances": snap["breadth"]["advances"],
+                "declines": snap["breadth"]["declines"],
+                "pcr": snap["options"]["pcr"],
+                "india_vix": snap["vix"],
+            },
+            "comparisons": comparisons,
+            "confirmation_families": confirmation_families,
+            "behavior_state": {
+                "preferred_setup": unified.get("preferred_setup") or {},
+                "supports": unified.get("supports") or [],
+                "opposes": unified.get("opposes") or []
+            },
+            "scenario_monitoring": {
+                "scenarios": unified.get("scenarios") or []
+            },
+            "material_events": cls._live_event_stream
+        }
+
         return CanonicalWorkstationState(
             cls.SCHEMA_VERSION, cls._next_sequence(), generated, cls._runtime_id,
             {"status": "closed" if str(market_state).upper() == "MARKET_CLOSED" else str(market_state).lower(), "is_closed": market_closed},
@@ -349,6 +685,7 @@ class WorkstationStateService:
             sanitize_read_only(payload.get("analyticsReport") or {}),
             macro,
             unified,
+            live_assistant_temporal_state=live_assistant_temporal_state,
             warnings=support.warnings, errors=[],
         )
 

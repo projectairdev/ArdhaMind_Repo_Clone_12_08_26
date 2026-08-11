@@ -40,7 +40,9 @@ import {
   OptimizationReport,
   AnalyticsReport,
   NewsSentimentContext,
-  CanonicalWorkstationState
+  CanonicalWorkstationState,
+  LiveAssistantMaterialEvent,
+  LiveAssistantSnapshot
 } from "../types";
 
 export type ConnectionState =
@@ -95,6 +97,8 @@ export interface WorkstationStateContextProps {
   diagnosticsError: string | null;
   diagnosticsDetails: string;
   setError: (err: string | null) => void;
+  stateHistory: LiveAssistantSnapshot[];
+  liveEventStream: LiveAssistantMaterialEvent[];
 }
 
 const defaultWorkspaceContext: WorkspaceContext = {
@@ -748,6 +752,33 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
   const [diagnosticsDetails, setDiagnosticsDetails] = useState<string>("");
   const [liveTickPrice, setLiveTickPrice] = useState<number | null>(null);
+  // Bounded snapshot history: max 300 lightweight snapshots (set by backend tick)
+  // Backend keys: market_regime → "Regime shifted", alignment → "Market Alignment shifted",
+  //               advances → "Breadth changed", pcr (threshold 0.02), india_vix (threshold 0.1)
+  const [stateHistory, setStateHistory] = useState<LiveAssistantSnapshot[]>([]);
+  // Bounded live event stream: max 50 backend-generated MaterialEvent records
+  const [liveEventStream, setLiveEventStream] = useState<LiveAssistantMaterialEvent[]>([]);
+
+  // Sync both from canonical state on each backend tick
+  const syncHistoryAndEvents = React.useCallback((incoming: CanonicalWorkstationState) => {
+    const market = incoming.market_data || {};
+    const breadth = market.breadth || {};
+    const snapshot: LiveAssistantSnapshot = {
+      generated_at: incoming.generated_at,
+      state_sequence: incoming.state_sequence,
+      market_state: incoming.market_session?.status || "unknown",
+      spot: Number.isFinite(Number(market.current_spot)) ? Number(market.current_spot) : null,
+      regime: String(market.market_regime || "UNKNOWN"),
+      alignment: String(incoming.unified_intelligence?.alignment || "UNKNOWN"),
+      advances: Number.isFinite(Number(breadth.advances)) ? Number(breadth.advances) : null,
+      declines: Number.isFinite(Number(breadth.declines)) ? Number(breadth.declines) : null,
+      pcr: Number.isFinite(Number(incoming.option_intelligence?.pcr)) ? Number(incoming.option_intelligence.pcr) : null,
+      india_vix: Number.isFinite(Number(incoming.macro_intelligence?.india_vix?.value)) ? Number(incoming.macro_intelligence.india_vix.value) : null,
+    };
+    setStateHistory(prev => [...prev, snapshot].slice(-300));
+    const events = incoming?.live_assistant_temporal_state?.material_events || [];
+    setLiveEventStream(events.slice(0, 50));
+  }, []);
 
   const workspaceContext = useMemo<WorkspaceContext>(() => {
     const state = canonicalState ?? lastValidState;
@@ -943,7 +974,42 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
     setErrorState(err);
   };
 
-  // [V1.3.1 FIX] syncBroker is now a documented no-op.
+  const acceptCanonicalState = React.useCallback((rawData: CanonicalWorkstationState | null | undefined) => {
+    if (
+      !rawData || typeof rawData !== "object" ||
+      typeof rawData.schema_version !== "string" ||
+      typeof rawData.state_sequence !== "number" ||
+      typeof rawData.runtime_id !== "string" ||
+      typeof rawData.generated_at !== "string" ||
+      !rawData.market_session || !rawData.application_status ||
+      !rawData.workspace_readiness || !rawData.data_quality
+    ) {
+      setDiagnosticsError("invalid_payload");
+      setDiagnosticsDetails("Payload is missing mandatory canonical fields.");
+      return false;
+    }
+    if (rawData.schema_version !== "2.0.0") {
+      setDiagnosticsError("schema_incompatible");
+      setDiagnosticsDetails(`Expected schema version 2.0.0, received ${rawData.schema_version}`);
+      return false;
+    }
+
+    setCanonicalState(prev => {
+      if (prev && prev.runtime_id === rawData.runtime_id && rawData.state_sequence <= prev.state_sequence) return prev;
+      setLastValidState(rawData);
+      syncHistoryAndEvents(rawData);
+      setLastSyncTime(new Date().toLocaleTimeString());
+      setApiLatency(Math.max(0, Date.now() - new Date(rawData.generated_at).getTime()));
+      return rawData;
+    });
+    setDiagnosticsError(null);
+    setDiagnosticsDetails("");
+    setLiveTickPrice(null);
+    setLoading(false);
+    return true;
+  }, [syncHistoryAndEvents]);
+
+  /*
   // Previously it called workspaceService.fetchContext() which fetched GET /api/workspace.
   // That endpoint returns workstationState.workspaceContext from server RAM —
   // which was still DISCONNECTED immediately after login (daemon had just restarted).
@@ -952,27 +1018,40 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
   // The WebSocket channel is the single source of truth.
   // The daemon broadcasts full state every 3 seconds automatically.
   // auth_event broadcasts handle instant auth-state changes.
-  // No polling or manual REST fetch is correct here.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  */
+  // Bootstrap from the latest canonical server snapshot so the UI does not
+  // depend on the first WebSocket frame to leave its loading state. Subsequent
+  // state updates continue to arrive over the WebSocket channel.
   const syncBroker = async (_forceSync = false) => {
-    // Intentionally empty. State arrives via WebSocket: type="state" (3s cycle)
-    // and type="auth_event" (immediate on login/logout).
+    setSyncing(true);
+    try {
+      const response = await fetch("/api/workspace");
+      if (!response.ok) throw new Error(`Workspace bootstrap failed (${response.status})`);
+      if (!acceptCanonicalState(await response.json())) throw new Error("Workspace bootstrap returned an invalid canonical state");
+      setErrorState(null);
+    } catch (err: any) {
+      setErrorState(err.message || "Workspace bootstrap failed.");
+    } finally {
+      setLoading(false);
+      setSyncing(false);
+    }
   };
 
   // Switch workspace operating mode
   const setWorkspaceMode = async (newMode: WorkspaceMode) => {
     setLoading(true);
     setErrorState(null);
-
-    const result = await workspaceService.setMode(newMode, true);
-    if (result.success) {
-      setWorkspaceModeState(newMode);
-      await syncBroker(true);
-      return { success: true };
-    } else {
-      setLoading(false);
+    try {
+      const result = await workspaceService.setMode(newMode, true);
+      if (result.success) {
+        setWorkspaceModeState(newMode);
+        await syncBroker(true);
+        return { success: true };
+      }
       setErrorState(result.error || `Transition to ${newMode} blocked by safety guard.`);
       return { success: false, error: result.error };
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -982,7 +1061,6 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
     try {
       await fetch("/api/broker/logout", { method: "POST" });
       setCanonicalState(null);
-      setLastValidState(null);
       setLiveTickPrice(null);
       await syncBroker(true);
     } catch (err: any) {
@@ -1050,7 +1128,6 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
         if (isUnmounted) return;
         console.log("Workstation WebSocket connected.");
         setMarketConnection("CONNECTED");
-        setLoading(false);
       };
 
       ws.onmessage = (event) => {
@@ -1058,55 +1135,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === "state") {
-            const rawData = msg.data;
-
-            // 1. Structural runtime checks for mandatory properties
-            if (
-              !rawData ||
-              typeof rawData !== "object" ||
-              typeof rawData.schema_version !== "string" ||
-              typeof rawData.state_sequence !== "number" ||
-              typeof rawData.runtime_id !== "string" ||
-              typeof rawData.generated_at !== "string" ||
-              !rawData.market_session ||
-              !rawData.application_status ||
-              !rawData.workspace_readiness ||
-              !rawData.data_quality
-            ) {
-              setDiagnosticsError("invalid_payload");
-              setDiagnosticsDetails("Payload is missing mandatory canonical fields.");
-              console.error("Malformed state payload rejected.");
-              return;
-            }
-
-            // 2. Schema version validation
-            if (rawData.schema_version !== "2.0.0") {
-              setDiagnosticsError("schema_incompatible");
-              setDiagnosticsDetails(`Expected schema version 2.0.0, received ${rawData.schema_version}`);
-              console.error(`Incompatible schema version: ${rawData.schema_version}`);
-              return;
-            }
-
-            // 3. Session-aware sequence checking
-            setCanonicalState(prev => {
-              if (prev && prev.runtime_id === rawData.runtime_id) {
-                if (rawData.state_sequence <= prev.state_sequence) {
-                  console.warn(`Out-of-order sequence rejected: ${rawData.state_sequence} <= ${prev.state_sequence}`);
-                  return prev;
-                }
-              } else if (prev) {
-                console.log(`Runtime identity changed from ${prev.runtime_id} to ${rawData.runtime_id}. Resetting sequence tracking.`);
-              }
-
-              // Accept new state
-              setLastValidState(rawData);
-              setDiagnosticsError(null);
-              setDiagnosticsDetails("");
-              setLiveTickPrice(null); // Clear fast-path ticks on fresh state frame
-              setLastSyncTime(new Date().toLocaleTimeString());
-              setApiLatency(Math.max(0, Date.now() - new Date(rawData.generated_at).getTime()));
-              return rawData;
-            });
+            acceptCanonicalState(msg.data);
           } else if (msg.type === "auth_event") {
             const bState = msg.brokerState;
             const bStatus = bState === "CONNECTED" ? "connected" : bState === "TOKEN_EXPIRED" ? "session_expired" : "disconnected";
@@ -1158,14 +1187,13 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
       ws.onclose = () => {
         console.log("Workstation WebSocket closed. Reconnecting...");
         setMarketConnection("DISCONNECTED");
-        setCanonicalState(null); // Keep lastValidState as stale snapshot
         if (!isUnmounted) {
           reconnectTimeout = setTimeout(connect, 3000);
         }
       };
     }
 
-    connect();
+    syncBroker(true).finally(connect);
 
     return () => {
       isUnmounted = true;
@@ -1178,7 +1206,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
         clearTimeout(reconnectTimeout);
       }
     };
-  }, []);
+  }, [acceptCanonicalState]);
 
   return (
     <WorkstationStateContext.Provider
@@ -1225,6 +1253,8 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
         diagnosticsError,
         diagnosticsDetails,
         setError,
+        stateHistory,
+        liveEventStream,
       }}
     >
       {children}

@@ -1,17 +1,17 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import { ShieldCheck } from "lucide-react";
 import { useWorkstationState } from "../context/WorkstationStateContext";
 import { safeArray, safeNumber, safeString, formatNumber, formatDate } from "../utils/safeHelpers";
+import { formatTimestampIST } from "../utils/timeFormatting";
 import { mapTraderEnum, mapFreshness } from "../utils/traderTerminology";
 import { NiftyCandlestickChart } from "./visualizations/NiftyCandlestickChart";
 import { OptionChainLadder } from "./visualizations/OptionChainLadder";
 import { OpenInterestHeatmap } from "./visualizations/OpenInterestHeatmap";
 import { SectorPerformanceChart } from "./visualizations/SectorPerformanceChart";
-import { GlobalMarketsDashboard } from "./visualizations/GlobalMarketsDashboard";
 import { HistoricalTelemetryCharts } from "./visualizations/HistoricalTelemetryCharts";
 import { AIInterpretationCard } from "./AIInterpretationCard";
 import { ParticipantPositioningWidget, VolatilityContextWidget } from "./SpecializedIntelligence";
-import { DecisionZonesPanel, ProvenanceLine, SemanticBadge } from "./intelligence/CanonicalPresentation";
+import { DecisionAreasPanel, DecisionZonesPanel, ProvenanceLine, SemanticBadge } from "./intelligence/CanonicalPresentation";
 
 export type NiftyLiveView = "overview" | "price-trend" | "options";
 
@@ -63,7 +63,7 @@ function SpotSummary() {
     <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-3">
       <div>
         <div className="text-[11px] font-mono font-semibold uppercase tracking-wider text-cyan-400">
-          {isClosed ? `Previous Session · ${dq.observed_at ? formatDate(dq.observed_at) : "Market Closed"}` : "Live Session"}
+          {isClosed ? `Previous Session · ${dq.observed_at ? formatTimestampIST(dq.observed_at) : "Market Closed"}` : "Live Session"}
         </div>
         <h2 className="text-xl font-bold text-white">NIFTY 50</h2>
       </div>
@@ -97,7 +97,7 @@ function SpotSummary() {
     {showDetails && (
       <div data-provenance-details className="mt-3 border-t border-slate-800/80 pt-3 text-[10px] space-y-1 text-slate-400 font-mono">
         <div>Source: {dq.source === "kite_historical_api" ? "Kite Historical API" : (dq.source || "Kite API")}</div>
-        <div>Observed: {dq.observed_at ? formatDate(dq.observed_at) : "N/A"}</div>
+        <div>Observed: {dq.observed_at ? formatTimestampIST(dq.observed_at) : "N/A"}</div>
         <div>Data quality: {dq.quality_status === "valid" ? "Validated" : mapTraderEnum(dq.quality_status)}</div>
         <div>Freshness: {isClosed ? "Previous Trading Session" : mapTraderEnum(dq.freshness_status)}</div>
       </div>
@@ -114,6 +114,48 @@ export function OverviewPanel() {
   const gainers = safeArray(breadth?.top_gainers) as any[];
   const losers = safeArray(breadth?.top_losers) as any[];
   const optionStatus = safeString(canonicalState?.option_intelligence?.status || optionContext?.status || "unavailable").toUpperCase();
+
+  const [moverSortKey, setMoverSortKey] = useState<"change" | "abs" | "symbol" | "sector">("abs");
+  const [moverSortDir, setMoverSortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedGainers = useMemo(() => {
+    return [...gainers].sort((a: any, b: any) => {
+      let diff = 0;
+      if (moverSortKey === "change") {
+        diff = safeNumber(a.change_pct) - safeNumber(b.change_pct);
+      } else if (moverSortKey === "symbol") {
+        diff = safeString(a.symbol).localeCompare(safeString(b.symbol));
+      } else if (moverSortKey === "sector") {
+        diff = safeString(a.sector).localeCompare(safeString(b.sector));
+      } else { // abs
+        diff = Math.abs(safeNumber(a.change_pct)) - Math.abs(safeNumber(b.change_pct));
+      }
+      if (diff === 0) {
+        diff = safeString(a.symbol).localeCompare(safeString(b.symbol));
+      }
+      return moverSortDir === "desc" ? -diff : diff;
+    });
+  }, [gainers, moverSortKey, moverSortDir]);
+
+  const sortedLosers = useMemo(() => {
+    return [...losers].sort((a: any, b: any) => {
+      let diff = 0;
+      if (moverSortKey === "change") {
+        diff = safeNumber(a.change_pct) - safeNumber(b.change_pct);
+      } else if (moverSortKey === "symbol") {
+        diff = safeString(a.symbol).localeCompare(safeString(b.symbol));
+      } else if (moverSortKey === "sector") {
+        diff = safeString(a.sector).localeCompare(safeString(b.sector));
+      } else { // abs
+        diff = Math.abs(safeNumber(a.change_pct)) - Math.abs(safeNumber(b.change_pct));
+      }
+      if (diff === 0) {
+        diff = safeString(a.symbol).localeCompare(safeString(b.symbol));
+      }
+      return moverSortDir === "desc" ? -diff : diff;
+    });
+  }, [losers, moverSortKey, moverSortDir]);
+
   return <div data-nifty-panel="overview" className="space-y-5">
     <SpotSummary />
     <div className="grid overflow-hidden rounded-lg border border-[var(--air-line)] sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -124,10 +166,55 @@ export function OverviewPanel() {
       <Metric label="Options Readiness" value={mapTraderEnum(optionStatus)} detail="Detailed options data is isolated to the Options tab."/>
     </div>
     <div className="grid gap-5 lg:grid-cols-2">
-      <section className="rounded-lg border border-[var(--air-line)] bg-[var(--air-surface)] p-4 text-left"><div className="flex items-center justify-between border-b border-[var(--air-line)] pb-2"><h3 className="text-[10px] font-bold tracking-wide text-slate-200">Top constituent movers</h3><span className="text-[9px] text-slate-600">{safeNumber(coverage?.valid, 0)}/50 · {mapTraderEnum(breadth?.freshness || "UNAVAILABLE")}</span></div><div className="mt-2 grid grid-cols-2 gap-4">{gainers.length || losers.length ? <>{[["Gainers",gainers,"text-emerald-400","bg-emerald-500/50"],["Losers",losers,"text-rose-400","bg-rose-500/50"]].map(([title,rows,color,bar]:any)=><div key={title}><div className="mb-1 grid grid-cols-[1rem_1fr_auto] gap-2 text-[8px] font-semibold text-slate-600"><span>#</span><span>{title}</span><span>Change</span></div>{rows.map((item:any,index:number)=><div key={`${title}-${item.symbol}-${index}`} className="grid grid-cols-[1rem_1fr_auto] items-center gap-2 border-t border-[var(--air-line)] py-1.5 text-[10px]"><span className="text-slate-600">{index+1}</span><div className="min-w-0"><div className="truncate font-semibold text-slate-200">{safeString(item.symbol)}</div><div className="mt-1 h-0.5 max-w-20 bg-slate-900"><div className={`h-full ${bar}`} style={{width:`${Math.min(100,Math.abs(safeNumber(item.change_pct))*18)}%`}}/></div></div><span className={`air-data font-semibold ${color}`}>{safeNumber(item.change_pct)>=0?"+":""}{formatNumber(item.change_pct,2)}%</span></div>)}</div>)}</> : <p className="col-span-2 text-[10px] text-slate-500">UNAVAILABLE — insufficient constituent observations ({safeNumber(coverage?.valid, 0)}/50).</p>}</div></section>
+      <section className="rounded-lg border border-[var(--air-line)] bg-[var(--air-surface)] p-4 text-left">
+        <div className="flex flex-wrap items-center justify-between border-b border-[var(--air-line)] pb-2 gap-2">
+          <h3 className="text-[10px] font-bold tracking-wide text-slate-200">Top constituent movers</h3>
+
+          <div className="flex items-center gap-1.5 font-mono text-[9px] text-slate-500">
+            <span>Sort:</span>
+            <button onClick={() => { setMoverSortKey("abs"); setMoverSortDir("desc"); }} className={`px-1.5 py-0.5 rounded border ${moverSortKey === "abs" ? "border-cyan-600 bg-cyan-950/40 text-cyan-300 font-bold" : "border-slate-800 text-slate-500"}`}>Abs</button>
+            <button onClick={() => { setMoverSortKey("change"); setMoverSortDir("desc"); }} className={`px-1.5 py-0.5 rounded border ${moverSortKey === "change" ? "border-cyan-600 bg-cyan-950/40 text-cyan-300 font-bold" : "border-slate-800 text-slate-500"}`}>% Chg</button>
+            <button onClick={() => { setMoverSortKey("symbol"); setMoverSortDir("asc"); }} className={`px-1.5 py-0.5 rounded border ${moverSortKey === "symbol" ? "border-cyan-600 bg-cyan-950/40 text-cyan-300 font-bold" : "border-slate-800 text-slate-500"}`}>Sym</button>
+            <button onClick={() => { setMoverSortKey("sector"); setMoverSortDir("asc"); }} className={`px-1.5 py-0.5 rounded border ${moverSortKey === "sector" ? "border-cyan-600 bg-cyan-950/40 text-cyan-300 font-bold" : "border-slate-800 text-slate-500"}`}>Sector</button>
+          </div>
+
+          <span className="text-[9px] text-slate-600">{safeNumber(coverage?.valid, 0)}/50 · {mapTraderEnum(breadth?.freshness || "UNAVAILABLE")}</span>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-4">
+          {sortedGainers.length || sortedLosers.length ? (
+            <>
+              {[["Gainers", sortedGainers, "text-emerald-400", "bg-emerald-500/50"], ["Losers", sortedLosers, "text-rose-400", "bg-rose-500/50"]].map(([title, rows, color, bar]: any) => (
+                <div key={title}>
+                  <div className="mb-1 grid grid-cols-[1rem_1fr_auto] gap-2 text-[8px] font-semibold text-slate-600">
+                    <span>#</span>
+                    <span>{title}</span>
+                    <span>Change</span>
+                  </div>
+                  {rows.map((item: any, index: number) => (
+                    <div key={`${title}-${item.symbol}-${index}`} className="grid grid-cols-[1rem_1fr_auto] items-center gap-2 border-t border-[var(--air-line)] py-1.5 text-[10px]">
+                      <span className="text-slate-600">{index + 1}</span>
+                      <div className="min-w-0">
+                        <div className="truncate font-semibold text-slate-200">{safeString(item.symbol)}</div>
+                        <div className="mt-1 h-0.5 max-w-20 bg-slate-900">
+                          <div className={`h-full ${bar}`} style={{ width: `${Math.min(100, Math.abs(safeNumber(item.change_pct)) * 18)}%` }} />
+                        </div>
+                      </div>
+                      <span className={`air-data font-semibold ${color}`}>
+                        {safeNumber(item.change_pct) >= 0 ? "+" : ""}
+                        {formatNumber(item.change_pct, 2)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </>
+          ) : (
+            <p className="col-span-2 text-[10px] text-slate-500">UNAVAILABLE — insufficient constituent observations ({safeNumber(coverage?.valid, 0)}/50).</p>
+          )}
+        </div>
+      </section>
       <SectorPerformanceChart />
     </div>
-    <GlobalMarketsDashboard compact />
     <div className="grid gap-5 lg:grid-cols-2"><ParticipantPositioningWidget compact/><VolatilityContextWidget/></div>
     <section className="rounded-xl border border-slate-800 bg-slate-950/60 p-5 text-left"><h3 className="text-xs font-bold uppercase text-cyan-300">Headline Risk Summary</h3><div className="mt-2 space-y-1 text-xs text-slate-300">{news.length ? news.slice(0, 3).map((item, index) => <p key={item.id || index}>{safeString(item.headline)} · relevance {formatNumber(item.nifty_relevance_score, 1)}/10</p>) : <p>No headline risk items are available.</p>}</div></section>
     <AIInterpretationCard title="Market Narrative" sectionKey="market_narrative" />
@@ -149,7 +236,7 @@ export function PriceTrendPanel() {
       <Metric label="EMA 20 / 50" value={marketContext?.ema_20 && marketContext?.ema_50 ? `${formatNumber(marketContext.ema_20, 2)} / ${formatNumber(marketContext.ema_50, 2)}` : "UNAVAILABLE"} detail="Calculated from verified prices"/>
       <Metric label="Trend / Volatility" value={`${mapTraderEnum(marketContext?.market_regime || "UNKNOWN")} · ${mapTraderEnum(marketContext?.trend_direction || "UNKNOWN")} · ${mapTraderEnum(marketContext?.volatility_state || "UNKNOWN")}`}/>
     </div>
-    <DecisionZonesPanel zones={canonicalState?.unified_intelligence?.decision_zones} rawLevels={canonicalState?.unified_intelligence?.key_levels} />
+    <DecisionAreasPanel zones={canonicalState?.unified_intelligence?.decision_zones} rawLevels={canonicalState?.unified_intelligence?.key_levels} />
     <HistoricalTelemetryCharts />
   </div>;
 }

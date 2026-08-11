@@ -1,6 +1,7 @@
 import React from "react";
 import { safeArray, safeString, formatNumber } from "../../utils/safeHelpers";
 import { mapTraderEnum, mapTraderLabel } from "../../utils/traderTerminology";
+import { useWorkstationState } from "../../context/WorkstationStateContext";
 
 export type SemanticKind = "state" | "freshness" | "readiness" | "confidence" | "risk";
 
@@ -49,10 +50,34 @@ export function KeyLevelsPanel({ levels }: { levels: unknown }) {
 }
 
 export function ScenarioCard({ scenario }: { key?: string; scenario: any }) {
+  const { canonicalState, marketContext } = useWorkstationState() as any;
+  const sessionStatus = canonicalState?.market_session?.status || marketContext?.trading_session || "CLOSED";
+  const isClosed = Boolean(canonicalState?.market_session?.is_closed || ["CLOSED", "HOLIDAY", "POST_CLOSE", "WEEKEND"].includes(String(sessionStatus).toUpperCase()));
+
   const primary = safeString(scenario?.priority).toUpperCase().includes("PRIMARY");
+  const stateLabel = isClosed ? "NEXT SESSION — PENDING" : "LIVE SESSION — ACTIVE";
+
+  const mapCondition = (cond: any) => {
+    if (!isClosed) return mapTraderEnum(cond);
+    const c = String(cond).toLowerCase();
+    if (c.includes("opening range")) return "Opening Range: Pending";
+    if (c.includes("breadth")) return "Breadth Confirmation: Pending";
+    if (c.includes("vwap")) return "VWAP Confirmation: Pending";
+    if (c.includes("live scenario") || c.includes("scenario confirmation") || c.includes("confirmation")) return "Live Scenario Confirmation: Pending";
+    return mapTraderEnum(cond) + ": Pending";
+  };
+
   return <article data-canonical-scenario={safeString(scenario?.name)} className={`rounded-lg border bg-slate-950/60 p-3 text-[10px] text-slate-300 ${primary ? "border-cyan-800/70" : "border-slate-800"}`}>
-    <div className="flex items-center justify-between gap-2"><strong className="text-cyan-300">{mapTraderEnum(scenario?.name)}</strong><SemanticBadge value={scenario?.priority} /></div>
-    <div className="mt-2"><b>Supports:</b> {safeArray(scenario?.confirmation_conditions).map(v => mapTraderEnum(v)).join(" · ") || "UNAVAILABLE"}</div>
+    <div className="flex items-center justify-between gap-2">
+      <strong className="text-cyan-300">{mapTraderEnum(scenario?.name)}</strong>
+      <div className="flex gap-1.5 items-center">
+        <span className={`px-1.5 py-0.5 rounded text-[7px] font-bold border font-mono ${isClosed ? "border-amber-800 bg-amber-950/30 text-amber-300" : "border-emerald-800 bg-emerald-950/30 text-emerald-300"}`}>
+          {stateLabel}
+        </span>
+        <SemanticBadge value={scenario?.priority} />
+      </div>
+    </div>
+    <div className="mt-2"><b>Supports:</b> {safeArray(scenario?.confirmation_conditions).map(v => mapCondition(v)).join(" · ") || "UNAVAILABLE"}</div>
     <div className="mt-1 text-rose-300"><b>Invalidates:</b> {safeArray(scenario?.invalidation_conditions).map(v => mapTraderEnum(v)).join(" · ") || "UNAVAILABLE"}</div>
     <div className="mt-2 text-[9px] text-slate-600">Conditional scenario only · Not a prediction · No execution instruction</div>
   </article>;
@@ -62,7 +87,50 @@ export function ExplicitState({ title, state, reason }: { key?: string; title: s
   return <section className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"><div className="flex items-center justify-between gap-3"><strong className="text-[10px] text-white">{mapTraderLabel(title)}</strong><SemanticBadge value={state} kind="readiness" /></div><p className="mt-2 text-[10px] text-slate-500">{safeString(reason || "No additional detail is available.")}</p></section>;
 }
 
-export function DecisionZonesPanel({ zones, rawLevels }: { zones: unknown; rawLevels: unknown }) {
+export function nearestDecisionLevels(zones: any[], spot: number | null) {
+  const zoneRows = safeArray(zones);
+  const supports = zoneRows.filter((z: any) => z && z.role === "SUPPORT");
+  const resistances = zoneRows.filter((z: any) => z && z.role === "RESISTANCE");
+
+  let nearestSupport: any = null;
+  let nearestResistance: any = null;
+
+  if (spot != null && !isNaN(spot) && spot > 0) {
+    const below = supports.filter((z: any) => z.upper <= spot || z.lower <= spot);
+    if (below.length > 0) {
+      below.sort((a: any, b: any) => b.upper - a.upper);
+      nearestSupport = below[0];
+    } else if (supports.length > 0) {
+      const sorted = [...supports].sort((a: any, b: any) => Math.abs(a.lower - spot) - Math.abs(b.lower - spot));
+      nearestSupport = sorted[0];
+    }
+
+    const above = resistances.filter((z: any) => z.lower >= spot || z.upper >= spot);
+    if (above.length > 0) {
+      above.sort((a: any, b: any) => a.lower - b.lower);
+      nearestResistance = above[0];
+    } else if (resistances.length > 0) {
+      const sorted = [...resistances].sort((a: any, b: any) => Math.abs(a.lower - spot) - Math.abs(b.lower - spot));
+      nearestResistance = sorted[0];
+    }
+  } else {
+    if (supports.length > 0) {
+      const sorted = [...supports].sort((a: any, b: any) => b.upper - a.upper);
+      nearestSupport = sorted[0];
+    }
+    if (resistances.length > 0) {
+      const sorted = [...resistances].sort((a: any, b: any) => a.lower - b.lower);
+      nearestResistance = sorted[0];
+    }
+  }
+
+  return { nearestSupport, nearestResistance };
+}
+
+// Legacy alias check for tests: DecisionZonesPanel
+export const DecisionZonesPanel = DecisionAreasPanel;
+
+export function DecisionAreasPanel({ zones, rawLevels }: { zones: unknown; rawLevels: unknown }) {
   const [showRaw, setShowRaw] = React.useState(false);
   const zoneRows = safeArray(zones as any[]) as any[];
   const rawRows = safeArray(rawLevels as any[]) as any[];
