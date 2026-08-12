@@ -98,50 +98,63 @@ class WorkstationStateService:
 
     @classmethod
     def _filter_retained_snapshots(cls, snapshots: list[dict[str, Any]], session_date: str) -> list[dict[str, Any]]:
-        """Filters snapshot history to preserve all canonical session checkpoints (open, 15m buckets)
-        plus the last 500 high-frequency rolling snapshots for D.2 temporal windows."""
-        same_day = [s for s in snapshots if s.get("session_date") == session_date]
-        other_days = [s for s in snapshots if s.get("session_date") != session_date]
+        """Filters snapshot history to preserve all canonical session checkpoints (open, 15m buckets, extrema)
+        for all session dates, plus high-frequency rolling snapshots."""
+        if not snapshots:
+            return []
 
-        if not same_day:
+        dates = {s.get("session_date") for s in snapshots if s.get("session_date")}
+        if not dates:
             return snapshots[-500:]
 
-        checkpoint_keys = set()
+        retained_all = []
+        for d in sorted(dates):
+            d_snaps = [s for s in snapshots if s.get("session_date") == d]
+            checkpoint_keys = set()
 
-        # Preserve first PRE_MARKET, PRE_OPEN, MARKET_OPEN
-        for phase in ("PRE_MARKET", "PRE_OPEN", "MARKET_OPEN"):
-            for s in same_day:
-                if s.get("market_session_phase") == phase or (phase == "MARKET_OPEN" and s.get("continuous_session_open")):
-                    checkpoint_keys.add((s.get("timestamp"), s.get("state_sequence")))
-                    break
-
-        # Preserve canonical 15-minute interval anchor snapshots
-        seen_15m_buckets = set()
-        for s in same_day:
-            ts_str = str(s.get("timestamp") or "")
-            if len(ts_str) >= 16:
-                time_part = ts_str[11:16]
-                try:
-                    hh, mm = map(int, time_part.split(":"))
-                    bucket = f"{hh:02d}:{(mm // 15) * 15:02d}"
-                    if bucket not in seen_15m_buckets:
-                        seen_15m_buckets.add(bucket)
+            # Preserve first PRE_MARKET, PRE_OPEN, MARKET_OPEN
+            for phase in ("PRE_MARKET", "PRE_OPEN", "MARKET_OPEN"):
+                for s in d_snaps:
+                    if s.get("market_session_phase") == phase or (phase == "MARKET_OPEN" and s.get("continuous_session_open") and s.get("spot") is not None):
                         checkpoint_keys.add((s.get("timestamp"), s.get("state_sequence")))
-                except Exception:
-                    pass
+                        break
 
-        checkpoints = [s for s in same_day if (s.get("timestamp"), s.get("state_sequence")) in checkpoint_keys]
-        recent_rolling = same_day[-500:]
+            # Preserve intraday high/low extrema snapshots
+            d_valid_spots = [s for s in d_snaps if isinstance(s.get("spot"), (int, float))]
+            if d_valid_spots:
+                max_s = max(d_valid_spots, key=lambda s: s["spot"])
+                min_s = min(d_valid_spots, key=lambda s: s["spot"])
+                checkpoint_keys.add((max_s.get("timestamp"), max_s.get("state_sequence")))
+                checkpoint_keys.add((min_s.get("timestamp"), min_s.get("state_sequence")))
 
-        combined_dict = {}
-        for s in checkpoints + recent_rolling:
-            key = (s.get("timestamp"), s.get("state_sequence"))
-            combined_dict[key] = s
+            # Preserve canonical 15-minute interval anchor snapshots
+            seen_15m_buckets = set()
+            for s in d_snaps:
+                ts_str = str(s.get("timestamp") or "")
+                if len(ts_str) >= 16:
+                    time_part = ts_str[11:16]
+                    try:
+                        hh, mm = map(int, time_part.split(":"))
+                        bucket = f"{hh:02d}:{(mm // 15) * 15:02d}"
+                        if bucket not in seen_15m_buckets:
+                            seen_15m_buckets.add(bucket)
+                            checkpoint_keys.add((s.get("timestamp"), s.get("state_sequence")))
+                    except Exception:
+                        pass
 
-        retained_same_day = list(combined_dict.values())
-        retained_same_day.sort(key=lambda x: (x.get("timestamp") or "", x.get("state_sequence") or 0))
+            checkpoints = [s for s in d_snaps if (s.get("timestamp"), s.get("state_sequence")) in checkpoint_keys]
+            recent_rolling = d_snaps[-500:] if d == session_date else d_snaps[-50:]
 
-        return (other_days[-50:] + retained_same_day)
+            combined_dict = {}
+            for s in checkpoints + recent_rolling:
+                key = (s.get("timestamp"), s.get("state_sequence"))
+                combined_dict[key] = s
+
+            retained_d = list(combined_dict.values())
+            retained_d.sort(key=lambda x: (x.get("timestamp") or "", x.get("state_sequence") or 0))
+            retained_all.extend(retained_d)
+
+        return retained_all
 
     @classmethod
     def _persist_session_history(cls, session_date: str) -> None:

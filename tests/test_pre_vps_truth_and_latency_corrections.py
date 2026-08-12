@@ -300,3 +300,30 @@ def test_live_first_observation_propagation_latency():
 
     assert report.feed_liveness_status == "HEALTHY"
     assert (t2 - t0) < 0.100  # Must process observation in under 100ms
+
+
+# ---------------------------------------------------------------------------
+# 16. Cross-Date Retention Filter Preserves Historical Anchors
+# ---------------------------------------------------------------------------
+def test_retention_filter_preserves_historical_open_and_extrema_across_calendar_dates():
+    data = get_12_aug_session_data()
+    snaps = data["snapshots"]
+    # Pass a future/different calendar date (2026-08-13) to retention filter
+    filtered = WorkstationStateService._filter_retained_snapshots(snaps, "2026-08-13")
+    WorkstationStateService._snapshots_history = filtered
+
+    story = WorkstationStateService._derive_session_story(
+        generated="2026-08-12T10:00:00Z",
+        now=datetime(2026, 8, 12, 18, 0, 0, tzinfo=timezone.utc),
+        snap=filtered[-1],
+        unified={"previous_close": 24583.80},
+        live_decision={},
+        primary_temporal=None,
+        news={},
+        market_session_phase="CLOSED",
+        market_closed=True
+    )
+    summary = story["session_summary"]
+    assert summary["open"] == 24462.25
+    assert summary["day_low"] == 24266.85
+    assert summary["day_range"] == 195.40
