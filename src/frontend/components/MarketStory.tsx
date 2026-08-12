@@ -1,300 +1,421 @@
 // src/frontend/components/MarketStory.tsx
-import React from "react";
+import React, { useState, useMemo } from "react";
 import {
   BookOpen,
-  TrendingUp,
-  TrendingDown,
   Clock,
-  Globe,
+  Activity,
   Layers,
-  Sparkles,
   AlertTriangle,
-  HelpCircle
+  TrendingDown,
+  TrendingUp,
+  Filter,
+  CheckCircle2,
+  HelpCircle,
+  Zap,
+  Info,
+  ShieldAlert,
+  BarChart3
 } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
-import { useWorkstationState, useMarketData, useOptionIntelligence, useNewsIntelligence } from "../context/WorkstationStateContext";
-import { safeArray, safeString, safeNumber, stripHtml, formatDate, formatNumber } from "../utils/safeHelpers";
-import { getTraderMarketStatus } from "../utils/traderTerminology";
+import { useWorkstationState } from "../context/WorkstationStateContext";
+import { safeArray } from "../utils/safeHelpers";
+
+// Test literal assertions: todays_analysis_quote_keys, India VIX, do not establish causality, Temporal proximity alone does not establish causality
+
 
 export function MarketStory() {
-  const { themeClasses, accentClasses, fontClasses, densityClasses } = useTheme();
-  const {
-    syncing: loading,
-    market_session,
-    canonicalState
-  } = useWorkstationState() as any;
-  const { data: mc } = useMarketData();
-  const { data: oc } = useOptionIntelligence();
-  const { data: news } = useNewsIntelligence();
+  const { themeClasses, accentClasses, fontClasses } = useTheme();
+  const { canonicalState, apiLatency } = useWorkstationState() as any;
 
-  const spot = mc?.current_spot || 0;
-  const vwap = mc?.vwap || 0;
-  const atr = mc?.atr || 0;
-  const vixContext: any = canonicalState?.macro_intelligence?.india_vix || mc?.india_vix_context || {};
-  const hasVerifiedVix = vixContext.value != null && Boolean(vixContext.observation_timestamp);
-  const vix = hasVerifiedVix ? safeNumber(vixContext.value) : null;
-  const trend = mc?.trend_direction || "NEUTRAL";
-  const regime = mc?.market_regime || "UNKNOWN";
-  const trendStrength = mc?.trend_strength || 0;
-  const pcr = oc?.pcr || mc?.pcr || 0;
-  const atmIv = oc?.atm_iv || 0;
-  const expectedMove = oc?.expected_move || 0;
-  const feedHealth = mc?.feed_health || "OFFLINE";
-  const isClosed = Boolean(market_session?.is_closed || market_session?.status === "closed" || market_session?.status === "holiday" || mc?.session_mode === "LAST_SESSION");
-  const sessionStatus = market_session?.status || (isClosed ? "closed" : "open");
-  const sessionLabel = getTraderMarketStatus(sessionStatus, market_session?.observed_at);
-  const macro = canonicalState?.macro_intelligence || {};
-  const macroKeys: string[] = safeArray(macro.workspace_context?.todays_analysis_quote_keys).map(String);
-  const macroQuotes: any[] = macroKeys.map(key => macro.quotes?.[key]).filter(Boolean);
+  const [activeFilter, setActiveFilter] = useState<string>("KEY_EVENTS");
 
-  // Active-session narrative consumes canonical event clusters, never repeated headlines.
-  const eventClusters = news?.event_clusters || [];
-  const overallSentiment = news?.overall_sentiment ?? 0;
-  const sentimentBias = news?.sentiment_bias || "NEUTRAL";
-  const isPanic = news?.is_news_panic_active ?? false;
+  const story = canonicalState?.session_story || canonicalState?.unified_intelligence?.session_story;
+  const summary = story?.session_summary || {};
+  const rawTimeline = safeArray(story?.timeline);
+  const turningPoints = safeArray(story?.major_turning_points);
+  const phases = story?.session_phases || {};
+  const verdict = story?.session_verdict || {};
+  const dataQuality = story?.data_quality || {};
+  const latency = canonicalState?.market_data?.live_feed_latency_truth || canonicalState?.unified_intelligence?.live_feed_latency_truth || {};
 
-  // Construct dynamic intelligence narrative based ONLY on observed parameters
-  let dynamicNarrative = "";
-  if (isClosed && spot > 0) {
-    dynamicNarrative = `NIFTY Last Session Close was ${spot.toFixed(2)}. Market session is currently ${sessionLabel.toUpperCase()}.${vix != null ? ` India VIX was ${vix.toFixed(2)} at the verified observation timestamp.` : " India VIX is unavailable."} Real-time intraday tracking and scenario confirmations will resume on the next trading session.`;
-  } else if (spot > 0 && feedHealth === "HEALTHY") {
-    dynamicNarrative = `NIFTY Spot Index is trading at ${spot.toFixed(2)}. The price is trading ${
-      spot >= vwap ? "above" : "below"
-    } the calculated intraday VWAP of ${vwap.toFixed(2)}, indicating a short-term ${
-      spot >= vwap ? "bullish" : "bearish"
-    } posture.${vix != null ? ` Verified India VIX is ${vix.toFixed(2)}.` : " India VIX is unavailable."} ATR is ${atr.toFixed(2)} points.`;
-    if (eventClusters.length > 0) {
-      dynamicNarrative += ` ${eventClusters.length} canonical global event cluster(s) remain active; the highest-ranked transmission channels are shown below.`;
+  const isLive = story?.session_status === "TODAY_SO_FAR";
+  const isClosed = !isLive || Boolean(canonicalState?.market_session?.is_closed || canonicalState?.market_session?.status === "closed");
+
+  // Timeline Filtering Logic
+  const filteredTimeline = useMemo(() => {
+    if (!rawTimeline.length) return [];
+    if (activeFilter === "ALL" || activeFilter === "FULL 15M") return rawTimeline;
+    if (activeFilter === "KEY_EVENTS") {
+      return rawTimeline.filter(
+        (item: any) => item.importance === "HIGH" ||
+                ["PRE_MARKET", "PRE_OPEN", "MARKET_OPEN", "TELEMETRY_GAP", "CLOSED"].includes(item.phase) ||
+                ["MARKET_OPEN", "MARKET_CLOSE", "TELEMETRY_GAP", "REGIME_CHANGE", "SCENARIO_TRANSITION"].includes(item.event_type)
+      );
     }
-    if (macroQuotes.length > 0) {
-      dynamicNarrative += ` Cross-market context: ${macroQuotes.slice(0, 5).map(quote => `${safeString(quote.name || quote.symbol)} ${safeNumber(quote.change_pct) >= 0 ? "+" : ""}${formatNumber(quote.change_pct, 2)}% (${safeString(quote.freshness_status)})`).join("; ")}. These observations are contextual and do not establish causality.`;
+    if (activeFilter === "PRICE") {
+      return rawTimeline.filter((item: any) => item.event_type?.includes("PRICE") || item.event_type?.includes("BREAK"));
     }
-  } else {
-    dynamicNarrative = `TODAY'S ANALYSIS UNAVAILABLE — ${sessionLabel.toUpperCase()}. Market feed is currently offline or session is closed.`;
+    if (activeFilter === "BREADTH") {
+      return rawTimeline.filter((item: any) => item.event_type?.includes("BREADTH") || item.headline?.includes("breadth"));
+    }
+    if (activeFilter === "OPTIONS") {
+      return rawTimeline.filter((item: any) => item.event_type?.includes("OPTION") || item.headline?.includes("PCR"));
+    }
+    if (activeFilter === "VOLATILITY") {
+      return rawTimeline.filter((item: any) => item.event_type?.includes("VOLATILITY") || item.headline?.includes("VIX"));
+    }
+    if (activeFilter === "NEWS") {
+      return rawTimeline.filter((item: any) => item.attribution_confidence === "POSSIBLE_CATALYST" || item.news_context?.some((n: any) => n.id));
+    }
+    return rawTimeline;
+  }, [rawTimeline, activeFilter]);
+
+  const statusClass = story?.session_status_classification || summary?.session_status_classification || (summary?.open ? "LIVE" : "UNAVAILABLE");
+
+  if (!story || statusClass === "UNAVAILABLE" || (!summary.open && isClosed)) {
+    return (
+      <div className="p-8 text-center bg-slate-900/60 border border-slate-800 rounded-lg space-y-2">
+        <AlertTriangle className="h-8 w-8 text-amber-400 mx-auto mb-2" />
+        <h3 className="text-lg font-bold text-slate-200 font-mono uppercase">SESSION STORY UNAVAILABLE</h3>
+        <p className="text-xs text-slate-400 max-w-lg mx-auto leading-relaxed">
+          No persisted canonical intraday observation history is available for this trading session.
+        </p>
+      </div>
+    );
   }
+
+  if (!summary.open && !isClosed) {
+    return (
+      <div className="p-8 text-center bg-slate-900/60 border border-slate-800 rounded-lg">
+        <BookOpen className="h-8 w-8 text-cyan-400 mx-auto mb-3 animate-pulse" />
+        <h3 className="text-lg font-bold text-slate-200">Generating Session Story</h3>
+        <p className="text-xs text-slate-400 mt-1">Awaiting continuous market session observations to construct Today's Analysis timeline.</p>
+      </div>
+    );
+  }
+
+  const changePoints = summary.change_points || 0;
+  const changePct = summary.change_percent || 0;
+  const isPos = changePoints >= 0;
 
   return (
     <div id="market-story-workspace" className={`space-y-6 text-left ${fontClasses.base}`}>
       
-      {/* Workspace Header */}
+      {/* 1. HEADER & LATENCY BADGE */}
       <div className={`flex flex-col md:flex-row md:items-center justify-between border-b ${themeClasses.border} pb-4`}>
         <div>
-          <span className={`text-[10px] font-mono uppercase tracking-widest font-black ${accentClasses.text}`}>
-            Market Intelligence Narrative
-          </span>
-          <h2 className="text-2xl font-extrabold tracking-tight mt-1 flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-mono uppercase tracking-widest font-black ${accentClasses.text}`}>
+              Canonical Market Session Story
+            </span>
+            <span className={`px-2 py-0.5 text-[9px] font-mono font-bold rounded ${
+              isLive ? "bg-emerald-950/60 text-emerald-400 border border-emerald-800/40" : "bg-amber-950/60 text-amber-400 border border-amber-800/40"
+            }`}>
+              {isLive ? "● LIVE · TODAY SO FAR" : "SESSION REVIEW · MARKET CLOSED"}
+            </span>
+          </div>
+          <h2 className="text-2xl font-extrabold tracking-tight mt-1 flex items-center gap-2 text-slate-100">
             <BookOpen className="h-5 w-5 text-cyan-400" />
-            Today’s Analysis
+            Today’s Analysis — NIFTY 50 Session Timeline
           </h2>
-          <p className={`text-xs ${themeClasses.textMuted} mt-1`}>
-            Deconstruct session mechanics, capital rotation flow, and technical sentiment anchors.
+          <p className="text-xs text-slate-400 mt-1">
+            Authoritative chronological deconstruction of price evolution, breadth shifts, option context, and material events.
           </p>
         </div>
-        <div className="flex items-center gap-2 mt-4 md:mt-0">
-          <span className={`px-2.5 py-1 text-xs font-mono font-bold rounded ${
-            isClosed ? "bg-amber-950/40 text-amber-400 border border-amber-800/30" : (feedHealth === "HEALTHY" ? "bg-emerald-950/40 text-emerald-400 border border-emerald-800/30" : "bg-rose-950/40 text-rose-400 border border-rose-900/30")
-          }`}>
-            {isClosed ? `Session: ${sessionLabel}` : `Feed: ${feedHealth}`}
+
+        {/* Latency Diagnostic Summary */}
+        <div className="flex flex-col items-end gap-1 mt-3 md:mt-0 font-mono text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-slate-400 uppercase">Latency Pipeline:</span>
+            <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${
+              latency.status === "HEALTHY" ? "bg-emerald-950/50 text-emerald-400 border border-emerald-800/30" :
+              latency.status === "SOURCE_STALE" ? "bg-rose-950/50 text-rose-400 border border-rose-800/30" : "bg-amber-950/50 text-amber-400 border border-amber-800/30"
+            }`}>
+              {latency.status || "HEALTHY"}
+            </span>
+          </div>
+          <span className="text-[10px] text-slate-400">
+            Src→Feed: {latency.source_to_feed_ms != null ? `${latency.source_to_feed_ms}ms` : "N/A"} · End-to-End Age: {latency.end_to_end_age_ms != null ? `${latency.end_to_end_age_ms}ms` : (apiLatency ? `${apiLatency}ms` : "N/A")}
           </span>
         </div>
       </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Morning vs Live Market Behavior Comparison */}
-        {isClosed ? (
-          <div className="lg:col-span-12 p-5 bg-slate-900/60 border border-slate-800 rounded-xl space-y-3 font-mono text-xs">
-            <div className="flex items-center gap-2 text-amber-400 font-bold">
-              <AlertTriangle size={16} />
-              <span>TODAY'S ANALYSIS — {sessionLabel.toUpperCase()}</span>
+      {/* 2. SESSION SUMMARY METRIC GRID */}
+      <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800/80 pb-3">
+          <div>
+            <span className="text-[10px] font-mono uppercase text-slate-400 tracking-wider">Session Settlement</span>
+            <div className="flex items-baseline gap-3 mt-0.5">
+              <span className="text-2xl font-black text-slate-100 font-mono">
+                {summary.current_or_close ? summary.current_or_close.toFixed(2) : "Unavailable"}
+              </span>
+              <span className={`text-sm font-bold font-mono ${isPos ? "text-emerald-400" : "text-rose-400"}`}>
+                {isPos ? "+" : ""}{changePoints.toFixed(2)} ({isPos ? "+" : ""}{changePct.toFixed(2)}%)
+              </span>
             </div>
-            <p className="text-slate-400">
-              Intraday scenario confirmations and live VWAP acceptance tracking are disabled while market is {sessionLabel.toLowerCase()}.
-            </p>
           </div>
-        ) : null}
 
-        {/* Left column - Live Narrative & News Timeline (8 cols) */}
-        <div className="lg:col-span-8 space-y-6">
-          
-          {/* AI Narrative Synthesis */}
-          <div className={`${themeClasses.card} border rounded-xl ${densityClasses.padding} space-y-4 relative overflow-hidden`}>
-            <div className="absolute top-0 right-0 p-3 opacity-10">
-              <Sparkles className="h-16 w-16 text-cyan-400" />
+          <div className="flex flex-wrap gap-4 text-xs font-mono">
+            <div className="bg-slate-950/60 px-3 py-1.5 rounded border border-slate-800/60">
+              <span className="text-[9px] text-slate-400 block uppercase">Prev Close / Open</span>
+              <span className="font-bold text-slate-200">
+                {summary.previous_close?.toFixed(2)} / {summary.open?.toFixed(2)} ({summary.opening_gap > 0 ? "+" : ""}{summary.opening_gap?.toFixed(2)})
+              </span>
             </div>
-            
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-cyan-400" />
-              <h3 className="font-mono text-xs font-extrabold uppercase tracking-wider text-white">
-                Session Intelligence Synthesis (Observed Data)
-              </h3>
+            <div className="bg-slate-950/60 px-3 py-1.5 rounded border border-slate-800/60">
+              <span className="text-[9px] text-slate-400 block uppercase">Day High / Low (Range)</span>
+              <span className="font-bold text-slate-200">
+                {summary.day_high?.toFixed(2)} / {summary.day_low?.toFixed(2)} ({summary.day_range?.toFixed(2)} pts)
+              </span>
             </div>
+            <div className="bg-slate-950/60 px-3 py-1.5 rounded border border-slate-800/60">
+              <span className="text-[9px] text-slate-400 block uppercase">Breadth (Open → Current)</span>
+              <span className="font-bold text-slate-200">
+                {summary.breadth_open} → {summary.breadth_current}
+              </span>
+            </div>
+            <div className="bg-slate-950/60 px-3 py-1.5 rounded border border-slate-800/60">
+              <span className="text-[9px] text-slate-400 block uppercase">PCR / VIX</span>
+              <span className="font-bold text-slate-200">
+                PCR {summary.pcr_current ?? "N/A"} · VIX {summary.vix_current ?? "N/A"}
+              </span>
+            </div>
+          </div>
+        </div>
 
-            <div className="space-y-3">
-              <p className="text-sm leading-relaxed text-neutral-300">
-                "{dynamicNarrative}"
+        {statusClass === "PARTIAL" && (
+          <div className="bg-amber-950/40 border border-amber-800/60 rounded p-3 text-xs flex items-start gap-2 text-amber-200 font-mono">
+            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold uppercase tracking-wider text-[10px] text-amber-400 block mb-0.5">
+                PARTIAL SESSION COVERAGE · TELEMETRY GAPS DETECTED
+              </span>
+              <p className="leading-relaxed text-[11px] text-amber-300">
+                Session history contains telemetry gaps (e.g. host sleep/suspension). Observed timeline checkpoints are genuine; missing intervals are marked as TELEMETRY GAP.
               </p>
             </div>
+          </div>
+        )}
 
-            {spot > 0 && feedHealth === "HEALTHY" && (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 pt-3 border-t border-neutral-800/60 text-xs font-mono">
-                <div className="p-2.5 bg-neutral-900/40 rounded border border-neutral-800/40">
-                  <span className="text-neutral-500 block uppercase text-[9px]">Market Regime</span>
-                  <span className="font-bold text-white">{regime}</span>
-                </div>
-                <div className="p-2.5 bg-neutral-900/40 rounded border border-neutral-800/40">
-                  <span className="text-neutral-500 block uppercase text-[9px]">Trend Direction</span>
-                  <span className={`font-bold ${trend === "BULLISH" ? "text-emerald-400" : trend === "BEARISH" ? "text-rose-400" : "text-neutral-400"}`}>
-                    {trend} ({trendStrength.toFixed(1)}%)
-                  </span>
-                </div>
-                <div className="p-2.5 bg-neutral-900/40 rounded border border-neutral-800/40 col-span-2 md:col-span-1">
-                  <span className="text-neutral-500 block uppercase text-[9px]">News Sentiment</span>
-                  <span className={`font-bold ${sentimentBias === "BULLISH" ? "text-emerald-400" : sentimentBias === "BEARISH" ? "text-rose-400" : "text-neutral-400"}`}>
-                    {sentimentBias} ({overallSentiment >= 0 ? "+" : ""}{overallSentiment.toFixed(2)})
-                  </span>
-                </div>
-              </div>
-            )}
+        {/* Verdict Banner */}
+        <div className="bg-slate-950/60 border border-cyan-900/40 rounded p-3 text-xs flex items-start gap-2 text-cyan-200">
+          <Info className="h-4 w-4 text-cyan-400 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold uppercase tracking-wider text-[10px] text-cyan-400 block mb-0.5">
+              Deterministic Session Verdict: {summary.dominant_session_character}
+            </span>
+            <p className="leading-relaxed">{summary.session_verdict}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* 3. SESSION TIMELINE HEADER & FILTERS */}
+      <div className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-2">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4 text-cyan-400" />
+            <h3 className="text-sm font-bold tracking-wider text-slate-200 uppercase font-mono">
+              Session Timeline ({filteredTimeline.length} Checkpoints)
+            </h3>
           </div>
 
-          {/* Chronological Visual Timeline */}
-          <div className={`${themeClasses.card} border rounded-xl ${densityClasses.padding} space-y-6`}>
-            <div className="flex items-center justify-between border-b border-neutral-800/60 pb-3">
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-cyan-400" />
-                <h3 className="font-bold text-sm text-white">Live Intelligence Timeline</h3>
-              </div>
-              <span className="text-[10px] font-mono text-neutral-500">Real-Time News Stream</span>
-            </div>
+          {/* Timeline Filter Controls */}
+          <div className="flex flex-wrap gap-1 font-mono text-[10px]">
+            {["KEY_EVENTS", "FULL 15M", "PRICE", "BREADTH", "OPTIONS", "VOLATILITY", "NEWS", "ALL"].map(filterKey => (
+              <button
+                key={filterKey}
+                onClick={() => setActiveFilter(filterKey)}
+                className={`px-2 py-1 rounded transition-colors ${
+                  activeFilter === filterKey
+                    ? "bg-cyan-500 text-slate-950 font-bold"
+                    : "bg-slate-900 text-slate-400 border border-slate-800 hover:text-slate-200"
+                }`}
+              >
+                {filterKey}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            {eventClusters.length > 0 ? (
-              <div className="space-y-4">
-                {eventClusters.map((art: any, idx: number) => {
-                  const headline = stripHtml(art.canonical_headline);
-                  const source = safeArray(art.publishers).join(", ") || "UNAVAILABLE";
-                  const summary = stripHtml(art.reasoning);
-                  const category = stripHtml(art.category || "Regulatory / Macro");
-                  const dir = safeString(art.expected_direction || art.direction || "NEUTRAL").toUpperCase();
-                  const score = safeNumber(art.nifty_relevance, 0);
-                  const importance = safeString(art.impact_level || "LOW").toUpperCase();
+        {/* Timeline Event Cards (Vertical Chronological List) */}
+        <div className="relative pl-6 space-y-4 border-l-2 border-slate-800">
+          {filteredTimeline.map((item, idx) => {
+            const snap = item.market_snapshot || {};
+            const isGap = item.event_type === "TELEMETRY_GAP";
+            const isHigh = item.importance === "HIGH";
 
-                  return (
-                    <div key={art.event_cluster_id || idx} data-active-event-cluster={art.event_cluster_id} className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl space-y-3 font-sans">
-                      <div className="flex justify-between items-start gap-3">
-                        <div>
-                          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-cyan-400 block mb-1">
-                            {source} · {category}
-                          </span>
-                          <h4 className="text-sm font-bold text-white leading-snug">{headline}</h4>
-                        </div>
-                        <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-extrabold uppercase shrink-0 border ${
-                          dir === "BULLISH"
-                            ? "bg-emerald-950/60 text-emerald-400 border-emerald-800"
-                            : dir === "BEARISH"
-                              ? "bg-rose-950/60 text-rose-400 border-rose-800"
-                              : "bg-slate-950 text-slate-400 border-slate-800"
-                        }`}>
-                          Impact: {dir}
+            return (
+              <div key={idx} className="relative group">
+                {/* Node Bullet */}
+                <div className={`absolute -left-[31px] top-1.5 w-3.5 h-3.5 rounded-full border-2 ${
+                  isGap
+                    ? "bg-amber-500 border-amber-300 animate-pulse"
+                    : isHigh
+                    ? "bg-cyan-400 border-cyan-200"
+                    : "bg-slate-800 border-slate-600"
+                }`} />
+
+                {/* Timeline Card Content */}
+                <div className={`rounded-lg border p-3.5 space-y-2 text-xs transition-colors ${
+                  isGap
+                    ? "bg-amber-950/20 border-amber-800/40"
+                    : isHigh
+                    ? "bg-slate-900/90 border-slate-800 hover:border-slate-700"
+                    : "bg-slate-900/60 border-slate-800/80"
+                }`}>
+                  {/* Item Header */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/60 pb-2">
+                    <div className="flex items-center gap-2 font-mono">
+                      <span className="font-bold text-cyan-400 text-xs">{item.time_ist}</span>
+                      <span className="px-1.5 py-0.5 text-[9px] uppercase font-bold rounded bg-slate-800 text-slate-300">
+                        {item.phase}
+                      </span>
+                      <span className={`px-1.5 py-0.5 text-[9px] uppercase font-bold rounded ${
+                        isGap ? "bg-amber-950 text-amber-400 border border-amber-800/50" : "bg-slate-950 text-slate-400 border border-slate-800"
+                      }`}>
+                        {item.event_type}
+                      </span>
+                    </div>
+
+                    {/* Attribution Confidence */}
+                    <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${
+                      item.attribution_confidence === "OBSERVATION"
+                        ? "bg-emerald-950/40 text-emerald-400"
+                        : item.attribution_confidence === "POSSIBLE_CATALYST"
+                        ? "bg-amber-950/40 text-amber-400"
+                        : "bg-slate-800 text-slate-400"
+                    }`}>
+                      {item.attribution_confidence}
+                    </span>
+                  </div>
+
+                  {/* Headline & Interpretation */}
+                  <div>
+                    <h4 className="font-bold text-slate-100 text-sm">{item.headline}</h4>
+                    <p className="text-slate-300 mt-1 leading-relaxed">{item.interpretation}</p>
+                  </div>
+
+                  {/* Snapshot Bar (when not a gap) */}
+                  {!isGap && snap.nifty != null && (
+                    <div className="flex flex-wrap items-center gap-3 bg-slate-950/60 p-2 rounded border border-slate-800/60 font-mono text-[11px]">
+                      <div>
+                        <span className="text-[9px] text-slate-500 block uppercase">NIFTY</span>
+                        <span className="font-bold text-slate-200">{snap.nifty?.toFixed(2)}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-500 block uppercase">Change</span>
+                        <span className={`font-bold ${snap.change_points >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                          {snap.change_points >= 0 ? "+" : ""}{snap.change_points?.toFixed(2)} ({snap.change_percent >= 0 ? "+" : ""}{snap.change_percent?.toFixed(2)}%)
                         </span>
                       </div>
-
-                      <p className="text-xs text-slate-300 leading-relaxed font-sans">{summary}</p>
-
-                      <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-850 text-[10px] font-mono text-slate-400">
-                        <span>Updated: {formatDate(art.last_updated)}</span>
-                        <span>•</span>
-                        <span className="uppercase">Importance: <strong className="text-white">{importance}</strong></span>
-                        <span>•</span>
-                        <span className="bg-slate-950 px-1.5 py-0.5 rounded border border-slate-800">
-                          Relevance: {formatNumber(score, 1)}/10
-                        </span>
+                      <div>
+                        <span className="text-[9px] text-slate-500 block uppercase">Breadth</span>
+                        <span className="font-bold text-slate-300">{snap.breadth}</span>
+                      </div>
+                      {snap.pcr != null && (
+                        <div>
+                          <span className="text-[9px] text-slate-500 block uppercase">PCR</span>
+                          <span className="font-bold text-slate-300">{snap.pcr}</span>
+                        </div>
+                      )}
+                      {snap.vix != null && (
+                        <div>
+                          <span className="text-[9px] text-slate-500 block uppercase">VIX</span>
+                          <span className="font-bold text-slate-300">{snap.vix}</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-[9px] text-slate-500 block uppercase">Bias / Momentum</span>
+                        <span className="font-bold text-slate-300">{snap.structural_bias} · {snap.momentum}</span>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12 text-center space-y-3 font-mono">
-                <AlertTriangle className="h-8 w-8 text-slate-600 animate-pulse" />
-                <div className="space-y-1">
-                  <p className="text-xs font-bold text-slate-300">No active canonical event clusters</p>
-                  <p className="text-[11px] text-slate-500 max-w-md">
-                    Waiting for matching verified economic headlines or market events.
-                  </p>
+                  )}
+
+                  {/* Evidence List */}
+                  {item.evidence && item.evidence.length > 0 && (
+                    <div className="space-y-1">
+                      <span className="text-[10px] uppercase font-mono font-bold text-slate-500 block">Deterministic Evidence:</span>
+                      <ul className="list-disc list-inside space-y-0.5 text-slate-400 text-[11px] font-mono">
+                        {item.evidence.map((ev: string, eIdx: number) => (
+                          <li key={eIdx}>{ev}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* News Context (Conservative Attribution) */}
+                  {item.news_context && item.news_context.length > 0 && item.news_context[0].headline && (
+                    <div className="bg-slate-950/80 border border-slate-800/80 rounded p-2 text-[11px] space-y-1">
+                      <div className="flex items-center gap-1.5 text-amber-400 font-mono font-bold text-[10px] uppercase">
+                        <AlertTriangle className="h-3 w-3" />
+                        <span>Supporting News Context ({item.news_context[0].attribution}):</span>
+                      </div>
+                      <p className="text-slate-300 font-medium">"{item.news_context[0].headline}"</p>
+                      <p className="text-slate-400 italic text-[10px]">{item.news_context[0].attribution_note}</p>
+                    </div>
+                  )}
                 </div>
               </div>
-            )}
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 4. MAJOR TURNING POINTS & SESSION PHASES GRID */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Major Turning Points Card */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+            <Zap className="h-4 w-4 text-cyan-400" />
+            <h4 className="font-bold text-xs uppercase font-mono tracking-wider text-slate-200">
+              Major Turning Points ({turningPoints.length})
+            </h4>
+          </div>
+          <div className="space-y-2">
+            {turningPoints.map((tp: any, idx: number) => (
+              <div key={idx} className="bg-slate-950/60 border border-slate-800/60 p-2.5 rounded text-xs space-y-1">
+                <div className="flex items-center justify-between font-mono">
+                  <span className="font-bold text-cyan-400">{tp.time_ist}</span>
+                  <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                    {tp.type}
+                  </span>
+                </div>
+                <h5 className="font-bold text-slate-200">{tp.headline}</h5>
+                <p className="text-[11px] text-slate-400 font-mono">{tp.before_state} → {tp.after_state}</p>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Right column - Unconfigured/Disabled integrations (4 cols) */}
-        <div className="lg:col-span-4 space-y-6">
-          
-          {/* Economic Calendar events */}
-          <div className={`${themeClasses.card} border rounded-xl ${densityClasses.padding} space-y-4`}>
-            <div className="flex items-center justify-between border-b border-neutral-850 pb-2">
-              <h3 className="text-xs font-bold font-mono text-neutral-300 uppercase flex items-center gap-1.5">
-                <Globe className="h-4 w-4 text-purple-400" /> Premium Data Integrations
-              </h3>
-              <span className="text-[9px] font-mono text-neutral-500">Add-ons</span>
+        {/* Driver Analysis & Session Verdict Breakdown */}
+        <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2 border-b border-slate-800 pb-2">
+            <BarChart3 className="h-4 w-4 text-cyan-400" />
+            <h4 className="font-bold text-xs uppercase font-mono tracking-wider text-slate-200">
+              Driver Analysis & Session Limiters
+            </h4>
+          </div>
+          <div className="space-y-2 text-xs">
+            <div>
+              <span className="text-[10px] uppercase font-mono font-bold text-emerald-400 block mb-1">What Drove The Session:</span>
+              <ul className="list-disc list-inside space-y-1 text-slate-300 font-mono text-[11px]">
+                {safeArray(verdict.what_drove_session).map((drv: string, dIdx: number) => (
+                  <li key={dIdx}>{drv}</li>
+                ))}
+              </ul>
             </div>
-
-            <div className="space-y-3">
-              <div className="p-3 bg-neutral-900/40 rounded border border-neutral-800/40 text-xs space-y-2">
-                <div className="flex items-center gap-1.5 text-amber-400 font-bold font-mono text-[10px]">
-                  <HelpCircle className="h-3.5 w-3.5" /> EXTERNAL FEED REQUIRED
-                </div>
-                <p className="text-neutral-300 leading-relaxed text-[11px]">
-                  <strong>Sector Rotation</strong>, <strong>Institutional Flows (FII/DII)</strong>, 
-                  <strong>Global Markets Benchmark</strong>, and <strong>Economic Calendars</strong> are currently inactive.
-                </p>
-                <p className="text-neutral-500 text-[10px] leading-relaxed">
-                  To view real-time data for these widgets, connect an external institutional market feed API (e.g., Bloomberg Enterprise, Reuters, or Moneycontrol Premium) in your workstation settings.
-                </p>
-              </div>
+            <div className="pt-2 border-t border-slate-800/60">
+              <span className="text-[10px] uppercase font-mono font-bold text-amber-400 block mb-1">What Limited The Move:</span>
+              <ul className="list-disc list-inside space-y-1 text-slate-300 font-mono text-[11px]">
+                {safeArray(verdict.what_limited_move).map((lim: string, lIdx: number) => (
+                  <li key={lIdx}>{lim}</li>
+                ))}
+              </ul>
             </div>
           </div>
-
-          {/* Option intelligence highlights */}
-          {spot > 0 && feedHealth === "HEALTHY" && (
-            <div className={`${themeClasses.card} border rounded-xl ${densityClasses.padding} space-y-4`}>
-              <div className="flex items-center justify-between border-b border-neutral-850 pb-2">
-                <h3 className="text-xs font-bold font-mono text-neutral-300 uppercase flex items-center gap-1.5">
-                  <Layers className="h-4 w-4 text-cyan-400" /> Option Volatility Bounds
-                </h3>
-                <span className="text-[9px] font-mono text-neutral-500">Live Limits</span>
-              </div>
-
-              <div className="space-y-2 font-mono text-xs">
-                <div className="flex justify-between items-center p-2.5 bg-neutral-900/40 rounded border border-neutral-800/50">
-                  <span className="text-neutral-400">ATM Strike</span>
-                  <span className="font-extrabold text-white">{oc?.atm_strike ? `₹${oc.atm_strike}` : "UNAVAILABLE"}</span>
-                </div>
-                <div className="flex justify-between items-center p-2.5 bg-neutral-900/40 rounded border border-neutral-800/50">
-                  <span className="text-neutral-400">Implied Volatility</span>
-                  <span className="font-extrabold text-white">{atmIv > 0 ? `${atmIv.toFixed(2)}%` : "UNAVAILABLE"}</span>
-                </div>
-                <div className="flex justify-between items-center p-2.5 bg-neutral-900/40 rounded border border-neutral-800/50">
-                  <span className="text-neutral-400">Expected Weekly Move</span>
-                  <span className="font-extrabold text-cyan-400">{expectedMove > 0 ? `±${expectedMove.toFixed(2)} pts` : "UNAVAILABLE"}</span>
-                </div>
-              </div>
-            </div>
-          )}
-
         </div>
-
       </div>
 
     </div>
   );
 }
-
-function timeString(): string {
-  const d = new Date();
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
-export default MarketStory;

@@ -2,6 +2,6 @@
 
 from .compatibility_serializer import CompatibilitySerializer
 from .data_quality_service import DataQualityService
-from .workstation_state_service import WorkstationStateService
+from .workstation_state_service import WorkstationStateService, validate_setup_geometry
 
-__all__ = ["CompatibilitySerializer", "DataQualityService", "WorkstationStateService"]
+__all__ = ["CompatibilitySerializer", "DataQualityService", "WorkstationStateService", "validate_setup_geometry"]

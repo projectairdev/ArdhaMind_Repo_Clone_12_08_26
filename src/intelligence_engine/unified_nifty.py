@@ -558,6 +558,227 @@ class UnifiedNiftyIntelligenceBuilder:
             sig = signals.get(name) or {}
             opposing_ev.extend(sig.get("evidence") or [])
 
+        # ── SPRINT D.2 DECISION INTELLIGENCE SYNTHESIS ──
+        spot_val = market.get("current_spot")
+        prev_close_val = market.get("previous_close")
+        spot_change = (spot_val - prev_close_val) if (spot_val and prev_close_val) else 0.0
+
+        if "BULLISH" in align_state:
+            directional_pressure = "Bullish"
+        elif "BEARISH" in align_state:
+            directional_pressure = "Bearish"
+        else:
+            directional_pressure = "Mixed"
+
+        if spot_change > 15.0:
+            momentum = "Improving"
+        elif spot_change < -15.0:
+            momentum = "Weakening"
+        else:
+            momentum = "Stabilizing"
+
+        if session != "MARKET_OPEN" or confidence in {"INSUFFICIENT"}:
+            posture = "STAND_ASIDE"
+            posture_label = "STAND ASIDE"
+            what_now = "Market is closed or canonical evidence is insufficient. Stand aside and await market session startup."
+        elif risk.get("state") == "HIGH" or align_state in {"CONFLICTED", "INSUFFICIENT_EVIDENCE"}:
+            posture = "HIGH_UNCERTAINTY"
+            posture_label = "HIGH UNCERTAINTY — STAND ASIDE"
+            what_now = "Conflicting or high-risk market cues detected. Stand aside until directional consensus forms."
+        elif "BEARISH" in align_state:
+            if spot_val and decision_zones:
+                sup_zone = next((z for z in decision_zones if z["role"] == "SUPPORT"), None)
+                if sup_zone and spot_val <= sup_zone["upper"] + 15.0:
+                    posture = "WATCH_BREAKDOWN"
+                    posture_label = "WATCH FOR BREAKDOWN"
+                    what_now = f"Price is testing lower decision area {sup_zone['display_range']} with bearish pressure. Watch for a confirmed breakdown with expanding declines."
+                else:
+                    posture = "BEARISH_BIAS_AWAIT_CONFIRMATION"
+                    posture_label = "BEARISH BIAS — AWAIT CONFIRMATION"
+                    what_now = "Structure is bearish but confirmation is incomplete. Do not chase the move. Watch lower support and constituent breadth."
+            else:
+                posture = "BEARISH_BIAS_AWAIT_CONFIRMATION"
+                posture_label = "BEARISH BIAS — AWAIT CONFIRMATION"
+                what_now = "Structure is bearish but confirmation is incomplete. Watch lower support and breadth."
+        elif "BULLISH" in align_state:
+            if spot_val and decision_zones:
+                res_zone = next((z for z in decision_zones if z["role"] == "RESISTANCE"), None)
+                if res_zone and spot_val >= res_zone["lower"] - 15.0:
+                    posture = "WATCH_BREAKOUT"
+                    posture_label = "WATCH FOR BREAKOUT"
+                    what_now = f"Price is testing upper decision area {res_zone['display_range']} with bullish momentum. Watch for a confirmed breakout with advancing breadth expansion."
+                else:
+                    posture = "BULLISH_BIAS_AWAIT_CONFIRMATION"
+                    posture_label = "BULLISH BIAS — AWAIT CONFIRMATION"
+                    what_now = "Structure is bullish but upside breakout confirmation is pending. Await breadth expansion above resistance."
+            else:
+                posture = "BULLISH_BIAS_AWAIT_CONFIRMATION"
+                posture_label = "BULLISH BIAS — AWAIT CONFIRMATION"
+                what_now = "Structure is bullish but confirmation is incomplete. Watch upper resistance and breadth."
+        else:
+            posture = "RANGE_MEAN_REVERSION"
+            posture_label = "RANGE / MEAN-REVERSION CONDITIONS"
+            what_now = "Price remains pinned between key decision areas. Directional entries have poor confirmation; range conditions dominate."
+
+        live_decision = {
+            "nifty_spot": spot_val,
+            "market_state": session,
+            "directional_pressure": directional_pressure,
+            "momentum": momentum,
+            "decision_posture": posture,
+            "decision_posture_label": posture_label,
+            "confidence": confidence,
+            "data_freshness": "FRESH" if session == "MARKET_OPEN" else "STALE/LAST_SESSION"
+        }
+
+        primary_scenario = scenarios[0] if scenarios else {}
+        alt_scenario = scenarios[1] if len(scenarios) > 1 else {}
+
+        most_likely_path = {
+            "title": primary_scenario.get("name", "RANGE_BOUND_CONSOLIDATION").replace("_", " ").title(),
+            "confidence": confidence,
+            "time_horizon": "NEXT 5–15 MINUTES",
+            "why": confirming_ev if confirming_ev else [f"Intraday NIFTY spot structure supports {pref_title.lower()}."],
+            "confirmation_conditions": primary_scenario.get("confirmation_conditions", []),
+            "invalidation_conditions": primary_scenario.get("invalidation_conditions", [])
+        }
+
+        alternate_path = {
+            "title": alt_scenario.get("name", "DIRECTIONAL_BREAKOUT_BUILDUP").replace("_", " ").title(),
+            "confidence": "LOW" if confidence == "HIGH" else "MODERATE",
+            "time_horizon": "NEXT 5–15 MINUTES",
+            "why": opposing_ev if opposing_ev else [f"Alternate path triggers if primary structure is invalidated."],
+            "confirmation_conditions": alt_scenario.get("confirmation_conditions", []),
+            "invalidation_conditions": alt_scenario.get("invalidation_conditions", [])
+        }
+
+        sup_display = "Awaiting live structural level"
+        res_display = "Awaiting live structural level"
+        if decision_zones:
+            for z in decision_zones:
+                if z["role"] == "SUPPORT" and sup_display == "Awaiting live structural level":
+                    sup_display = z["display_range"]
+                elif z["role"] == "RESISTANCE" and res_display == "Awaiting live structural level":
+                    res_display = z["display_range"]
+
+        # Derive profit reference zones strictly from canonical decision_zones
+        supports_in_order = [z["display_range"] for z in decision_zones if z["role"] == "SUPPORT"]
+        resistances_in_order = [z["display_range"] for z in decision_zones if z["role"] == "RESISTANCE"]
+
+        if "BEARISH" in align_state:
+            setup_type = "BREAKDOWN_CONTINUATION"
+            direction = "BEARISH"
+            instrument = "NIFTY PUT"
+            entry_ref = supports_in_order[0] if supports_in_order else "Awaiting live structural level"
+            inval_ref = resistances_in_order[0] if resistances_in_order else "Awaiting live structural level"
+            trigger_cond = f"NIFTY spot breaks below support {entry_ref} with declining constituent breadth confirmation"
+            first_profit = supports_in_order[1] if len(supports_in_order) > 1 else supports_in_order[0] if supports_in_order else "Unavailable"
+            second_profit = supports_in_order[2] if len(supports_in_order) > 2 else "Unavailable"
+        elif "BULLISH" in align_state:
+            setup_type = "BREAKOUT_CONTINUATION"
+            direction = "BULLISH"
+            instrument = "NIFTY CALL"
+            entry_ref = resistances_in_order[0] if resistances_in_order else "Awaiting live structural level"
+            inval_ref = supports_in_order[0] if supports_in_order else "Awaiting live structural level"
+            trigger_cond = f"NIFTY spot sustains above resistance {entry_ref} with advancing constituent breadth expansion"
+            first_profit = resistances_in_order[1] if len(resistances_in_order) > 1 else resistances_in_order[0] if resistances_in_order else "Unavailable"
+            second_profit = resistances_in_order[2] if len(resistances_in_order) > 2 else "Unavailable"
+        else:
+            setup_type = "RANGE_FADE"
+            direction = "NEUTRAL"
+            instrument = "NO OPTION SETUP"
+            if supports_in_order and resistances_in_order:
+                entry_ref = supports_in_order[0]
+                inval_ref = resistances_in_order[0]
+            elif supports_in_order:
+                entry_ref = supports_in_order[0]
+                inval_ref = "Awaiting live structural level"
+            elif resistances_in_order:
+                entry_ref = resistances_in_order[0]
+                inval_ref = "Awaiting live structural level"
+            else:
+                entry_ref = "Awaiting live structural level"
+                inval_ref = "Awaiting live structural level"
+
+            trigger_cond = f"Price tests decision boundary {entry_ref} without constituent breadth confirmation"
+            first_profit = inval_ref
+            second_profit = "Unavailable"
+
+        setup_candidate = {
+            "setup_type": setup_type,
+            "direction": direction,
+            "instrument_to_watch": instrument,
+            "trigger_condition": trigger_cond,
+            "entry_reference_zone": entry_ref,
+            "invalidation_zone": inval_ref,
+            "invalidation_plan": invalidations if invalidations else [f"Price reclaims {inval_ref}", "Breadth reverses to opposing state"],
+            "profit_reference_zones": [
+                {"label": "FIRST PROFIT REFERENCE", "zone": first_profit},
+                {"label": "SECOND PROFIT REFERENCE", "zone": second_profit},
+                {"label": "TRAIL / EXIT CONDITION", "zone": "Scenario loses confirmation or volatility expands"}
+            ],
+            "risk_state": risk.get("state"),
+            "confidence": confidence,
+            "why": pref_desc,
+            "missing_conditions": [
+                "Constituent breadth confirmation required",
+                "Option PCR / IV alignment check required"
+            ]
+        }
+
+        what_to_watch = [
+            {
+                "rank": 1,
+                "label": f"Nearest Support Zone ({sup_display})",
+                "current_value": f"{spot_val:g}" if spot_val else "N/A",
+                "trigger_condition": f"Break below {sup_display}",
+                "why_it_matters": "Loss of support opens downside extension towards lower structural levels."
+            },
+            {
+                "rank": 2,
+                "label": f"Nearest Resistance Zone ({res_display})",
+                "current_value": f"{spot_val:g}" if spot_val else "N/A",
+                "trigger_condition": f"Reclaim above {res_display}",
+                "why_it_matters": "Reclaiming resistance invalidates bearish setup and triggers range bounce."
+            },
+            {
+                "rank": 3,
+                "label": "Constituent Breadth Advances",
+                "current_value": (signals.get("breadth", {}).get("evidence") or ["Unavailable"])[0],
+                "trigger_condition": "Breadth directional state shift (advances vs declines expansion)",
+                "why_it_matters": "Breadth confirms whether price movement has broad institutional participation."
+            },
+            {
+                "rank": 4,
+                "label": "Option PCR & Max Pain",
+                "current_value": (signals.get("options", {}).get("evidence") or ["Unavailable"])[0],
+                "trigger_condition": "Option PCR regime shift or strike wall migration",
+                "why_it_matters": "Option writer positioning establishes intraday support and resistance boundaries."
+            },
+            {
+                "rank": 5,
+                "label": "India VIX Volatility State",
+                "current_value": (signals.get("volatility", {}).get("evidence") or ["Unavailable"])[0],
+                "trigger_condition": "Volatility regime escalation or contraction",
+                "why_it_matters": "Volatility expansion indicates accelerating directional moves or market risk."
+            }
+        ]
+
+        if_then_monitor = [
+            {
+                "if_condition": f"NIFTY breaks below support {sup_display} with declining constituent breadth",
+                "then_outcome": "Bearish continuation setup activates with higher confidence."
+            },
+            {
+                "if_condition": f"NIFTY reclaims resistance {res_display} with advancing constituent expansion",
+                "then_outcome": "Bearish setup is invalidated; bullish recovery scenario gains priority."
+            },
+            {
+                "if_condition": f"NIFTY remains between {sup_display} and {res_display}",
+                "then_outcome": "Range-bound consolidation conditions remain dominant; stand aside."
+            }
+        ]
+
         at_the_open = [
             {"item": "Does the opening gap hold or fill quickly?", "source_rule": "signals.opening"},
             {"item": "Does market breadth confirm the move (min 40/50 constituents)?", "source_rule": "signals.breadth"},
@@ -606,11 +827,18 @@ class UnifiedNiftyIntelligenceBuilder:
             "decision_areas": decision_zones,
             "what_changed": what_changed,
             "next_watch": [
-                f"Watch support zone ({decision_zones[0]['lower']:g}–{decision_zones[0]['upper']:g})" if decision_zones else "Watch price action around key levels",
+                f"Watch support zone ({sup_display})",
                 "Breadth should improve above 30 advances for bullish confirmation",
                 "Monitor option PCR and IV shifts",
                 "Watch for volatility or macro news expansion",
             ],
+            "live_decision": live_decision,
+            "most_likely_path": most_likely_path,
+            "alternate_path": alternate_path,
+            "setup_candidate": setup_candidate,
+            "what_to_do_now": what_now,
+            "what_to_watch": what_to_watch,
+            "if_then_monitor": if_then_monitor,
         }
 
         return {
@@ -628,4 +856,11 @@ class UnifiedNiftyIntelligenceBuilder:
             "opposes": opposing_ev,
             "at_the_open": at_the_open,
             "live_assistant_monitor": live_assistant_monitor,
+            "live_decision": live_decision,
+            "most_likely_path": most_likely_path,
+            "alternate_path": alternate_path,
+            "setup_candidate": setup_candidate,
+            "what_to_do_now": what_now,
+            "what_to_watch": what_to_watch,
+            "if_then_monitor": if_then_monitor,
         }

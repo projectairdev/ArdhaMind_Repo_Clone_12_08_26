@@ -55,6 +55,7 @@ class CanonicalWorkstationState:
     macro_intelligence: Optional[dict[str, Any]] = None
     unified_intelligence: Optional[dict[str, Any]] = None
     live_assistant_temporal_state: Optional[dict[str, Any]] = None
+    session_story: Optional[dict[str, Any]] = None
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
