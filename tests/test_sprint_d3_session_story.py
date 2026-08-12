@@ -125,7 +125,7 @@ def test_telemetry_gap_timeline_event():
 
 def test_news_attribution_conservative_contract():
     payload = get_base_legacy_payload()
-    now_dt = datetime(2026, 8, 11, 9, 30, 0, tzinfo=timezone.utc)
+    now_dt = datetime(2026, 8, 11, 4, 0, 0, tzinfo=timezone.utc)
     state = WorkstationStateService.build_from_legacy(
         payload, broker_state="CONNECTED", market_state="OPEN", now=now_dt
     )

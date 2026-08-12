@@ -9,7 +9,7 @@ import { createServer as createViteServer } from "vite";
 import { WebSocketServer, WebSocket } from "ws";
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json());
 
@@ -231,12 +231,31 @@ function startPythonDaemon() {
   });
 
   pyDaemon.on("close", (code) => {
-    console.warn(`Python Daemon closed with exit code ${code}. Respawning in 3 seconds...`);
+    console.warn(`Python Daemon closed with exit code ${code}.`);
     rejectPendingDaemonRequests(new Error(`Python bridge daemon closed with exit code ${code}`));
     pyDaemon = null;
-    setTimeout(startPythonDaemon, 3000);
+    if (!isShuttingDown) {
+      console.log("Respawning Python Daemon in 3 seconds...");
+      setTimeout(startPythonDaemon, 3000);
+    }
   });
 }
+
+let isShuttingDown = false;
+function shutdownCleanly(signal: string) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`Received ${signal}. Shutting down ArdhaMind server cleanly...`);
+  if (pyDaemon) {
+    try {
+      pyDaemon.kill("SIGTERM");
+    } catch {}
+  }
+  process.exit(0);
+}
+
+process.on("SIGINT", () => shutdownCleanly("SIGINT"));
+process.on("SIGTERM", () => shutdownCleanly("SIGTERM"));
 
 // Start the daemon process
 startPythonDaemon();

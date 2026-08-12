@@ -672,15 +672,21 @@ def run_daemon(wm, bs):
                     logger.error(f"Failed to connect real stream: {e}")
                         
         try:
-            # Initialize instruments master cache if broker connects
-            if bs.is_connected() and instruments_df is None:
-                try:
-                    from src.data_engine.instruments import InstrumentManager
-                    instruments_df = InstrumentManager.get_instruments(bs.get_gateway())
-                    InstrumentService.get_instance().load_instruments(bs, force_refresh=False)
-                    logger.info("Zerodha instrument list loaded dynamically in daemon loop.")
-                except Exception as e:
-                    logger.error(f"Failed to initialize Zerodha instruments inside daemon: {e}")
+            # Initialize instruments master cache asynchronously if broker connects
+            if bs.is_connected() and instruments_df is None and not getattr(bs, "_instruments_loading", False):
+                bs._instruments_loading = True
+                def _bg_load_instruments():
+                    global instruments_df
+                    try:
+                        from src.data_engine.instruments import InstrumentManager
+                        instruments_df = InstrumentManager.get_instruments(bs.get_gateway())
+                        InstrumentService.get_instance().load_instruments(bs, force_refresh=False)
+                        logger.info("Zerodha instrument list loaded dynamically in background thread.")
+                    except Exception as e:
+                        logger.error(f"Failed to initialize Zerodha instruments inside daemon: {e}")
+                    finally:
+                        bs._instruments_loading = False
+                threading.Thread(target=_bg_load_instruments, daemon=True).start()
 
             # Production Integrity: Never fabricate spot/VIX values.
             # All values must originate from live Zerodha ticks.
@@ -690,7 +696,7 @@ def run_daemon(wm, bs):
             spot_finnifty = 0.0
             india_vix = 0.0
 
-            # If connected, fetch dynamic spot prices and Option chain context
+            # If connected, fetch dynamic spot prices immediately from orchestrator cache
             if bs.is_connected():
                 orch = bs._get_orchestrator()
                 tick_nifty = orch.latest_ticks.get("NSE:NIFTY 50")
@@ -721,43 +727,43 @@ def run_daemon(wm, bs):
                     except Exception:
                         pass
 
-                try:
-                    from src.broker.services.market_feed_service import MarketFeedService
-                    expiries = MarketFeedService.get_instance().resolve_expiries(bs)
-                    if expiries:
-                        # Filter expiries >= today
-                        from datetime import datetime as dt_cls, date as dt_date
-                        today_dt = dt_date.today()
-                        future_exp = []
-                        for e in expiries:
-                            try:
-                                e_date = dt_cls.strptime(e, "%Y-%m-%d").date()
-                                if e_date >= today_dt:
-                                    future_exp.append(e)
-                            except Exception:
-                                pass
-                        
-                        # Production Integrity: Never substitute hardcoded expiry dates.
-                        # If Zerodha has no future expiries, leave the list empty.
-                        # The frontend will display — for any expiry-dependent field.
-                        
-                        # Dynamically update WebSocket option subscriptions
-                        current_weekly = future_exp[0]
-                        MarketFeedService.get_instance().update_subscriptions(bs, spot_nifty, current_weekly)
-                        
-                        # Compile Option & Market Contexts
+                # Decouple Option Chain REST fetching from critical NIFTY spot publication path
+                # Option chain REST compilation runs asynchronously in background thread every 15 seconds
+                global _last_option_chain_fetch, cached_market_context, cached_option_context
+                now_ts = time.time()
+                if spot_nifty > 0 and (now_ts - getattr(bs, "_last_option_chain_fetch", 0.0)) > 15.0 and not getattr(bs, "_option_chain_loading", False):
+                    bs._option_chain_loading = True
+                    def _bg_update_option_chain(s_nifty: float, vix_val: float):
                         global cached_market_context, cached_option_context
-                        cached_option_context = MarketFeedService.get_instance().build_option_chain_context(bs, spot_nifty, future_exp)
-                        
-                        # Build live MarketContext using MarketContextBuilder
-                        from src.broker.services.market_context_builder import MarketContextBuilder
-                        orch_instance = bs._get_orchestrator()
-                        cached_market_context = MarketContextBuilder.build(
-                            bs, orch_instance, india_vix,
-                            (cached_macro_context or {}).get("constituent_metadata"),
-                        )
-                except Exception as ex:
-                    logger.error(f"Error compiling live option/market context: {ex}")
+                        try:
+                            from src.broker.services.market_feed_service import MarketFeedService
+                            expiries = MarketFeedService.get_instance().resolve_expiries(bs)
+                            if expiries:
+                                from datetime import datetime as dt_cls, date as dt_date
+                                today_dt = dt_date.today()
+                                future_exp = []
+                                for e in expiries:
+                                    try:
+                                        if dt_cls.strptime(e, "%Y-%m-%d").date() >= today_dt:
+                                            future_exp.append(e)
+                                    except Exception:
+                                        pass
+                                if future_exp:
+                                    current_weekly = future_exp[0]
+                                    MarketFeedService.get_instance().update_subscriptions(bs, s_nifty, current_weekly)
+                                    cached_option_context = MarketFeedService.get_instance().build_option_chain_context(bs, s_nifty, future_exp)
+                                    from src.broker.services.market_context_builder import MarketContextBuilder
+                                    orch_instance = bs._get_orchestrator()
+                                    cached_market_context = MarketContextBuilder.build(
+                                        bs, orch_instance, vix_val,
+                                        (cached_macro_context or {}).get("constituent_metadata"),
+                                    )
+                            bs._last_option_chain_fetch = time.time()
+                        except Exception as ex:
+                            logger.error(f"Error compiling live option/market context: {ex}")
+                        finally:
+                            bs._option_chain_loading = False
+                    threading.Thread(target=_bg_update_option_chain, args=(spot_nifty, india_vix), daemon=True).start()
 
             broker_account = defaultBrokerAccount
             broker_funds = defaultBrokerFunds

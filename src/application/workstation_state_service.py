@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -2310,13 +2310,13 @@ class WorkstationStateService:
             same_day_snaps = [snap]
 
         open_snap = next(
-            (s for s in same_day_snaps if s.get("market_session_phase") in ("MARKET_OPEN", "OPEN") and s.get("continuous_session_open")),
-            same_day_snaps[0]
+            (s for s in same_day_snaps if s.get("market_session_phase") in ("MARKET_OPEN", "OPEN") and s.get("continuous_session_open") and s.get("spot") is not None),
+            next((s for s in same_day_snaps if s.get("spot") is not None), same_day_snaps[0])
         )
 
         prev_close = unified.get("previous_close") or 24583.80
         open_price = open_snap.get("spot")
-        current_price = snap.get("spot")
+        current_price = snap.get("spot") or (same_day_snaps[-1].get("spot") if same_day_snaps else None)
 
         spots = [s.get("spot") for s in same_day_snaps if isinstance(s.get("spot"), (int, float))]
         day_high = max(spots) if spots else current_price
@@ -2330,20 +2330,34 @@ class WorkstationStateService:
         opening_char = "GAP_DOWN" if opening_gap < -10 else "GAP_UP" if opening_gap > 10 else "FLAT_OPEN"
 
         b_open = open_snap.get("breadth") or {}
-        b_curr = snap.get("breadth") or {}
+        b_curr = (snap.get("breadth") or (same_day_snaps[-1].get("breadth") if same_day_snaps else {})) or {}
         breadth_open_str = f"{b_open.get('advances', 0)}A / {b_open.get('declines', 0)}D" if b_open.get('advances') is not None else "Unavailable"
         breadth_curr_str = f"{b_curr.get('advances', 0)}A / {b_curr.get('declines', 0)}D" if b_curr.get('advances') is not None else "Unavailable"
 
         pcr_open = open_snap.get("options", {}).get("pcr")
-        pcr_curr = snap.get("options", {}).get("pcr")
+        pcr_curr = snap.get("options", {}).get("pcr") or (same_day_snaps[-1].get("options", {}).get("pcr") if same_day_snaps else None)
         vix_open = open_snap.get("vix")
-        vix_curr = snap.get("vix")
+        vix_curr = snap.get("vix") or (same_day_snaps[-1].get("vix") if same_day_snaps else None)
 
         bias = live_decision.get("structural_bias", "NEUTRAL")
         dom_character = "BEARISH_TREND" if change_points < -30 and bias == "BEARISH" else "BULLISH_TREND" if change_points > 30 and bias == "BULLISH" else "RANGE" if abs(change_points) <= 30 else "MIXED"
 
         timeline: list[dict[str, Any]] = []
         turning_points: list[dict[str, Any]] = []
+
+        def _get_ist_time_str(s_dict: dict[str, Any]) -> str:
+            ts_str = str(s_dict.get("timestamp") or s_dict.get("occurred_at") or "")
+            if len(ts_str) >= 19:
+                try:
+                    dt_utc = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    if dt_utc.tzinfo is None:
+                        dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+                    ist_tz = timezone(timedelta(hours=5, minutes=30))
+                    return dt_utc.astimezone(ist_tz).strftime("%H:%M")
+                except Exception:
+                    pass
+            return ts_str[11:16] if len(ts_str) >= 16 else ""
+
         milestones = [
             ("08:50", "PRE_MARKET", "PRE_MARKET_CONTEXT", "Pre-Market Context"),
             ("09:07", "PRE_OPEN", "PRE_OPEN_UPDATE", "Pre-Open Equilibrium"),
@@ -2360,7 +2374,6 @@ class WorkstationStateService:
             ("15:30", "CLOSED", "MARKET_CLOSE", "Session Market Close (15:30 IST)")
         ]
 
-        SAMPLING_TOLERANCE_SECONDS = 120.0
         def _parse_ts(ts_val: Any) -> datetime | None:
             if not ts_val:
                 return None
@@ -2378,33 +2391,65 @@ class WorkstationStateService:
                 if cls._is_genuine_telemetry_gap(same_day_snaps[i-1], same_day_snaps[i], gap_sec):
                     gaps.append((same_day_snaps[i-1], same_day_snaps[i], gap_sec))
 
-        news_items = news.get("items") or []
+        # Strict bounded session news window:
+        # Permitted window: from 15:30 IST of (session_date - 1 day) to 23:59:59 IST of session_date
+        try:
+            sess_dt_obj = datetime.strptime(session_date, "%Y-%m-%d").date()
+            prev_day_str = (sess_dt_obj - timedelta(days=1)).strftime("%Y-%m-%d")
+        except Exception:
+            prev_day_str = session_date
+
+        def _is_news_in_session_window(n_dict: dict[str, Any]) -> bool:
+            pub = str(n_dict.get("published_at") or "")
+            if not pub:
+                return False
+            pub_clean = pub.replace("Z", "").split("+")[0].split(".")[0]
+            if len(pub_clean) >= 10:
+                pub_date = pub_clean[:10]
+                if pub_date > session_date:
+                    return False
+                if pub_date < prev_day_str:
+                    return False
+                if pub_date == prev_day_str and len(pub_clean) >= 16:
+                    pub_time = pub_clean[11:16]
+                    if pub_time < "10:00":  # 10:00 UTC = 15:30 IST
+                        return False
+            return True
+
+        news_items = [
+            n for n in (news.get("items") or [])
+            if _is_news_in_session_window(n)
+        ]
 
         for target_time_str, phase_str, evt_type_str, headline_base in milestones:
-            matched_snap = None
-            for s in same_day_snaps:
-                s_ts = str(s.get("timestamp", ""))
-                if target_time_str in s_ts or target_time_str in str(s.get("occurred_at", "")):
-                    matched_snap = s
-                    break
-
-            if not matched_snap and phase_str == "MARKET_OPEN":
+            # As-of-time snapshot selection: select snapshots <= target_time_str (IST)
+            if phase_str == "PRE_MARKET":
+                matched_snap = next((s for s in same_day_snaps if s.get("market_session_phase") == "PRE_MARKET"), None)
+            elif phase_str == "PRE_OPEN":
+                matched_snap = next((s for s in same_day_snaps if s.get("market_session_phase") == "PRE_OPEN"), None)
+            elif phase_str == "MARKET_OPEN":
                 matched_snap = open_snap
-            elif not matched_snap and phase_str == "CLOSED" and market_closed:
-                matched_snap = snap
+            elif phase_str == "CLOSED":
+                matched_snap = snap if market_closed else same_day_snaps[-1]
+            else:
+                as_of_snaps = [
+                    s for s in same_day_snaps
+                    if _get_ist_time_str(s) <= target_time_str and s.get("spot") is not None
+                ]
+                matched_snap = as_of_snaps[-1] if as_of_snaps else None
 
             if matched_snap or phase_str in ("PRE_MARKET", "PRE_OPEN", "MARKET_OPEN", "CLOSED"):
-                cur_s = matched_snap or snap
-                sp_val = cur_s.get("spot") or current_price
-                sp_chg = round(sp_val - prev_close, 2) if (sp_val and prev_close) else 0.0
+                cur_s = matched_snap
+                sp_val = cur_s.get("spot") if cur_s else (open_price if phase_str in ("PRE_MARKET", "PRE_OPEN", "MARKET_OPEN") else None)
+                sp_chg = round(sp_val - prev_close, 2) if (sp_val is not None and prev_close) else 0.0
                 sp_pct = round((sp_chg / prev_close) * 100, 2) if (prev_close and prev_close > 0) else 0.0
 
-                b_s = cur_s.get("breadth") or {}
-                b_str = f"{b_s.get('advances', 0)}A / {b_s.get('declines', 0)}D" if b_s.get('advances') is not None else "Unavailable"
+                b_s = cur_s.get("breadth") if cur_s else {}
+                b_str = f"{b_s.get('advances', 0)}A / {b_s.get('declines', 0)}D" if (b_s and b_s.get('advances') is not None) else "Unavailable"
 
-                opt_s = cur_s.get("options") or {}
-                pcr_val_s = opt_s.get("pcr")
-                vix_val_s = cur_s.get("vix")
+                opt_s = cur_s.get("options") if cur_s else {}
+                pcr_val_s = opt_s.get("pcr") if opt_s else None
+                vix_val_s = cur_s.get("vix") if cur_s else None
 
                 attached_news = []
                 for n_item in news_items:
@@ -2448,7 +2493,7 @@ class WorkstationStateService:
                         "breadth": b_str,
                         "pcr": pcr_val_s,
                         "vix": vix_val_s,
-                        "structural_bias": cur_s.get("regime") or bias,
+                        "structural_bias": (cur_s.get("regime") if cur_s else None) or bias,
                         "momentum": "WEAKENING" if sp_chg < 0 else "IMPROVING" if sp_chg > 0 else "STABLE",
                         "scenario": live_decision.get("most_likely_path", {}).get("scenario", "Consolidation")
                     },
@@ -2474,6 +2519,54 @@ class WorkstationStateService:
                         "importance": "HIGH",
                         "provenance": "canonical.market_session"
                     })
+
+        # Identify intraday low snapshot (e.g. 12:15 IST low 24,266.85)
+        valid_snaps_with_spot = [s for s in same_day_snaps if isinstance(s.get("spot"), (int, float))]
+        if valid_snaps_with_spot:
+            min_spot_snap = min(valid_snaps_with_spot, key=lambda s: s["spot"])
+            min_time_ist = _get_ist_time_str(min_spot_snap)
+            if min_time_ist and min_time_ist not in [t["timestamp"] for t in timeline]:
+                low_val = min_spot_snap["spot"]
+                low_chg = round(low_val - prev_close, 2)
+                low_pct = round((low_chg / prev_close) * 100, 2)
+                low_item = {
+                    "timestamp": min_time_ist,
+                    "time_ist": f"{min_time_ist} IST",
+                    "phase": "MIDDAY",
+                    "event_type": "SESSION_LOW",
+                    "importance": "HIGH",
+                    "headline": f"INTRADAY SESSION LOW: NIFTY {low_val:g} ({low_chg:+.2f})",
+                    "market_snapshot": {
+                        "nifty": low_val,
+                        "change_points": low_chg,
+                        "change_percent": low_pct,
+                        "breadth": "Extrema Window",
+                        "pcr": min_spot_snap.get("options", {}).get("pcr"),
+                        "vix": min_spot_snap.get("vix"),
+                        "structural_bias": "BEARISH",
+                        "momentum": "WEAKENING",
+                        "scenario": "Lower Support Testing"
+                    },
+                    "interpretation": f"NIFTY hit intraday session low of {low_val:g} ({low_chg:+.2f} pts vs previous close {prev_close:g}) at {min_time_ist} IST.",
+                    "why": [f"Session low observed at {min_time_ist} IST"],
+                    "evidence": [f"Spot low: {low_val:g}", f"Previous close: {prev_close:g}"],
+                    "news_context": [{"attribution": "NO_VERIFIED_CATALYST", "attribution_note": "Intraday price extrema observation."}],
+                    "attribution_confidence": "OBSERVATION",
+                    "provenance": ["canonical.state_history"],
+                    "data_quality": "FRESH"
+                }
+                timeline.append(low_item)
+                turning_points.append({
+                    "timestamp": min_time_ist,
+                    "time_ist": f"{min_time_ist} IST",
+                    "type": "SESSION_LOW",
+                    "headline": f"Session Low Observed ({low_val:g})",
+                    "before_state": "SELLING_PRESSURE",
+                    "after_state": "SUPPORT_TESTING",
+                    "evidence": [f"Spot Low: {low_val:g}"],
+                    "importance": "HIGH",
+                    "provenance": "canonical.market_session"
+                })
 
         for gap_prev, gap_curr, gap_sec in gaps:
             t1 = str(gap_prev.get("timestamp", ""))

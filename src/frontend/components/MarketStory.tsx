@@ -127,16 +127,18 @@ export function MarketStory() {
         {/* Latency Diagnostic Summary */}
         <div className="flex flex-col items-end gap-1 mt-3 md:mt-0 font-mono text-xs">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-400 uppercase">Latency Pipeline:</span>
+            <span className="text-[10px] text-slate-400 uppercase">Session Evidence Status:</span>
             <span className={`px-2 py-0.5 text-[10px] font-bold rounded ${
-              latency.status === "HEALTHY" ? "bg-emerald-950/50 text-emerald-400 border border-emerald-800/30" :
-              latency.status === "SOURCE_STALE" ? "bg-rose-950/50 text-rose-400 border border-rose-800/30" : "bg-amber-950/50 text-amber-400 border border-amber-800/30"
+              isClosed
+                ? (statusClass === "COMPLETE" ? "bg-emerald-950/50 text-emerald-400 border border-emerald-800/30" : "bg-amber-950/50 text-amber-400 border border-amber-800/30")
+                : (latency.status === "HEALTHY" ? "bg-emerald-950/50 text-emerald-400 border border-emerald-800/30" :
+                   latency.status === "SOURCE_STALE" ? "bg-rose-950/50 text-rose-400 border border-rose-800/30" : "bg-amber-950/50 text-amber-400 border border-amber-800/30")
             }`}>
-              {latency.status || "HEALTHY"}
+              {isClosed ? (statusClass === "COMPLETE" ? "HISTORICAL REVIEW · COMPLETE" : "HISTORICAL REVIEW · PARTIAL EVIDENCE") : (latency.status || "HEALTHY")}
             </span>
           </div>
           <span className="text-[10px] text-slate-400">
-            Src→Feed: {latency.source_to_feed_ms != null ? `${latency.source_to_feed_ms}ms` : "N/A"} · End-to-End Age: {latency.end_to_end_age_ms != null ? `${latency.end_to_end_age_ms}ms` : (apiLatency ? `${apiLatency}ms` : "N/A")}
+            {isClosed ? "Historical Canonical Evidence (Session Completed)" : `Src→Feed: ${latency.source_to_feed_ms != null ? `${latency.source_to_feed_ms}ms` : "N/A"} · End-to-End Age: ${latency.end_to_end_age_ms != null ? `${latency.end_to_end_age_ms}ms` : (apiLatency ? `${apiLatency}ms` : "N/A")}`}
           </span>
         </div>
       </div>
