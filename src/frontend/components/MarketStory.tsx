@@ -71,8 +71,9 @@ export function MarketStory() {
   }, [rawTimeline, activeFilter]);
 
   const statusClass = story?.session_status_classification || summary?.session_status_classification || (summary?.open ? "LIVE" : "UNAVAILABLE");
+  const isValidStory = Boolean(story && (statusClass === "LIVE" || statusClass === "COMPLETE" || statusClass === "PARTIAL"));
 
-  if (!story || statusClass === "UNAVAILABLE" || (!summary.open && isClosed)) {
+  if (!isValidStory) {
     return (
       <div className="p-8 text-center bg-slate-900/60 border border-slate-800 rounded-lg space-y-2">
         <AlertTriangle className="h-8 w-8 text-amber-400 mx-auto mb-2" />

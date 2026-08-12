@@ -47,6 +47,7 @@ class StreamingOrchestrator:
         self.max_reconnect_attempts = 5
         self.base_backoff_seconds = 1.0
         self._reconnect_thread: Optional[threading.Thread] = None
+        self._reconnect_lock = threading.Lock()
         self._running = False
         
         # Active streaming cache (stores latest tick received per symbol)
@@ -83,9 +84,13 @@ class StreamingOrchestrator:
         # Attempt to connect
         success = self.adapter.connect()
         if not success:
-            logger.warning("Initial WebSocket connection failed. Activating HTTP fallback.")
-            self._activate_fallback()
-            self._start_reconnect_loop()
+            if getattr(self.adapter, "auth_required", False):
+                self.health_monitor.set_auth_required(getattr(self.adapter, "auth_required_reason", "Missing/Invalid credentials"))
+                logger.error("Authentication required for Kite stream. Disabling auto reconnect.")
+            else:
+                logger.warning("Initial WebSocket connection failed. Activating HTTP fallback.")
+                self._activate_fallback()
+                self._start_reconnect_loop()
         return success
 
     def disconnect_stream(self) -> None:
@@ -114,7 +119,26 @@ class StreamingOrchestrator:
         """Unsubscribes dynamically from symbols."""
         return self.subscription_manager.unsubscribe(symbols)
 
-    def get_health_report(self) -> StreamHealthReport:
+    def check_feed_liveness(
+        self,
+        now: Optional[float] = None,
+        market_status: str = "MARKET_OPEN",
+        freshness_tolerance_seconds: Optional[float] = None
+    ) -> Dict[str, Any]:
+        conn_status = "DISCONNECTED"
+        if self.is_connected():
+            conn_status = "CONNECTED"
+        elif self.fallback_active:
+            conn_status = "RECONNECTING"
+
+        return self.health_monitor.check_feed_liveness(
+            now=now,
+            market_status=market_status,
+            freshness_tolerance_seconds=freshness_tolerance_seconds,
+            connection_status=conn_status
+        )
+
+    def get_health_report(self, market_status: str = "MARKET_OPEN", freshness_tolerance_seconds: Optional[float] = None) -> StreamHealthReport:
         status = "DISCONNECTED"
         if self.is_connected():
             status = "CONNECTED"
@@ -125,7 +149,9 @@ class StreamingOrchestrator:
         return self.health_monitor.generate_report(
             connection_status=status,
             active_subscriptions=active_subs,
-            fallback_active=self.fallback_active
+            fallback_active=self.fallback_active,
+            market_status=market_status,
+            freshness_tolerance_seconds=freshness_tolerance_seconds
         )
 
     def get_latest_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -134,7 +160,6 @@ class StreamingOrchestrator:
         falls back to HTTP polling.
         """
         if self.fallback_active or symbol not in self.latest_ticks:
-            # Fall back to HTTP gateway if possible
             if self.broker_gateway:
                 try:
                     logger.debug(f"Streaming fallback: fetching HTTP quote for {symbol}")
@@ -184,35 +209,46 @@ class StreamingOrchestrator:
                 "ask": ask
             }
 
-
     def _on_status_changed(self, status: str) -> None:
         logger.info(f"Stream Status changed: {status}")
+        self.health_monitor.set_reconnect_state(status)
+
         if status == "CONNECTED":
             self.fallback_active = False
             self.reconnect_attempts = 0
             # Resubscribe to previous active subscriptions
             active_subs = self.subscription_manager.get_active_subscriptions()
             if active_subs:
-                # Direct subscribe to tokens again
                 tokens = self.subscription_manager.get_active_tokens()
                 if self.adapter:
                     self.adapter.subscribe(tokens)
+        elif status == "AUTH_REQUIRED":
+            reason = getattr(self.adapter, "auth_required_reason", "Broker authentication required")
+            self.health_monitor.set_auth_required(reason)
+            self.fallback_active = False
+            logger.error(f"Stream halted: {reason}")
         elif status == "DISCONNECTED" and self._running:
-            self._activate_fallback()
-            self._start_reconnect_loop()
+            if not self.health_monitor.auth_required_reason:
+                self._activate_fallback()
+                self._start_reconnect_loop()
 
     def _activate_fallback(self) -> None:
         self.fallback_active = True
         logger.info("HTTP Polling fallback activated.")
 
     def _start_reconnect_loop(self) -> None:
-        if self._reconnect_thread and self._reconnect_thread.is_alive():
-            return
-        self._reconnect_thread = threading.Thread(target=self._run_reconnect_loop, daemon=True)
-        self._reconnect_thread.start()
+        with self._reconnect_lock:
+            if self._reconnect_thread and self._reconnect_thread.is_alive():
+                return
+            self._reconnect_thread = threading.Thread(target=self._run_reconnect_loop, daemon=True)
+            self._reconnect_thread.start()
 
     def _run_reconnect_loop(self) -> None:
         while self._running and self.fallback_active:
+            if self.health_monitor.auth_required_reason:
+                logger.error("Authentication required. Aborting reconnect loop.")
+                break
+
             if self.reconnect_attempts >= self.max_reconnect_attempts:
                 logger.error("Max reconnection attempts exhausted. Streaming remaining in fallback.")
                 break
@@ -220,16 +256,15 @@ class StreamingOrchestrator:
             self.reconnect_attempts += 1
             self.health_monitor.record_reconnect()
             
-            # Exponential Backoff calculation (capped at 16 seconds for testing responsiveness)
             sleep_time = min(16.0, self.base_backoff_seconds * (2 ** (self.reconnect_attempts - 1)))
             logger.info(f"Reconnection attempt {self.reconnect_attempts}/{self.max_reconnect_attempts} in {sleep_time}s...")
             time.sleep(sleep_time)
 
-            if not self._running:
+            if not self._running or self.health_monitor.auth_required_reason:
                 break
 
             logger.info("Retrying WebSocket connection...")
             if self.adapter and self.adapter.connect():
-                logger.info("Reconnection successful!")
+                logger.info("Reconnection transport established.")
                 self.fallback_active = False
                 break

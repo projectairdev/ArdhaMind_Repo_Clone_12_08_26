@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -56,8 +57,9 @@ def test_http_mutation_handler_returns_410_at_runtime() -> None:
         'import { readOnlyRejection } from "./src/read_only_policy.mjs"; '
         'console.log(JSON.stringify({status: 410, body: readOnlyRejection("Order placement")}));'
     )
+    node_bin = shutil.which("node") or r"C:\Program Files\nodejs\node.exe"
     completed = subprocess.run(
-        ["node", "--input-type=module", "-e", script],
+        [node_bin, "--input-type=module", "-e", script],
         cwd=ROOT,
         check=True,
         capture_output=True,

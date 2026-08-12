@@ -146,6 +146,16 @@ class WorkstationStateService:
     @classmethod
     def _persist_session_history(cls, session_date: str) -> None:
         """Persists bounded session observations and material events atomically."""
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            default_prod_dir = Path("data/cache").resolve()
+            current_target_dir = cls.CACHE_DIR.resolve()
+            if current_target_dir == default_prod_dir:
+                if not cls._allow_disk_cache_in_test:
+                    return
+                raise RuntimeError(
+                    f"TEST ISOLATION VIOLATION: Test attempted to persist session history to production directory ({cls.CACHE_DIR}). "
+                    "Tests must redirect CACHE_DIR to an isolated temporary directory (tmp_path)."
+                )
         try:
             cls.CACHE_DIR.mkdir(parents=True, exist_ok=True)
             cache_file = cls.CACHE_DIR / f"session_history_{session_date}.json"
@@ -390,6 +400,11 @@ class WorkstationStateService:
         ready_count = sum(value == "READY" for value in premarket_inputs.values())
         full_premarket = all(premarket_inputs[key] == "READY" for key in ("gift_nifty", "global_indices", "commodities_fx", "fii_dii", "news"))
         premarket_state = "READY" if full_premarket else "PARTIAL_READY" if ready_count >= 4 else "BLOCKED" if not market_available else "UNAVAILABLE"
+
+        # Today's Analysis post-close readiness: if market is closed and persisted session history exists, status is READY
+        same_date_snaps_exist = len([s for s in cls._snapshots_history if s.get("session_date") == session_date]) > 0
+        todays_analysis_sec_status = SectionStatus.READY if (market_closed and same_date_snaps_exist) else analytics_status
+
         readiness = {
             "overall_state": overall_state,
             "core_market_feed_state": "READY" if core_market_ready else "UNAVAILABLE",
@@ -405,8 +420,8 @@ class WorkstationStateService:
             "nifty_live": cls._ready("NIFTY Live", market_status, cls._reasons(market_status)),
             "pre_market_planner": cls._ready("Pre-Market Planner", market_status,
                 [] if market_status in {SectionStatus.READY, SectionStatus.MARKET_CLOSED} else ["validated market snapshot"]),
-            "todays_analysis": cls._ready("Today's Analysis", analytics_status,
-                cls._reasons(market_status, option_status, news_status)),
+            "todays_analysis": cls._ready("Today's Analysis", todays_analysis_sec_status,
+                [] if (market_closed and same_date_snaps_exist) else cls._reasons(market_status, option_status, news_status)),
             "news_updates": cls._ready("NEWS & UPDATES", news_status,
                 [] if news_status == SectionStatus.READY else ["real news provider"]),
             "live_assistant": cls._ready("Live Assistant", assistant_status,
@@ -441,6 +456,9 @@ class WorkstationStateService:
             "key_levels": unified["key_levels"],
             "scenarios": unified["scenarios"],
             "invalidation_conditions": unified["invalidation_conditions"],
+            "if_then_monitor": (unified.get("live_decision") or {}).get("if_then_monitor") or [],
+            "what_to_watch": (unified.get("live_decision") or {}).get("what_to_watch") or [],
+            "what_to_do_now": (unified.get("live_decision") or {}).get("what_to_do_now") or {},
             "risk": unified["risk"], "confidence": unified["confidence"],
             "human_decision_required": True, "execution_authorized": False,
         }
@@ -650,9 +668,9 @@ class WorkstationStateService:
                         t_curr = parse_iso(sub_snaps[i].get("timestamp"))
                         if t_prev and t_curr:
                             g = (t_curr - t_prev).total_seconds()
-                            if g > largest_gap:
-                                largest_gap = g
-                            if g > SAMPLING_TOLERANCE_SECONDS:
+                            if cls._is_genuine_telemetry_gap(sub_snaps[i-1], sub_snaps[i], g):
+                                if g > largest_gap:
+                                    largest_gap = g
                                 gap_count += 1
                                 last_gap_idx = i
 
@@ -1036,6 +1054,9 @@ class WorkstationStateService:
 
         unified["live_decision"] = live_decision
         unified["outlook"]["live_decision"] = live_decision
+        support_payload["if_then_monitor"] = live_decision.get("if_then_monitor") or []
+        support_payload["what_to_watch"] = live_decision.get("what_to_watch") or []
+        support_payload["what_to_do_now"] = live_decision.get("what_to_do_now") or {}
 
         live_assistant_temporal_state = {
             "generated_at": generated,
@@ -2354,7 +2375,7 @@ class WorkstationStateService:
             t_curr = _parse_ts(same_day_snaps[i].get("timestamp"))
             if t_prev and t_curr:
                 gap_sec = (t_curr - t_prev).total_seconds()
-                if gap_sec > SAMPLING_TOLERANCE_SECONDS:
+                if cls._is_genuine_telemetry_gap(same_day_snaps[i-1], same_day_snaps[i], gap_sec):
                     gaps.append((same_day_snaps[i-1], same_day_snaps[i], gap_sec))
 
         news_items = news.get("items") or []
@@ -2609,6 +2630,23 @@ class WorkstationStateService:
                 "provenance": ["canonical.state_history", "canonical.material_events"]
             }
         }
+    @staticmethod
+    def _is_genuine_telemetry_gap(s_prev: dict[str, Any], s_curr: dict[str, Any], gap_sec: float) -> bool:
+        if gap_sec <= 15.0:
+            return False
+        if s_prev.get("feed_status") in ("STALE", "DISCONNECTED", "RECONNECTING") or s_curr.get("feed_status") in ("STALE", "DISCONNECTED", "RECONNECTING"):
+            return True
+        if s_prev.get("is_outage") or s_curr.get("is_outage"):
+            return True
+        if s_prev.get("market_session_phase") not in ("MARKET_OPEN", "OPEN") and s_curr.get("market_session_phase") not in ("MARKET_OPEN", "OPEN"):
+            return False
+        is_anchor = (s_prev.get("is_compaction_anchor") and s_curr.get("is_compaction_anchor")) or abs(gap_sec - 900.0) < 60.0
+        if is_anchor:
+            seq_diff = (s_curr.get("state_sequence") or 0) - (s_prev.get("state_sequence") or 0)
+            if seq_diff <= 1 and not (s_curr.get("feed_stale") or s_prev.get("feed_stale")):
+                return False
+        return gap_sec > 120.0
+
     @staticmethod
     def _reasons(*statuses: SectionStatus) -> list[str]:
         names = ("validated market context", "option-chain aggregate", "real news provider")

@@ -24,22 +24,16 @@ def get_base_payload(spot=24500.0, timestamp="2026-08-11T09:15:00Z"):
     }
 
 
-def setup_function():
-    # Clean in-memory and test cache file before each test
+@pytest.fixture(autouse=True)
+def isolate_test_cache(tmp_path):
+    WorkstationStateService.reset_for_testing()
+    orig_cache_dir = WorkstationStateService.CACHE_DIR
+    WorkstationStateService.CACHE_DIR = tmp_path
     WorkstationStateService._allow_disk_cache_in_test = True
-    WorkstationStateService._snapshots_history = []
-    WorkstationStateService._live_event_stream = []
-    WorkstationStateService._last_loaded_session_date = None
-    cache_file = Path("data/cache/session_history_2026-08-11.json")
-    if cache_file.exists():
-        cache_file.unlink()
-
-
-def teardown_function():
+    yield
+    WorkstationStateService.CACHE_DIR = orig_cache_dir
     WorkstationStateService._allow_disk_cache_in_test = False
-    WorkstationStateService._snapshots_history = []
-    WorkstationStateService._live_event_stream = []
-    WorkstationStateService._last_loaded_session_date = None
+    WorkstationStateService.reset_for_testing()
 
 
 def test_session_history_persists_and_restores_on_backend_restart():
@@ -49,7 +43,7 @@ def test_session_history_persists_and_restores_on_backend_restart():
     t1 = datetime(2026, 8, 11, 9, 30, 0, tzinfo=timezone.utc)
     WorkstationStateService.build_from_legacy(get_base_payload(24490.0, "2026-08-11T09:30:00Z"), market_state="OPEN", now=t1)
 
-    cache_file = Path("data/cache/session_history_2026-08-11.json")
+    cache_file = WorkstationStateService.CACHE_DIR / "session_history_2026-08-11.json"
     assert cache_file.exists()
 
     # Simulate backend restart (destroy process memory)
@@ -76,7 +70,7 @@ def test_trading_date_scoping_and_wrong_date_cache_ignored():
     WorkstationStateService.build_from_legacy(get_base_payload(24500.0), market_state="OPEN", now=t0)
 
     # A cache for another date should not mix into current session
-    wrong_cache = Path("data/cache/session_history_2026-08-10.json")
+    wrong_cache = WorkstationStateService.CACHE_DIR / "session_history_2026-08-10.json"
     wrong_cache.parent.mkdir(parents=True, exist_ok=True)
     wrong_cache.write_text(json.dumps({
         "session_date": "2026-08-10",
@@ -92,7 +86,7 @@ def test_trading_date_scoping_and_wrong_date_cache_ignored():
 
 
 def test_corrupt_cache_handled_safely_without_crash():
-    cache_file = Path("data/cache/session_history_2026-08-11.json")
+    cache_file = WorkstationStateService.CACHE_DIR / "session_history_2026-08-11.json"
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text("{ malformed JSON content ...", encoding="utf-8")
 
@@ -104,7 +98,7 @@ def test_corrupt_cache_handled_safely_without_crash():
 
 
 def test_status_classifications_complete_partial_and_unavailable():
-    cache_file = Path("data/cache/session_history_2026-08-11.json")
+    cache_file = WorkstationStateService.CACHE_DIR / "session_history_2026-08-11.json"
     if cache_file.exists():
         cache_file.unlink()
 

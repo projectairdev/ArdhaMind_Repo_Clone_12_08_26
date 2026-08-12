@@ -69,17 +69,20 @@ class MarketFeedService:
 
     def get_feed_health(self) -> Dict[str, Any]:
         bs = BrokerService.get_instance()
+        orchestrator = bs._get_orchestrator()
+        liveness = orchestrator.check_feed_liveness()
         health = bs.get_stream_health()
-        tick = bs._get_orchestrator().latest_ticks.get("NSE:NIFTY 50")
-        latency = float(health.latency or 0.0)
-        status = "HEALTHY" if tick else "WAITING"
-        if not bs.is_stream_connected():
-            status = "OFFLINE"
-        elif latency > 5000.0:
-            status = "DEGRADED"
-        return {"status": status, "latency_ms": latency,
-                "stream_connected": bs.is_stream_connected(),
-                "fallback_active": bs.is_fallback_active()}
+        latency = float(getattr(health, "average_latency_ms", getattr(health, "latency", 0.0)) or 0.0)
+        return {
+            "status": liveness["status"],
+            "latency_ms": latency,
+            "stream_connected": bs.is_stream_connected(),
+            "fallback_active": bs.is_fallback_active(),
+            "observation_age_seconds": liveness.get("observation_age_seconds", 0.0),
+            "stale_duration_seconds": liveness.get("stale_duration_seconds", 0.0),
+            "auth_required_reason": liveness.get("auth_required_reason"),
+            "reconnect_state": liveness.get("reconnect_state")
+        }
 
     def resolve_expiries(self, bs: Any) -> List[str]:
         service = InstrumentService.get_instance()

@@ -182,6 +182,11 @@ class Config:
     except ValueError:
         CONNECTION_TIMEOUT = 10.0
 
+    try:
+        MARKET_DATA_FRESHNESS_TOLERANCE_SECONDS = float(os.getenv("MARKET_DATA_FRESHNESS_TOLERANCE_SECONDS", "15.0"))
+    except ValueError:
+        MARKET_DATA_FRESHNESS_TOLERANCE_SECONDS = 15.0
+
     # Workspace Operating Mode Config (Sprint 29)
     WORKSPACE_MODE = "READ_ONLY"
     DEFAULT_WORKSPACE_MODE = "READ_ONLY"
