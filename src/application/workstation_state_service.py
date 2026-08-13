@@ -44,7 +44,6 @@ class WorkstationStateService:
     @classmethod
     def _load_session_history(cls, session_date: str) -> None:
         """Loads and hydrates bounded intraday session history from disk for session_date."""
-        cls._last_loaded_session_date = session_date
         if os.environ.get("PYTEST_CURRENT_TEST") and not cls._allow_disk_cache_in_test:
             return
 
@@ -53,6 +52,8 @@ class WorkstationStateService:
 
         if not cache_file.exists():
             return
+
+        cls._last_loaded_session_date = session_date
 
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
@@ -2319,8 +2320,34 @@ class WorkstationStateService:
             s for s in cls._snapshots_history
             if s.get("session_date") == session_date
         ]
+
+        # Historical session recovery: when market is closed and the current calendar date
+        # has no genuine MARKET_OPEN snapshots (e.g. after IST midnight rollover, the only
+        # snap for "2026-08-13" is a synthetic close-time artifact appended by this build
+        # cycle), find the most recent historical session with actual trading data and
+        # reconstruct from those snapshots instead of using current/close values.
+        historical_review = False
+        has_genuine_session = any(
+            s.get("market_session_phase") in ("MARKET_OPEN", "OPEN")
+            for s in same_day_snaps
+        )
+        if not has_genuine_session and market_closed and cls._snapshots_history:
+            historical_dates = sorted({
+                s.get("session_date") for s in cls._snapshots_history
+                if s.get("session_date") and s.get("session_date") != session_date
+                and s.get("market_session_phase") in ("MARKET_OPEN", "OPEN")
+            }, reverse=True)
+            if historical_dates:
+                session_date = historical_dates[0]
+                same_day_snaps = [s for s in cls._snapshots_history if s.get("session_date") == session_date]
+                historical_review = True
+
         if not same_day_snaps:
             same_day_snaps = [snap]
+
+        # For historical review, use the last historical snapshot as the close snap,
+        # not the current runtime snap which has a different session_date and current values.
+        close_snap = same_day_snaps[-1] if historical_review else snap
 
         open_snap = next(
             (s for s in same_day_snaps if s.get("market_session_phase") in ("MARKET_OPEN", "OPEN") and s.get("continuous_session_open") and s.get("spot") is not None),
@@ -2329,7 +2356,7 @@ class WorkstationStateService:
 
         prev_close = unified.get("previous_close") or 24583.80
         open_price = open_snap.get("spot")
-        current_price = snap.get("spot") or (same_day_snaps[-1].get("spot") if same_day_snaps else None)
+        current_price = close_snap.get("spot") or (same_day_snaps[-1].get("spot") if same_day_snaps else None)
 
         spots = [s.get("spot") for s in same_day_snaps if isinstance(s.get("spot"), (int, float))]
         day_high = max(spots) if spots else current_price
@@ -2343,14 +2370,14 @@ class WorkstationStateService:
         opening_char = "GAP_DOWN" if opening_gap < -10 else "GAP_UP" if opening_gap > 10 else "FLAT_OPEN"
 
         b_open = open_snap.get("breadth") or {}
-        b_curr = (snap.get("breadth") or (same_day_snaps[-1].get("breadth") if same_day_snaps else {})) or {}
+        b_curr = (close_snap.get("breadth") or (same_day_snaps[-1].get("breadth") if same_day_snaps else {})) or {}
         breadth_open_str = f"{b_open.get('advances', 0)}A / {b_open.get('declines', 0)}D" if b_open.get('advances') is not None else "Unavailable"
         breadth_curr_str = f"{b_curr.get('advances', 0)}A / {b_curr.get('declines', 0)}D" if b_curr.get('advances') is not None else "Unavailable"
 
         pcr_open = open_snap.get("options", {}).get("pcr")
-        pcr_curr = snap.get("options", {}).get("pcr") or (same_day_snaps[-1].get("options", {}).get("pcr") if same_day_snaps else None)
+        pcr_curr = close_snap.get("options", {}).get("pcr") or (same_day_snaps[-1].get("options", {}).get("pcr") if same_day_snaps else None)
         vix_open = open_snap.get("vix")
-        vix_curr = snap.get("vix") or (same_day_snaps[-1].get("vix") if same_day_snaps else None)
+        vix_curr = close_snap.get("vix") or (same_day_snaps[-1].get("vix") if same_day_snaps else None)
 
         bias = live_decision.get("structural_bias", "NEUTRAL")
         dom_character = "BEARISH_TREND" if change_points < -30 and bias == "BEARISH" else "BULLISH_TREND" if change_points > 30 and bias == "BULLISH" else "RANGE" if abs(change_points) <= 30 else "MIXED"
@@ -2443,7 +2470,7 @@ class WorkstationStateService:
             elif phase_str == "MARKET_OPEN":
                 matched_snap = open_snap
             elif phase_str == "CLOSED":
-                matched_snap = snap if market_closed else same_day_snaps[-1]
+                matched_snap = close_snap if market_closed else same_day_snaps[-1]
             else:
                 as_of_snaps = [
                     s for s in same_day_snaps
@@ -2589,8 +2616,8 @@ class WorkstationStateService:
             dur_rem_mins = dur_mins % 60
             dur_str = f"{dur_hours}h {dur_rem_mins}m" if dur_hours > 0 else f"{dur_mins}m"
 
-            t1_ist = t1[11:16] if len(t1) >= 16 else t1
-            t2_ist = t2[11:16] if len(t2) >= 16 else t2
+            t1_ist = _get_ist_time_str(gap_prev) or (t1[11:16] if len(t1) >= 16 else t1)
+            t2_ist = _get_ist_time_str(gap_curr) or (t2[11:16] if len(t2) >= 16 else t2)
 
             gap_item = {
                 "timestamp": t1_ist,
