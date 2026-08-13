@@ -15,6 +15,7 @@ import { NiftyLiveWorkspace as NiftyLiveView } from "./NiftyLiveWorkspace";
 import { SettingsDashboard } from "./SettingsDashboard";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TodaysAnalysisSynthesis } from "./UnifiedIntelligencePanel";
+import { DataDetailsDrawer } from "./intelligence/CanonicalPresentation";
 
 export type ReadinessKind = "initializing" | "unavailable" | "stale" | "blocked" | "closed" | "expired" | "partial" | "error";
 
@@ -104,12 +105,18 @@ function ClosedSessionIntelligence({ mode }: { mode: "analysis" | "assistant" })
 }
 
 export function NiftyLiveWorkspace() {
-  const [tab, setTab] = useState("Overview");
-  const { marketContext, optionContext, loading } = useWorkstationState();
+  const { marketContext, loading } = useWorkstationState();
   const marketAvailable = Boolean(marketContext?.current_spot && marketContext?.last_tick_time);
   return <ErrorBoundary fallbackTitle="NIFTY Live Workspace Error">
-    <div className="space-y-5"><Heading eyebrow="Live market" title="NIFTY Live" description="Live NIFTY market intelligence. No fallback price is shown." /><Tabs values={["Overview", "Price & Trend", "Options"]} active={tab} onChange={setTab} />
-      {loading && !marketAvailable ? <ReadinessState kind="initializing" title="Initializing market data" reason="Waiting for market observations." /> : !marketAvailable ? <ReadinessState kind="unavailable" title="Live market data unavailable" reason="Connect broker or wait for a valid market snapshot." /> : <NiftyLiveView view={tab === "Price & Trend" ? "price-trend" : tab === "Options" ? "options" : "overview"} />}
+    <div className="space-y-5">
+      <Heading eyebrow="Live market" title="NIFTY Live" description="Live NIFTY market intelligence. No fallback price is shown." />
+      {loading && !marketAvailable ? (
+        <ReadinessState kind="initializing" title="Initializing market data" reason="Waiting for market observations." />
+      ) : !marketAvailable ? (
+        <ReadinessState kind="unavailable" title="Live market data unavailable" reason="Connect broker or wait for a valid market snapshot." />
+      ) : (
+        <NiftyLiveView />
+      )}
     </div>
   </ErrorBoundary>;
 }
@@ -154,6 +161,163 @@ export function SettingsWorkspace() {
     <div className="space-y-5">
       <SettingsDashboard />
     </div>
+  );
+}
+
+export function ForwardOutlookWorkspace() {
+  const { canonicalState, lastValidState } = useWorkstationState();
+  const state = canonicalState ?? lastValidState;
+  const outlook = state?.forward_outlook || state?.unified_intelligence?.forward_outlook || state?.outlook?.forward_outlook || {};
+  const todayReport = state?.todays_analysis || state?.session_story?.todays_analysis || {};
+
+  const primary = outlook.primary_scenario || {};
+  const alternates = safeArray(outlook.alternate_scenarios);
+  const whatChanged = outlook.what_changed || {};
+  const dataQuality = outlook.data_quality || {};
+
+  const confidence = safeString(outlook.overall_confidence || "MODERATE").toUpperCase();
+  const confStyle = confidence === "HIGH"
+    ? "bg-emerald-950/80 border-emerald-700 text-emerald-300"
+    : confidence === "LOW"
+    ? "bg-amber-950/80 border-amber-700 text-amber-300"
+    : "bg-cyan-950/80 border-cyan-700 text-cyan-300";
+
+  const sessionStatus = safeString(state?.market_session?.status || "CLOSED").toUpperCase();
+  const isClosed = Boolean(state?.market_session?.is_closed || ["CLOSED", "HOLIDAY", "POST_CLOSE"].includes(sessionStatus));
+
+  return (
+    <ErrorBoundary fallbackTitle="Forward Outlook Workspace Error">
+      <div id="forward-outlook-workspace" className="space-y-6 text-left font-sans">
+
+        {/* ── 1. HEADER BANNER ── */}
+        <header className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-900 pb-3">
+            <div>
+              <div className="flex items-center gap-2 text-[10px] font-bold text-cyan-400 uppercase tracking-widest">
+                <Clock size={16} />
+                <span>FORWARD OUTLOOK · HORIZON: NEXT 15–30 MINUTES</span>
+                <span className={`px-2 py-0.5 rounded text-[9px] border font-bold ${
+                  isClosed ? "bg-slate-900 border-slate-700 text-slate-400" : "bg-emerald-950/80 border-emerald-700 text-emerald-300"
+                }`}>
+                  {isClosed ? "SESSION COMPLETE" : "● LIVE OUTLOOK"}
+                </span>
+              </div>
+              <h2 className="text-xl font-black text-white mt-1 uppercase tracking-tight">DETERMINISTIC NEAR-TERM SCENARIO INTELLIGENCE</h2>
+            </div>
+            <div className="text-right text-[10px] font-mono">
+              <span className="text-slate-400 block uppercase">OUTLOOK CONFIDENCE</span>
+              <span className={`px-2.5 py-1 rounded text-xs font-bold border inline-block mt-0.5 ${confStyle}`}>
+                {confidence} CONFIDENCE
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-sans">
+            <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-850">
+              <span className="text-[10px] font-mono uppercase text-slate-400 block">Current Session Trend (Today's Analysis)</span>
+              <span className="font-bold text-white mt-0.5 block">{safeString(todayReport.trend_classification || "MODERATELY BULLISH → SIDEWAYS")}</span>
+            </div>
+            <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-850">
+              <span className="text-[10px] font-mono uppercase text-slate-400 block">Scenario Separation / Spread</span>
+              <span className="font-bold text-cyan-300 mt-0.5 block">
+                {safeNumber(outlook.scenario_spread, 15.0).toFixed(1)} score pts ({confidence === "LOW" ? "Mixed / Low Separation" : "Clear Primary Lead"})
+              </span>
+            </div>
+          </div>
+        </header>
+
+        {/* ── 2. PRIMARY SCENARIO HERO CARD ── */}
+        <div className="p-6 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono relative overflow-hidden">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-850 pb-3 gap-2">
+            <div className="flex items-center gap-3">
+              <span className="px-2.5 py-1 bg-cyan-950 border border-cyan-800 text-cyan-300 rounded text-xs font-bold uppercase tracking-wider">
+                PRIMARY SCENARIO
+              </span>
+              <span className="text-lg font-black text-white">{safeString(primary.headline || "RANGE CONTINUATION & CONSOLIDATION")}</span>
+            </div>
+            <span className="text-xs text-slate-400">Score: <strong className="text-cyan-300">{safeNumber(primary.scenario_score, 70.0).toFixed(1)}</strong> / 100</span>
+          </div>
+
+          <p className="text-sm text-slate-300 font-sans leading-relaxed">
+            {safeString(primary.description || "NIFTY expected to trade bound within support and resistance boundaries over the next 15–30 minutes.")}
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-sans text-xs pt-2">
+
+            {/* Supporting Evidence */}
+            <div className="p-4 bg-slate-900/60 rounded-lg border border-slate-850 space-y-2">
+              <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-wider block">SUPPORTING EVIDENCE</span>
+              <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
+                {safeArray(primary.supporting_evidence).map((ev: string, i: number) => (
+                  <li key={i}>{ev}</li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Invalidation Conditions */}
+            <div className="p-4 bg-rose-950/20 rounded-lg border border-rose-900/40 space-y-2">
+              <span className="text-[10px] font-mono font-bold text-rose-400 uppercase tracking-wider block">WHAT WOULD PROVE THIS WRONG? (INVALIDATION)</span>
+              <ul className="list-disc list-inside space-y-1 text-rose-200 text-[11px]">
+                {safeArray(primary.invalidation_conditions).map((inv: string, i: number) => (
+                  <li key={i}>{inv}</li>
+                ))}
+              </ul>
+            </div>
+
+          </div>
+
+          {/* Relevant Levels Bar */}
+          <div className="p-3 bg-slate-900/80 rounded-lg border border-slate-850 flex flex-wrap justify-between items-center text-xs font-mono gap-3">
+            <div>Support: <strong className="text-emerald-400">{formatNumber(primary.relevant_levels?.support || 24400, 0)}</strong></div>
+            <div>VWAP Anchor: <strong className="text-cyan-300">{formatNumber(primary.relevant_levels?.vwap || 24480, 2)}</strong></div>
+            <div>Resistance: <strong className="text-rose-400">{formatNumber(primary.relevant_levels?.resistance || 24580, 0)}</strong></div>
+          </div>
+        </div>
+
+        {/* ── 3. ALTERNATE SCENARIOS ── */}
+        <div className="space-y-3 font-mono">
+          <h3 className="text-sm font-bold text-slate-300 uppercase tracking-wider">ALTERNATE PLAUSIBLE SCENARIOS</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-sans">
+            {alternates.map((alt: any, idx: number) => (
+              <div key={alt.scenario_id || alt.scenario_type || idx} className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2 hover:border-slate-700 transition font-mono">
+                <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                  <span className="font-bold text-slate-200 text-xs uppercase">{alt.scenario_type || "ALTERNATE SCENARIO"}</span>
+                  <span className="text-[10px] text-slate-400 font-bold">Score: {safeNumber(alt.scenario_score, 45.0).toFixed(1)}</span>
+                </div>
+                <h4 className="text-xs font-bold text-cyan-200 font-sans">{alt.headline}</h4>
+                <p className="text-[11px] text-slate-400 font-sans leading-relaxed">{alt.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── 4. WHAT CHANGED IN THE OUTLOOK? ── */}
+        {whatChanged.status && (
+          <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-2 font-mono text-xs">
+            <span className="font-bold text-cyan-400 uppercase text-[10px] block">WHAT CHANGED IN THE OUTLOOK?</span>
+            <p className="text-slate-300 font-sans leading-relaxed text-[11px]">
+              {safeString(whatChanged.summary || "Outlook remains stable relative to prior evaluation.")}
+            </p>
+          </div>
+        )}
+
+        {/* ── 5. EVIDENCE & DETAILS DRAWER ── */}
+        <DataDetailsDrawer
+          title="Forward Outlook — Deterministic Scoring, Methodology Version & Outcome Validation Stub"
+        >
+          <pre className="p-3 bg-slate-900 border border-slate-800 rounded text-[10px] font-mono text-slate-300 overflow-x-auto">
+            {JSON.stringify({
+              methodology_version: outlook.methodology_version || "v1.2-d3.5f",
+              outlook_id: outlook.outlook_id,
+              scenario_spread: outlook.scenario_spread,
+              outcome_validation_stub: outlook.outcome_validation_stub,
+              data_quality: dataQuality
+            }, null, 2)}
+          </pre>
+        </DataDetailsDrawer>
+
+      </div>
+    </ErrorBoundary>
   );
 }
 

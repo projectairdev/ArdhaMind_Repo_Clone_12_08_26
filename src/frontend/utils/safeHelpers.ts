@@ -21,6 +21,27 @@ export function safeString(val: any, fallback = ""): string {
   return String(val);
 }
 
+export function getWebSocketUrl(path = "/api/ws"): string {
+  if (typeof window === "undefined" || !window.location) {
+    return `ws://localhost:3000${path}`;
+  }
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = window.location.host;
+  return `${protocol}//${host}${path}`;
+}
+
+export function formatSpotPrice(val: any, fallback = "WAITING FOR LIVE DATA"): string {
+  if (val === null || val === undefined || val === "" || val === 0 || val === "0" || val === "0.0" || val === "0.00") {
+    return fallback;
+  }
+  const num = Number(val);
+  if (isNaN(num) || num <= 0) return fallback;
+  return num.toLocaleString("en-IN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
 export function stripHtml(val: any): string {
   if (!val) return "";
   const str = String(val);
@@ -37,72 +58,102 @@ export function stripHtml(val: any): string {
 }
 
 export function formatCurrency(val: any, fractionDigits = 0): string {
-  if (val === null || val === undefined || val === "") return "—";
-  const num = Number(val);
-  if (isNaN(num)) return "—";
-  try {
-    return num.toLocaleString("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: fractionDigits,
-      minimumFractionDigits: fractionDigits,
-    }).replace("INR", "₹").trim();
-  } catch {
-    return `₹${num.toFixed(fractionDigits)}`;
-  }
+  const num = safeNumber(val, 0);
+  return num.toLocaleString("en-IN", {
+    maximumFractionDigits: fractionDigits,
+  });
 }
 
-export function formatNumber(val: any, fractionDigits = 0): string {
-  if (val === null || val === undefined || val === "") return "—";
-  const num = Number(val);
-  if (isNaN(num)) return "—";
-  try {
-    return num.toLocaleString("en-IN", {
-      maximumFractionDigits: fractionDigits,
-      minimumFractionDigits: fractionDigits,
-    });
-  } catch {
-    return num.toFixed(fractionDigits);
-  }
-}
-
-export function formatPercent(val: any, fractionDigits = 2): string {
-  if (val === null || val === undefined || val === "") return "—";
-  const num = Number(val);
-  if (isNaN(num)) return "—";
-  try {
-    return `${num.toLocaleString("en-IN", {
-      maximumFractionDigits: fractionDigits,
-      minimumFractionDigits: fractionDigits,
-    })}%`;
-  } catch {
-    return `${num.toFixed(fractionDigits)}%`;
-  }
-}
-
-export function formatDate(val: any, fallback = "N/A"): string {
-  if (!val) return fallback;
+export function formatDate(val: any): string {
+  if (!val) return "--";
   try {
     const d = new Date(val);
-    if (isNaN(d.getTime())) return fallback;
+    if (isNaN(d.getTime())) return String(val);
     return d.toLocaleDateString("en-IN", {
       day: "2-digit",
       month: "short",
-      year: "numeric",
+      year: "numeric"
     });
   } catch {
-    return fallback;
+    return String(val);
   }
 }
 
-export function formatDateTimeIST(val: any, fallback = "N/A"): string {
-  if (!val) return fallback;
+export function formatDateTimeIST(val: any): string {
+  if (!val) return "--";
   try {
     const d = new Date(val);
-    if (isNaN(d.getTime())) return fallback;
-    return new Intl.DateTimeFormat("en-IN", {
-      timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", hour12: false,
-    }).format(d) + " IST";
-  } catch { return fallback; }
+    if (isNaN(d.getTime())) return String(val);
+    return d.toLocaleString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false
+    }) + " IST";
+  } catch {
+    return String(val);
+  }
+}
+
+export function formatNumber(val: any, fractionDigits = 2): string {
+  if (val === null || val === undefined) return "--";
+  const num = Number(val);
+  if (isNaN(num)) return "--";
+  return num.toLocaleString("en-IN", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits
+  });
+}
+
+export function formatPercent(val: any, fractionDigits = 2): string {
+  if (val === null || val === undefined) return "--%";
+  const num = Number(val);
+  if (isNaN(num)) return "--%";
+  const formatted = num.toLocaleString("en-IN", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits
+  });
+  return `${num >= 0 ? "+" : ""}${formatted}%`;
+}
+
+// Scoped Macro & News Refresh Helper Endpoints for React UI
+export async function apiMacroRefresh(keys?: string[]): Promise<{ status: string; error?: string }> {
+  try {
+    const fn = window["fetch"];
+    const bodyObj = keys && keys.length > 0 ? { keys } : {};
+    const res = await fn("/api/macro/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bodyObj)
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status !== "failed") {
+      return { status: "success" };
+    }
+    if (res.status === 429) {
+      return { status: "rate_limited", error: data.error || "Rate limited" };
+    }
+    return { status: "failed", error: data.error || "Macro refresh failed" };
+  } catch (err: any) {
+    return { status: "failed", error: err.message || "Network error" };
+  }
+}
+
+export async function apiNewsRefresh(): Promise<{ status: string; error?: string }> {
+  try {
+    const fn = window["fetch"];
+    const res = await fn("/api/news/refresh", { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.status !== "failed") {
+      return { status: "success" };
+    }
+    if (res.status === 429) {
+      return { status: "rate_limited", error: data.error || "Rate limited" };
+    }
+    return { status: "failed", error: data.error || "News refresh failed" };
+  } catch (err: any) {
+    return { status: "failed", error: err.message || "Network error" };
+  }
 }

@@ -1293,11 +1293,10 @@ export function useOptionIntelligence() {
 
 export function useBrokerStatus() {
   const context = useWorkstationState();
-  const isLive = context.marketConnection === "CONNECTED" && !context.error;
-  const raw = isLive ? context.canonicalState?.broker_status : context.lastValidState?.broker_status;
+  const raw = context.canonicalState?.broker_status || context.lastValidState?.broker_status;
   return {
     data: raw || { status: "disconnected", reconnect_required: true, last_successful_update: null },
-    isStale: !isLive || !context.canonicalState,
+    isStale: context.marketConnection !== "CONNECTED" || !context.canonicalState,
   };
 }
 

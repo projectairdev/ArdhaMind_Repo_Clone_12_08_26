@@ -31,11 +31,11 @@ def test_1_navigation_contains_market_pulse():
     assert 'id: "market-pulse"' in text
 
 
-# 2. Permanent Pre-Market Planner navigation is removed
-def test_2_premarket_planner_navigation_removed():
+# 2. Pre-Market Planner navigation is restored
+def test_2_premarket_planner_navigation_restored():
     layout_file = Path("src/frontend/layout/DashboardLayout.tsx")
     text = layout_file.read_text(encoding="utf-8")
-    assert 'label: "Pre-Market Planner"' not in text
+    assert 'label: "Pre-Market Planner"' in text
 
 
 # 3. Market Pulse works PRE_OPEN

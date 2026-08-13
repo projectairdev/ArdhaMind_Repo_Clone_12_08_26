@@ -640,23 +640,27 @@ let macroRefreshError: string | null = null;
 
 app.post("/api/macro/refresh", async (req, res) => {
   const now = Date.now();
-  if (manualMacroRefreshStatus === "running") {
-    return res.status(409).json({ status: "running", error: "A macro refresh is already in progress." });
+  const targetKeys: string[] = Array.isArray(req.body?.keys) ? req.body.keys : (req.body?.key ? [req.body.key] : []);
+
+  if (manualMacroRefreshStatus === "running" && targetKeys.length === 0) {
+    return res.status(409).json({ status: "running", error: "A master macro refresh is already in progress." });
   }
-  if (now - lastMacroRefreshTime < 60000) {
-    return res.status(429).json({ status: "rate_limited", error: "Rate limit exceeded. Manual refresh is allowed once per minute." });
+  if (targetKeys.length === 0 && now - lastMacroRefreshTime < 60000) {
+    return res.status(429).json({ status: "rate_limited", error: "Rate limit exceeded. Manual master refresh is allowed once per minute." });
   }
 
   manualMacroRefreshStatus = "running";
   macroRefreshError = null;
-  res.json({ status: "running", message: "Macro refresh initiated." });
+  res.json({ status: "running", message: targetKeys.length > 0 ? `Macro refresh initiated for ${targetKeys.join(", ")}.` : "Master macro refresh initiated." });
 
   (async () => {
     try {
-      const result = await sendDaemonRequest("refresh_macro");
+      const result = await sendDaemonRequest("refresh_macro", { keys: targetKeys });
       if (result && result.success) {
         manualMacroRefreshStatus = "completed";
-        lastMacroRefreshTime = Date.now();
+        if (targetKeys.length === 0) {
+          lastMacroRefreshTime = Date.now();
+        }
         if (result.macroIntelligence) {
           workstationState = {
             ...workstationState,
@@ -685,7 +689,8 @@ app.get("/api/macro/refresh/status", (req, res) => {
 
 // Vite middleware setup for development, or static serving for production
 async function setupVite() {
-  if (process.env.NODE_ENV !== "production") {
+  const isProduction = process.env.NODE_ENV === "production" || fs.existsSync(path.join(process.cwd(), "dist/index.html"));
+  if (!isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -695,6 +700,9 @@ async function setupVite() {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
+      if (req.path.startsWith("/api/")) {
+        return res.status(404).json({ error: "API endpoint not found" });
+      }
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

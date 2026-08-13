@@ -130,6 +130,28 @@ class StreamHealthMonitor:
             "reconnect_state": self.reconnect_state
         }
 
+    def get_feed_bootstrap_state(
+        self,
+        is_connected: bool,
+        is_stream_connected: bool,
+        active_sub_count: int,
+        has_nifty_tick: bool,
+        obs_age: float
+    ) -> str:
+        if self.auth_required_reason:
+            return "AUTH_REQUIRED"
+        if not is_connected or not is_stream_connected:
+            return "DISCONNECTED"
+        if active_sub_count == 0:
+            return "SUBSCRIBING"
+        if not has_nifty_tick:
+            return "WAITING_FOR_TICKS"
+        if obs_age <= 15.0:
+            return "LIVE"
+        if obs_age <= 30.0:
+            return "SYNCHRONIZING"
+        return "STALE"
+
     def get_average_latency(self) -> float:
         if self.latency_count == 0:
             return 12.5 # Default typical latency

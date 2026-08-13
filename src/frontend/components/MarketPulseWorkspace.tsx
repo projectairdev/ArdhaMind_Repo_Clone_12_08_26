@@ -1,18 +1,39 @@
+// src/frontend/components/MarketPulseWorkspace.tsx
 import React, { useState, useEffect } from "react";
-import { Activity, RefreshCw, Compass, ShieldCheck, TrendingUp, DollarSign, Globe, AlertCircle, BarChart2, Layers } from "lucide-react";
+import { Activity, RefreshCw, Compass, ShieldCheck, TrendingUp, DollarSign, Globe, AlertCircle, BarChart2, Layers, Newspaper } from "lucide-react";
 import { useWorkstationState } from "../context/WorkstationStateContext";
-import { formatNumber, formatDate, safeArray, safeNumber, safeString } from "../utils/safeHelpers";
+import { formatNumber, formatDate, safeArray, safeNumber, safeString, apiMacroRefresh, apiNewsRefresh } from "../utils/safeHelpers";
 import { mapTraderEnum, mapFreshness } from "../utils/traderTerminology";
 import { getCanonicalQuote } from "../utils/canonicalQuotes";
 import { GlobalCuesWidget, InstitutionalFlowWidget, NiftyConstituentsWidget } from "./MacroIntelligence";
+import { ObservedCheckedFreshness } from "./intelligence/CanonicalPresentation";
+import { formatTimestampIST } from "../utils/timeFormatting";
 
 export function MarketPulseWorkspace() {
   const { canonicalState, marketContext, optionContext, syncBroker, loading } = useWorkstationState() as any;
+
+  // Master Refresh State
   const [refreshing, setRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string>(() => new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }));
   const [secAgo, setSecAgo] = useState(0);
-  const [refreshStatus, setRefreshStatus] = useState<"idle" | "success" | "failed">("idle");
+  const [refreshStatus, setRefreshStatus] = useState<"idle" | "success" | "partial" | "failed" | "rate_limited">("idle");
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+
+  // Scoped Macro Refresh State (Global Cues & FII/DII)
+  const [macroRefreshing, setMacroRefreshing] = useState(false);
+  const [macroRefreshingKeys, setMacroRefreshingKeys] = useState<Record<string, boolean>>({});
+  const [macroCheckedAt, setMacroCheckedAt] = useState<string>(() => new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }));
+  const [macroStatus, setMacroStatus] = useState<"idle" | "refreshing" | "success" | "failed" | "rate_limited">("idle");
+  const [macroMessage, setMacroMessage] = useState<string | null>(null);
+
+  // Scoped News Refresh State
+  const [newsRefreshing, setNewsRefreshing] = useState(false);
+  const [newsCheckedAt, setNewsCheckedAt] = useState<string>(() => new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }));
+  const [newsStatus, setNewsStatus] = useState<"idle" | "refreshing" | "success" | "failed" | "rate_limited">("idle");
+  const [newsMessage, setNewsMessage] = useState<string | null>(null);
+
+  // Scoped Derivatives Revalidate State
+  const [optionRevalidating, setOptionRevalidating] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -21,28 +42,121 @@ export function MarketPulseWorkspace() {
     return () => clearInterval(timer);
   }, []);
 
+  // Authoritative Master Refresh Handler (reused path using syncBroker)
   const handleRefresh = async () => {
     if (refreshing || loading) return;
     setRefreshing(true);
     setRefreshMessage(null);
     try {
       const res = await syncBroker(true);
+      const nowStr = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" });
+      setLastRefreshedAt(nowStr);
+      setSecAgo(0);
+
       if (res !== false) {
-        const nowStr = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" });
-        setLastRefreshedAt(nowStr);
-        setSecAgo(0);
         setRefreshStatus("success");
-        setRefreshMessage("Updated just now");
+        setRefreshMessage(`Master sync current · ${nowStr} IST`);
       } else {
-        setRefreshStatus("failed");
-        setRefreshMessage("Refresh incomplete · Previous validated snapshot retained");
+        setRefreshStatus("partial");
+        setRefreshMessage("Partial revalidation · Valid prior observations preserved");
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Market Pulse refresh failed", e);
       setRefreshStatus("failed");
-      setRefreshMessage("Refresh incomplete · Previous validated snapshot retained");
+      setRefreshMessage(e.message || "Revalidation incomplete · Previous validated snapshot retained");
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  // Scoped Macro Family Refresh Handler (POST /api/macro/refresh via helper)
+  const handleMacroRefresh = async () => {
+    if (macroRefreshing) return;
+    setMacroRefreshing(true);
+    setMacroStatus("refreshing");
+    setMacroMessage(null);
+    try {
+      const result = await apiMacroRefresh();
+      const nowStr = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" });
+
+      if (result.status === "success") {
+        setMacroStatus("success");
+        setMacroCheckedAt(nowStr + " IST");
+        setMacroMessage(`Macro data checked · ${nowStr} IST`);
+        if (syncBroker) await syncBroker(false);
+      } else if (result.status === "rate_limited") {
+        setMacroStatus("rate_limited");
+        setMacroMessage("Rate limited (1/min) · Previous observation retained");
+      } else {
+        setMacroStatus("failed");
+        setMacroMessage(result.error || "Macro refresh incomplete");
+      }
+    } catch (err: any) {
+      console.error("Scoped macro refresh failed", err);
+      setMacroStatus("failed");
+      setMacroMessage(err.message || "Macro refresh failed");
+    } finally {
+      setMacroRefreshing(false);
+    }
+  };
+
+  // Individual Logical Item Refresh Handler (Passes itemKey to scoped backend endpoint)
+  const handleMacroRefreshItem = async (itemKey: string) => {
+    if (macroRefreshingKeys[itemKey]) return;
+    setMacroRefreshingKeys(prev => ({ ...prev, [itemKey]: true }));
+    try {
+      const result = await apiMacroRefresh([itemKey]);
+      if (result.status === "success" && syncBroker) {
+        await syncBroker(false);
+      }
+    } catch (err: any) {
+      console.error(`Scoped refresh for ${itemKey} failed:`, err);
+    } finally {
+      setMacroRefreshingKeys(prev => ({ ...prev, [itemKey]: false }));
+    }
+  };
+
+  // Scoped News Refresh Handler (POST /api/news/refresh via helper)
+  const handleNewsRefresh = async () => {
+    if (newsRefreshing) return;
+    setNewsRefreshing(true);
+    setNewsStatus("refreshing");
+    setNewsMessage(null);
+    try {
+      const result = await apiNewsRefresh();
+      const nowStr = new Date().toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" });
+
+      if (result.status === "success") {
+        setNewsStatus("success");
+        setNewsCheckedAt(nowStr + " IST");
+        setNewsMessage(`News intelligence checked · ${nowStr} IST`);
+        if (syncBroker) await syncBroker(false);
+      } else if (result.status === "rate_limited") {
+        setNewsStatus("rate_limited");
+        setNewsMessage("Rate limited (1/min) · Previous intelligence retained");
+      } else {
+        setNewsStatus("failed");
+        setNewsMessage(result.error || "News refresh incomplete");
+      }
+    } catch (err: any) {
+      console.error("Scoped news refresh failed", err);
+      setNewsStatus("failed");
+      setNewsMessage(err.message || "News refresh failed");
+    } finally {
+      setNewsRefreshing(false);
+    }
+  };
+
+  // Scoped Option Chain Revalidate Handler
+  const handleOptionChainRevalidate = async () => {
+    if (optionRevalidating) return;
+    setOptionRevalidating(true);
+    try {
+      if (syncBroker) await syncBroker(true);
+    } catch (err) {
+      console.error("Option chain revalidation failed", err);
+    } finally {
+      setOptionRevalidating(false);
     }
   };
 
@@ -75,15 +189,15 @@ export function MarketPulseWorkspace() {
   const usdinr = getCanonicalQuote(macroQuotes, "USD_INR");
   const brent = getCanonicalQuote(macroQuotes, "BRENT_CRUDE");
   const us10y = getCanonicalQuote(macroQuotes, "US_10Y");
-  const vix = canonicalState?.macro_intelligence?.india_vix || {};
 
-  const newsItems = safeArray(canonicalState?.news_intelligence?.items) as any[];
-  const highTrustNews = newsItems.filter(n => safeString(n.trust_tier).includes("HIGH") || safeString(n.source_authority).includes("HIGH"));
+  const vix = canonicalState?.macro_intelligence?.india_vix || {};
+  const feedTelemetry = canonicalState?.market_feed_status || {};
+  const lastObservedTick = feedTelemetry.last_valid_tick_time ? formatTimestampIST(feedTelemetry.last_valid_tick_time) : (canonicalState?.generated_at ? formatTimestampIST(canonicalState.generated_at) : "Awaiting Ticks");
 
   return (
     <div id="market-pulse-workspace" className="space-y-6 text-left font-sans">
 
-      {/* ── HEADER & DEDICATED CANONICAL REFRESH CONTROL ── */}
+      {/* ── MASTER HEADER & REFRESH CONTROL ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-800 pb-4 gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -109,11 +223,11 @@ export function MarketPulseWorkspace() {
           <div className="text-right text-[11px] font-mono text-slate-400">
             <div>Last Refreshed: <span className="text-white font-bold">{lastRefreshedAt} IST</span></div>
             {refreshMessage ? (
-              <div className={`text-[10px] font-semibold ${refreshStatus === "failed" ? "text-amber-400" : "text-cyan-300"}`}>
+              <div className={`text-[10px] font-semibold ${refreshStatus === "failed" || refreshStatus === "rate_limited" ? "text-rose-400" : refreshStatus === "partial" ? "text-amber-400" : "text-cyan-300"}`}>
                 {refreshMessage}
               </div>
             ) : (
-              <div className="text-[10px] text-slate-500">Updated {secAgo}s ago</div>
+              <div className="text-[10px] text-slate-500 font-semibold">Updated {secAgo}s ago</div>
             )}
           </div>
           <button
@@ -132,10 +246,10 @@ export function MarketPulseWorkspace() {
         </div>
       </div>
 
-      {/* ── BENTO GRID 6 DECISION CARDS ── */}
+      {/* ── BENTO GRID DECISION CARDS ── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
 
-        {/* CARD 1: CORE INDIA */}
+        {/* CARD 1: CORE INDIA (STREAMING LIVE FEED - NO MANUAL REFRESH BUTTON) */}
         <div className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono">
           <div className="flex items-center justify-between border-b border-slate-850 pb-2.5">
             <div className="flex items-center gap-2">
@@ -151,11 +265,13 @@ export function MarketPulseWorkspace() {
             <div className="text-xs text-slate-400">NIFTY 50 SPOT</div>
             <div className="flex items-baseline gap-3">
               <span className="text-2xl sm:text-3xl font-extrabold text-white">
-                {spot ? formatNumber(spot, 2) : "--"}
+                {spot ? formatNumber(spot, 2) : "UNAVAILABLE"}
               </span>
-              <span className={`text-xs font-bold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
-                {isPositive ? "+" : ""}{formatNumber(change, 2)} ({isPositive ? "+" : ""}{formatNumber(changePct, 2)}%)
-              </span>
+              {spot ? (
+                <span className={`text-xs font-bold ${isPositive ? "text-emerald-400" : "text-rose-400"}`}>
+                  {isPositive ? "+" : ""}{formatNumber(change, 2)} ({isPositive ? "+" : ""}{formatNumber(changePct, 2)}%)
+                </span>
+              ) : null}
             </div>
             {prevClose ? <div className="text-[10px] text-slate-400">Prev Close: {formatNumber(prevClose, 2)}</div> : null}
           </div>
@@ -170,16 +286,30 @@ export function MarketPulseWorkspace() {
               <span className="font-bold text-cyan-300">{vix.value ? formatNumber(vix.value, 2) : "12.66"} (Normal Volatility)</span>
             </div>
           </div>
+
+          <ObservedCheckedFreshness
+            observedAt={lastObservedTick}
+            checkedAt={lastRefreshedAt + " IST"}
+            freshness={isClosed ? "LAST_VALID_SESSION" : "LIVE"}
+          />
         </div>
 
-        {/* CARD 2: DERIVATIVES */}
+        {/* CARD 2: DERIVATIVES (OPTION CHAIN REVALIDATE) */}
         <div className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono">
           <div className="flex items-center justify-between border-b border-slate-850 pb-2.5">
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-purple-400" />
               <h3 className="font-bold text-white text-xs uppercase tracking-wider">DERIVATIVES</h3>
             </div>
-            <span className="text-[10px] text-slate-400">Options Matrix</span>
+            <button
+              onClick={handleOptionChainRevalidate}
+              disabled={optionRevalidating}
+              title="Revalidate Option Chain Snapshot"
+              className="text-[9px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1 border border-slate-800 bg-slate-900 px-1.5 py-0.5 rounded transition"
+            >
+              <RefreshCw size={10} className={optionRevalidating ? "animate-spin" : ""} />
+              {optionRevalidating ? "REVALIDATING..." : "REVALIDATE CHAIN"}
+            </button>
           </div>
 
           <div className="grid grid-cols-3 gap-2 text-center">
@@ -203,159 +333,89 @@ export function MarketPulseWorkspace() {
               {pcr < 0.8 ? "Mildly defensive positioning. Call wall active around strike upper boundary." : "Neutral to supportive option build-up."}
             </p>
           </div>
+
+          <ObservedCheckedFreshness
+            observedAt={lastObservedTick}
+            checkedAt={lastRefreshedAt + " IST"}
+            freshness={safeString(optionData.status || "FRESH").toUpperCase()}
+          />
         </div>
 
-        {/* CARD 3: INSTITUTIONAL FLOWS */}
+        {/* CARD 3: INSTITUTIONAL FLOWS (FII / DII SCOPED REFRESH) */}
         <div className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono">
-          <div className="flex items-center justify-between border-b border-slate-850 pb-2.5">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-emerald-400" />
-              <h3 className="font-bold text-white text-xs uppercase tracking-wider">INSTITUTIONAL FLOWS</h3>
-            </div>
-            <span className="text-[10px] text-slate-400">{mapTraderEnum("LAST_VALID_SESSION")}</span>
-          </div>
-
-          <InstitutionalFlowWidget />
+          <InstitutionalFlowWidget
+            onRefresh={handleMacroRefresh}
+            refreshing={macroRefreshing}
+            checkedAt={macroCheckedAt}
+            refreshStatus={macroStatus}
+            refreshMessage={macroMessage}
+          />
         </div>
 
-        {/* CARD 4: GLOBAL CUES */}
-        <div className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono">
-          <div className="flex items-center justify-between border-b border-slate-850 pb-2.5">
+        {/* CARD 4: NEWS & EVENT RISK SCOPED REFRESH CONTROL BANNER */}
+        <div className="col-span-1 md:col-span-2 lg:col-span-3 p-4 bg-slate-950 border border-slate-800 rounded-xl font-mono space-y-2">
+          <div className="flex justify-between items-center border-b border-slate-850 pb-2">
             <div className="flex items-center gap-2">
-              <Globe className="h-4 w-4 text-cyan-400" />
-              <h3 className="font-bold text-white text-xs uppercase tracking-wider">GLOBAL CUES</h3>
+              <Newspaper className="h-4 w-4 text-cyan-400" />
+              <span className="text-xs font-bold text-white uppercase tracking-wider">EVENT &amp; INFORMATION RISK</span>
             </div>
-            <span className="text-[10px] text-slate-400">Proximate Summary</span>
+            <button
+              onClick={handleNewsRefresh}
+              disabled={newsRefreshing}
+              title="Refresh News & Event Risk"
+              className="text-[9px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1 border border-slate-800 bg-slate-900 px-2 py-1 rounded transition"
+            >
+              <RefreshCw size={10} className={newsRefreshing ? "animate-spin" : ""} />
+              {newsRefreshing ? "REFRESHING NEWS..." : "↻ REFRESH NEWS"}
+            </button>
           </div>
-
-          <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-850 space-y-1">
-            <div className="flex justify-between items-center text-xs">
-              <span className="font-bold text-white">GIFT NIFTY</span>
-              {giftNifty.isAvailable ? (
-                <span className={`font-bold ${giftNifty.change != null && giftNifty.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                  {formatNumber(giftNifty.value!, 2)} ({giftNifty.change != null && giftNifty.change >= 0 ? "+" : ""}{formatNumber(giftNifty.change!, 1)} pts)
-                </span>
-              ) : (
-                <span className="font-bold text-amber-400">UNAVAILABLE</span>
-              )}
-            </div>
-            <p className="text-[10px] text-slate-400 font-sans">
-              {giftNifty.isAvailable
-                ? (giftNifty.change != null && giftNifty.change < 0 ? "Slight negative external indication vs NIFTY reference." : "Positive external opening indication.")
-                : "GIFT Nifty observation pending."}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="p-2 bg-slate-900/60 rounded border border-slate-850">
-              <span className="text-[10px] text-slate-400 block">S&amp;P 500</span>
-              {sp500.isAvailable ? (
-                <span className={`font-bold ${sp500.changePct != null && sp500.changePct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                  {formatNumber(sp500.value!, 1)} ({sp500.changePct != null && sp500.changePct >= 0 ? "+" : ""}{formatNumber(sp500.changePct!, 2)}%)
-                </span>
-              ) : (
-                <span className="font-bold text-amber-400">UNAVAILABLE</span>
-              )}
-            </div>
-            <div className="p-2 bg-slate-900/60 rounded border border-slate-850">
-              <span className="text-[10px] text-slate-400 block">NASDAQ</span>
-              {nasdaq.isAvailable ? (
-                <span className={`font-bold ${nasdaq.changePct != null && nasdaq.changePct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                  {formatNumber(nasdaq.value!, 1)} ({nasdaq.changePct != null && nasdaq.changePct >= 0 ? "+" : ""}{formatNumber(nasdaq.changePct!, 2)}%)
-                </span>
-              ) : (
-                <span className="font-bold text-amber-400">UNAVAILABLE</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* CARD 5: MACRO & CROSS-ASSET */}
-        <div className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono">
-          <div className="flex items-center justify-between border-b border-slate-850 pb-2.5">
-            <div className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-amber-400" />
-              <h3 className="font-bold text-white text-xs uppercase tracking-wider">MACRO &amp; CROSS-ASSET</h3>
-            </div>
-            <span className="text-[10px] text-slate-400">Real-Time Telemetry</span>
-          </div>
-
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between items-center p-2 bg-slate-900/60 rounded border border-slate-850">
-              <span className="text-slate-400">USD / INR</span>
-              {usdinr.isAvailable ? (
-                <span className="font-bold text-white">
-                  {formatNumber(usdinr.value!, 2)} ({usdinr.changePct != null && usdinr.changePct >= 0 ? "+" : ""}{formatNumber(usdinr.changePct!, 2)}%)
-                </span>
-              ) : (
-                <span className="font-bold text-amber-400">UNAVAILABLE</span>
-              )}
-            </div>
-            <div className="flex justify-between items-center p-2 bg-slate-900/60 rounded border border-slate-850">
-              <span className="text-slate-400">Brent Crude</span>
-              {brent.isAvailable ? (
-                <span className="font-bold text-amber-300">
-                  ${formatNumber(brent.value!, 2)} ({brent.changePct != null && brent.changePct >= 0 ? "+" : ""}{formatNumber(brent.changePct!, 2)}%)
-                </span>
-              ) : (
-                <span className="font-bold text-amber-400">UNAVAILABLE</span>
-              )}
-            </div>
-            <div className="flex justify-between items-center p-2 bg-slate-900/60 rounded border border-slate-850">
-              <span className="text-slate-400">US 10Y Yield</span>
-              {us10y.isAvailable ? (
-                <span className="font-bold text-cyan-300">
-                  {formatNumber(us10y.value!, 2)}% ({us10y.change != null ? `${us10y.change >= 0 ? "+" : ""}${formatNumber(us10y.change * 100, 1)} bps` : "0 bps"})
-                </span>
-              ) : (
-                <span className="font-bold text-amber-400">UNAVAILABLE</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* CARD 6: EVENT & INFORMATION RISK */}
-        <div className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono">
-          <div className="flex items-center justify-between border-b border-slate-850 pb-2.5">
-            <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-rose-400" />
-              <h3 className="font-bold text-white text-xs uppercase tracking-wider">EVENT &amp; INFORMATION RISK</h3>
-            </div>
-            <span className="text-[10px] text-slate-400">Verified Risk</span>
-          </div>
-
-          <div className="p-2.5 bg-slate-900/60 rounded border border-slate-850 text-xs">
-            <div className="text-[10px] text-slate-400 uppercase font-bold">News Verification Summary</div>
-            <div className="font-bold text-cyan-300 mt-0.5">
-              {newsItems.length} relevant items · {highTrustNews.length} verified high-authority
-            </div>
-          </div>
-
-          <div className="space-y-2 text-xs font-sans">
-            {newsItems.length ? (
-              newsItems.slice(0, 2).map((item, i) => (
-                <div key={i} className="text-slate-300 text-[11px] leading-relaxed">
-                  • <span className="font-semibold text-white">{safeString(item.title || item.headline)}</span> ({safeString(item.source_name || "Reuters")})
-                </div>
-              ))
-            ) : (
-              <p className="text-xs text-slate-400">No high-risk canonical event currently in scope.</p>
+          <div className="flex flex-wrap justify-between items-center text-[10px] text-slate-400 font-mono">
+            <div>Checked: <strong className="text-slate-200">{newsCheckedAt}</strong></div>
+            {newsMessage && (
+              <span className={`font-semibold ${newsStatus === "failed" || newsStatus === "rate_limited" ? "text-rose-400" : "text-cyan-300"}`}>
+                {newsMessage}
+              </span>
             )}
           </div>
         </div>
 
-      </div>
+        {/* CARD 5: GLOBAL CUES & MACRO & CROSS-ASSET (SCOPED MACRO REFRESH & INDIVIDUAL TILE REFRESHES) */}
+        <div className="col-span-1 md:col-span-2 lg:col-span-3 space-y-2">
+          <div className="text-[10px] font-mono text-slate-400 font-bold uppercase tracking-widest px-1 flex justify-between items-center">
+            <span>GLOBAL CUES &amp; MACRO &amp; CROSS-ASSET</span>
+            <div className="flex items-center gap-3">
+              <span className="text-slate-500 font-normal">US 10Y Yield in bps</span>
+              <button
+                onClick={handleMacroRefresh}
+                disabled={macroRefreshing}
+                title="Refresh Global Cues, FX, Commodities & Rates"
+                className="text-[9px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1 border border-slate-800 bg-slate-950 px-2 py-1 rounded transition"
+              >
+                <RefreshCw size={10} className={macroRefreshing ? "animate-spin" : ""} />
+                {macroRefreshing ? "REFRESHING MACRO..." : "↻ REFRESH GLOBAL & MACRO"}
+              </button>
+            </div>
+          </div>
+          {/* <GlobalCuesWidget /> */}
+          <GlobalCuesWidget
+            onRefresh={handleMacroRefresh}
+            onRefreshItem={handleMacroRefreshItem}
+            refreshing={macroRefreshing}
+            refreshingKeys={macroRefreshingKeys}
+            checkedAt={macroCheckedAt}
+            refreshStatus={macroStatus}
+            refreshMessage={macroMessage}
+          />
+        </div>
 
-      {/* ── SECTION A: STANDALONE FULL-WIDTH GLOBAL CUES & MACRO TELEMETRY ── */}
-      <div className="pt-2">
-        <GlobalCuesWidget />
-      </div>
+        {/* CARD 6: CONSTITUENTS BREADTH (STREAMED LIVE - NO MANUAL BUTTON) */}
+        <div className="col-span-1 md:col-span-2 lg:col-span-3">
+          <NiftyConstituentsWidget />
+        </div>
 
-      {/* ── SECTION B: STANDALONE FULL-WIDTH NIFTY 50 OFFICIAL MEMBERSHIP ── */}
-      <div>
-        <NiftyConstituentsWidget />
       </div>
-
     </div>
   );
 }
+
+export default MarketPulseWorkspace;

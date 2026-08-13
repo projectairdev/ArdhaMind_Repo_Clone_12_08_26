@@ -29,26 +29,68 @@ class KiteTickerAdapter:
         self.auth_required_reason: Optional[str] = None
         self.reconnect_state: str = "DISCONNECTED" # "DISCONNECTED", "RECONNECTING", "CONNECTED", "RESUBSCRIBING", "VERIFYING", "RECOVERED", "HEALTHY", "AUTH_REQUIRED"
         
+        # Diagnostic Telemetry Ring Buffer (max 50 events)
+        self.generation_id: int = 1
+        self._telemetry_events: List[Dict[str, Any]] = []
+
         # Callbacks
         self.on_tick_received: Optional[Callable[[List[Dict[str, Any]]], None]] = None
         self.on_status_changed: Optional[Callable[[str], None]] = None
 
+    def _record_telemetry(self, event_type: str, reason: Optional[str] = None, close_code: Optional[int] = None, initiator: str = "SYSTEM"):
+        from datetime import datetime, timezone
+        now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        evt = {
+            "timestamp": now_str,
+            "event_type": event_type,
+            "generation_id": self.generation_id,
+            "reason": reason or "N/A",
+            "close_code": close_code,
+            "initiator": initiator,
+            "reconnect_count": self.reconnect_count,
+            "last_error": self.last_error
+        }
+        self._telemetry_events.append(evt)
+        if len(self._telemetry_events) > 50:
+            self._telemetry_events.pop(0)
+
+    def get_telemetry_events(self) -> List[Dict[str, Any]]:
+        return list(self._telemetry_events)
+
     def connect(self) -> bool:
         """
         Initializes and starts the KiteTicker connection.
+        Safely detaches any existing internal KiteTicker callbacks first.
         """
         if not self.api_key or not self.access_token:
             self.last_error = "Missing credentials for streaming"
             self.auth_required = True
             self.auth_required_reason = self.last_error
             self.reconnect_state = "AUTH_REQUIRED"
+            self._record_telemetry("AUTH_REPLACEMENT", reason=self.last_error)
             logger.error(self.last_error)
             if self.on_status_changed:
                 self.on_status_changed("AUTH_REQUIRED")
             return False
 
+        if self.ticker:
+            try:
+                logger.info("Detaching callbacks from existing KiteTicker client before new connect...")
+                self.ticker.on_ticks = None
+                self.ticker.on_connect = None
+                self.ticker.on_close = None
+                self.ticker.on_error = None
+                self.ticker.on_reconnect = None
+                self.ticker.on_noreconnect = None
+                self.ticker.close()
+            except Exception as ex:
+                logger.warning("Warning closing old KiteTicker client: %s", ex)
+            self.ticker = None
+            self.generation_id += 1
+
         try:
-            logger.info("Initializing KiteTicker client...")
+            logger.info(f"Initializing KiteTicker client (Gen #{self.generation_id})...")
+            self._record_telemetry("CONNECT_REQUESTED", reason="Stream startup")
             self.ticker = KiteTicker(
                 api_key=self.api_key,
                 access_token=self.access_token,
@@ -70,23 +112,25 @@ class KiteTickerAdapter:
             self._connected = True
             self.last_heartbeat = time.time()
             self.reconnect_state = "CONNECTED"
+            self._record_telemetry("CONNECTED", reason="Transport initiated")
             if self.on_status_changed:
                 self.on_status_changed("CONNECTED")
             return True
         except Exception as e:
             self.last_error = str(e)
             self._connected = False
-            # Check for positive authentication error indications
             err_msg = str(e).lower()
             if any(term in err_msg for term in ("tokenexception", "userexception", "403", "invalid token", "token expired", "access_token")):
                 self.auth_required = True
                 self.auth_required_reason = str(e)
                 self.reconnect_state = "AUTH_REQUIRED"
+                self._record_telemetry("AUTH_REPLACEMENT", reason=str(e))
                 logger.error(f"KiteTicker authentication failure: {e}")
                 if self.on_status_changed:
                     self.on_status_changed("AUTH_REQUIRED")
             else:
                 self.reconnect_state = "DISCONNECTED"
+                self._record_telemetry("DISCONNECTED", reason=str(e))
                 logger.error(f"Failed to connect KiteTicker (network/transport): {e}")
                 if self.on_status_changed:
                     self.on_status_changed("DISCONNECTED")
@@ -99,11 +143,19 @@ class KiteTickerAdapter:
         if self.ticker:
             try:
                 logger.info("Closing KiteTicker client...")
+                self.ticker.on_ticks = None
+                self.ticker.on_connect = None
+                self.ticker.on_close = None
+                self.ticker.on_error = None
+                self.ticker.on_reconnect = None
+                self.ticker.on_noreconnect = None
                 self.ticker.close()
             except Exception as e:
                 logger.error(f"Error closing KiteTicker: {e}")
+            self.ticker = None
         self._connected = False
         self.reconnect_state = "DISCONNECTED"
+        self._record_telemetry("SHUTDOWN", reason="Graceful disconnect")
         if self.on_status_changed:
             self.on_status_changed("DISCONNECTED")
 

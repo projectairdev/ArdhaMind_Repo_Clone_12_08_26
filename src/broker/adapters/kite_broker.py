@@ -46,6 +46,12 @@ class KiteBrokerGateway(IBrokerGateway):
         self._last_error: Optional[str] = None
         self._last_latency: float = 0.0
         self._last_profile_validation: Optional[str] = None
+        # Initialise explicitly so the 60-second cache check never evaluates
+        # against the undefined-attribute sentinel (getattr fallback of 0.0).
+        # Without this, a freshly created gateway always hits the network on
+        # the very first validate_session() call even when connect() just
+        # succeeded milliseconds earlier.
+        self._last_validation_time: float = 0.0
 
         # Auto-load session if configured
         if getattr(Config, "AUTO_LOAD_SESSION", True):
@@ -85,6 +91,10 @@ class KiteBrokerGateway(IBrokerGateway):
             self._kite_client = kite
             self._connected = True
             self._last_error = None
+            # Stamp the validation time so validate_session() uses the cache
+            # immediately and does not redundantly hit the network on the
+            # very first daemon-loop call after a successful connect().
+            self._last_validation_time = time.time()
             return True
         except Exception as e:
             logger.error(f"Kite connect failed: {e}")
@@ -157,21 +167,53 @@ class KiteBrokerGateway(IBrokerGateway):
 
     def validate_session(self) -> bool:
         """
-        Validates active session. Raises BrokerError if invalid.
+        Validates active session.
+
+        Auth-state semantics (sticky-connection rule):
+        - Returns True immediately from cache for 120 s after last successful validation.
+        - Only raises BrokerError subtypes (ExpiredAccessTokenError, etc.) when the
+          Kite API explicitly rejects the token with a 401/403 response.  These are
+          the ONLY events that should ever transition broker_state to TOKEN_EXPIRED.
+        - Any other exception (network timeout, 500/503, DNS failure, SSL error) is
+          treated as a transient glitch: the previous CONNECTED status is preserved
+          so the daemon does NOT oscillate to DISCONNECTED / TOKEN_EXPIRED and back.
         """
         if not self.access_token:
             self._connected = False
             raise SessionMissingError("No active session found to validate.")
+
+        now = time.time()
+        last_val = self._last_validation_time  # always a float (initialised in __init__)
+        # 120-second positive cache — no network call needed within this window.
+        if self._connected and (now - last_val) < 120.0:
+            return True
 
         try:
             start_time = time.time()
             AuthenticationManager.validate_session(self.access_token, api_key=self.api_key)
             self._last_latency = (time.time() - start_time) * 1000.0
             self._connected = True
+            self._last_validation_time = time.time()
             self._last_error = None
             return True
-        except Exception as e:
+        except (ExpiredAccessTokenError, AuthenticationFailureError, SessionMissingError, InvalidAPIKeyError) as e:
+            # Genuine auth rejection from Kite — token is dead.
             self._connected = False
+            self._last_error = str(e)
+            raise e
+        except Exception as e:
+            # Transient network / server error.  Preserve CONNECTED status to
+            # prevent daemon from oscillating broker_state to TOKEN_EXPIRED on
+            # momentary network hiccups.  The daemon sticky-state logic provides
+            # the definitive guard, but this layer ensures the gateway never
+            # flip-flops _connected for non-auth reasons.
+            if self._connected:
+                logger.warning(
+                    f"Transient validate_session failure — preserving CONNECTED status: {e}"
+                )
+                # Extend the cache window so the next iteration also skips live call.
+                self._last_validation_time = time.time() - 60.0
+                return True
             self._last_error = str(e)
             if isinstance(e, BrokerError):
                 raise e

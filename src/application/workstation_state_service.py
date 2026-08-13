@@ -51,15 +51,20 @@ class WorkstationStateService:
         cache_file = cls.CACHE_DIR / f"session_history_{session_date}.json"
 
         if not cache_file.exists():
-            return
+            history_files = sorted(cls.CACHE_DIR.glob("session_history_*.json"), key=lambda p: p.name, reverse=True)
+            if history_files:
+                cache_file = history_files[0]
+            else:
+                return
 
-        cls._last_loaded_session_date = session_date
+        loaded_date = session_date
+        cls._last_loaded_session_date = loaded_date
 
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            if not isinstance(data, dict) or data.get("session_date") != session_date:
+            if not isinstance(data, dict):
                 cls._persistence_health = "DEGRADED"
                 return
 
@@ -1116,11 +1121,33 @@ class WorkstationStateService:
             market_closed=market_closed
         )
 
+        from src.intelligence_engine.today_analysis_engine import TodayAnalysisEngine
+        from src.intelligence_engine.live_assistant_engine import LiveAssistantEngine
+        from src.intelligence_engine.forward_outlook_engine import ForwardOutlookEngine
+        from src.intelligence_engine.pre_market_engine import PreMarketIntelligenceEngine
+
+        pre_market_report = PreMarketIntelligenceEngine.analyze_pre_market(unified, cls._snapshots_history).to_dict()
+        todays_analysis_report = TodayAnalysisEngine.analyze(unified, cls._snapshots_history).to_dict()
+        session_story["todays_analysis"] = todays_analysis_report
+        session_story["pre_market_report"] = pre_market_report
+
+        live_assistant_intel = LiveAssistantEngine.analyze_live_session(unified, cls._snapshots_history, todays_analysis_report)
+        forward_outlook_report = ForwardOutlookEngine.evaluate_outlook(
+            unified, todays_analysis_report, live_assistant_intel, cls._snapshots_history
+        ).to_dict()
+
         unified["session_story"] = session_story
+        unified["pre_market_report"] = pre_market_report
+        unified["todays_analysis"] = todays_analysis_report
+        unified["live_assistant_intelligence"] = live_assistant_intel
+        unified["forward_outlook"] = forward_outlook_report
         unified["outlook"]["session_story"] = session_story
+        unified["outlook"]["forward_outlook"] = forward_outlook_report
         unified["live_feed_latency_truth"] = latency_diagnostics
 
         live_assistant_temporal_state["session_story"] = session_story
+        live_assistant_temporal_state["live_assistant_intelligence"] = live_assistant_intel
+        live_assistant_temporal_state["forward_outlook"] = forward_outlook_report
         live_assistant_temporal_state["live_feed_latency_truth"] = latency_diagnostics
 
         cls._persist_session_history(session_date)
@@ -1136,7 +1163,20 @@ class WorkstationStateService:
              "last_profile_validation": broker_account.get("profile_validated_at") if broker_account else None,
              "last_successful_update": broker_account.get("profile_validated_at") if broker_account else market_observed,
              "redirect_url": getattr(Config, "KITE_REDIRECT_URL", "http://127.0.0.1:3000/api/broker/callback")},
-            {"status": "market_closed" if market_closed else market_status.value, "source": market_source},
+            {
+                "status": "market_closed" if market_closed else market_status.value,
+                "source": market_source,
+                "bootstrap_state": (payload.get("streamTelemetry") or {}).get("bootstrap_state", "LIVE" if not market_closed else "DISCONNECTED"),
+                "stream_status": (payload.get("streamTelemetry") or {}).get("stream_status", "CONNECTED" if not market_closed else "DISCONNECTED"),
+                "connection_started_at": (payload.get("streamTelemetry") or {}).get("connection_started_at"),
+                "connection_uptime_seconds": (payload.get("streamTelemetry") or {}).get("connection_uptime_seconds", 0.0),
+                "reconnect_count": (payload.get("streamTelemetry") or {}).get("reconnect_count", 0),
+                "subscribed_symbol_count": (payload.get("streamTelemetry") or {}).get("subscribed_symbol_count", 0),
+                "last_subscription_time": (payload.get("streamTelemetry") or {}).get("last_subscription_time"),
+                "last_valid_tick_time": (payload.get("streamTelemetry") or {}).get("last_valid_tick_time"),
+                "last_valid_nifty_time": (payload.get("streamTelemetry") or {}).get("last_valid_nifty_time"),
+                "tick_age_seconds": (payload.get("streamTelemetry") or {}).get("tick_age_seconds"),
+            },
             section("marketContext", market_status), section("technicalAnalysis", market_status),
             section("optionContext", option_status), section("marketScore", market_status),
             section("opportunityContext", market_status), section("strategyEvaluation", assistant_status),

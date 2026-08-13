@@ -53,6 +53,10 @@ class StreamingOrchestrator:
         # Active streaming cache (stores latest tick received per symbol)
         self.latest_ticks: Dict[str, Any] = {}
 
+        # Stream Telemetry
+        self.connection_started_at: Optional[float] = None
+        self.last_subscription_time: Optional[float] = None
+
         self._initialized = True
 
     @classmethod
@@ -63,13 +67,32 @@ class StreamingOrchestrator:
         self.api_key = api_key
         self.access_token = access_token
 
-    def connect_stream(self) -> bool:
+    def connect_stream(self, force_reconnect: bool = False) -> bool:
         """
         Connects to the real-time WebSocket.
+        If credentials have changed or force_reconnect is True, safely terminates any existing adapter
+        before establishing the new connection.
         """
-        if self._running:
-            logger.info("Streaming layer already running.")
+        credentials_changed = (
+            self.adapter is not None and
+            (getattr(self.adapter, "api_key", None) != self.api_key or getattr(self.adapter, "access_token", None) != self.access_token)
+        )
+
+        if self._running and not credentials_changed and not force_reconnect and self.is_connected():
+            logger.info("Streaming layer already running with active valid adapter.")
             return True
+
+        # Safely terminate existing adapter if replacing
+        if self.adapter:
+            logger.info("Safely terminating existing KiteTickerAdapter before establishing new stream connection...")
+            old_adapter = self.adapter
+            old_adapter.on_status_changed = None
+            old_adapter.on_tick_received = None
+            try:
+                old_adapter.disconnect()
+            except Exception as e:
+                logger.error("Error disconnecting old adapter: %s", e)
+            self.adapter = None
 
         self._running = True
         self.fallback_active = False
@@ -83,7 +106,9 @@ class StreamingOrchestrator:
 
         # Attempt to connect
         success = self.adapter.connect()
-        if not success:
+        if success:
+            self.connection_started_at = time.time()
+        else:
             if getattr(self.adapter, "auth_required", False):
                 self.health_monitor.set_auth_required(getattr(self.adapter, "auth_required_reason", "Missing/Invalid credentials"))
                 logger.error("Authentication required for Kite stream. Disabling auto reconnect.")
@@ -98,8 +123,15 @@ class StreamingOrchestrator:
         Disconnects from the real-time WebSocket and shuts down.
         """
         self._running = False
+        self.connection_started_at = None
         if self.adapter:
-            self.adapter.disconnect()
+            self.adapter.on_status_changed = None
+            self.adapter.on_tick_received = None
+            try:
+                self.adapter.disconnect()
+            except Exception as e:
+                logger.error("Error disconnecting adapter: %s", e)
+            self.adapter = None
         self.subscription_manager.clear()
         self.fallback_active = False
 
@@ -113,11 +145,58 @@ class StreamingOrchestrator:
 
     def subscribe(self, symbols: List[str]) -> List[int]:
         """Subscribes dynamically to symbols."""
+        if symbols:
+            self.last_subscription_time = time.time()
         return self.subscription_manager.subscribe(symbols)
 
     def unsubscribe(self, symbols: List[str]) -> List[int]:
         """Unsubscribes dynamically from symbols."""
         return self.subscription_manager.unsubscribe(symbols)
+
+    def get_bootstrap_telemetry(self, market_status: str = "MARKET_OPEN") -> Dict[str, Any]:
+        is_conn = self.is_connected()
+        active_subs = self.subscription_manager.get_active_subscriptions()
+        active_sub_count = len(active_subs)
+        nifty_tick = self.latest_ticks.get("NSE:NIFTY 50")
+        has_nifty = nifty_tick is not None and float(nifty_tick.get("last_price", 0.0)) > 0
+        liveness = self.check_feed_liveness(market_status=market_status)
+        obs_age = float(liveness.get("observation_age_seconds", 999.0))
+
+        bootstrap_state = self.health_monitor.get_feed_bootstrap_state(
+            is_connected=True,  # Gateway authenticated
+            is_stream_connected=is_conn,
+            active_sub_count=active_sub_count,
+            has_nifty_tick=has_nifty,
+            obs_age=obs_age
+        )
+
+        now = time.time()
+        uptime = round(now - self.connection_started_at, 1) if (self.connection_started_at and is_conn) else 0.0
+        last_tick_time = self.health_monitor.last_received_timestamp
+        last_nifty_time = nifty_tick.get("timestamp") if nifty_tick else None
+
+        from datetime import datetime as dt_cls, timezone as tz_cls
+        def _iso(ts: Optional[float]) -> Optional[str]:
+            return dt_cls.fromtimestamp(ts, tz=tz_cls.utc).isoformat() if ts else None
+
+        telemetry_events = self.adapter.get_telemetry_events() if self.adapter else []
+        gen_id = self.adapter.generation_id if self.adapter else 1
+
+        return {
+            "bootstrap_state": bootstrap_state,
+            "stream_status": "CONNECTED" if is_conn else ("RECONNECTING" if self.fallback_active else "DISCONNECTED"),
+            "connection_started_at": _iso(self.connection_started_at),
+            "connection_uptime_seconds": uptime,
+            "generation_id": gen_id,
+            "reconnect_count": self.health_monitor.reconnect_count,
+            "last_reconnect_time": self.health_monitor.reconnect_state,
+            "subscribed_symbol_count": active_sub_count,
+            "last_subscription_time": _iso(self.last_subscription_time),
+            "last_valid_tick_time": _iso(last_tick_time),
+            "last_valid_nifty_time": last_nifty_time,
+            "tick_age_seconds": obs_age if obs_age < 900 else None,
+            "connection_telemetry": telemetry_events
+        }
 
     def check_feed_liveness(
         self,
@@ -228,7 +307,19 @@ class StreamingOrchestrator:
             self.fallback_active = False
             logger.error(f"Stream halted: {reason}")
         elif status == "DISCONNECTED" and self._running:
-            if not self.health_monitor.auth_required_reason:
+            market_closed = False
+            try:
+                from src.broker.services.market_status_service import MarketStatusService
+                m_stat = MarketStatusService.get_instance().get_market_status()
+                m_status_str = str(getattr(m_stat, "status", None) or (m_stat.get("status") if isinstance(m_stat, dict) else "closed")).lower()
+                market_closed = m_status_str in ("closed", "holiday", "post_close", "weekend")
+            except Exception:
+                pass
+
+            if market_closed:
+                logger.info("Market is closed; WebSocket stream is idle. Reconnection suppressed.")
+                self.fallback_active = False
+            elif not self.health_monitor.auth_required_reason:
                 self._activate_fallback()
                 self._start_reconnect_loop()
 

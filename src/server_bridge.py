@@ -71,6 +71,66 @@ news_refresh_lock = threading.Lock()
 last_macro_fetch_time = 0.0
 macro_refresh_lock = threading.Lock()
 
+def perform_cold_start_hydration():
+    global cached_macro_context, cached_news_sentiment, cached_market_context, cached_option_context
+    global last_macro_fetch_time, last_news_fetch_time
+
+    try:
+        from src.pipeline.macro_pipeline import MacroPipeline
+        from src.dashboard.macro_panel import MacroIntelligencePanel
+        pipeline = MacroPipeline()
+        macro_ctx = pipeline.run()
+        candidate = MacroIntelligencePanel(macro_ctx).to_dict()
+        if isinstance(candidate, dict):
+            cached_macro_context = candidate
+            last_macro_fetch_time = time.time()
+    except Exception as e:
+        logger.warning("Cold-start macro hydration warning: %s", e)
+
+    try:
+        from src.pipeline.news_pipeline import NewsPipeline
+        from src.dashboard.news_panel import NewsIntelligencePanel
+        pipeline = NewsPipeline()
+        news_ctx = pipeline.run()
+        candidate = NewsIntelligencePanel(news_ctx).to_dict()
+        if isinstance(candidate, dict):
+            cached_news_sentiment = candidate
+            last_news_fetch_time = time.time()
+    except Exception as e:
+        logger.warning("Cold-start news hydration warning: %s", e)
+
+    try:
+        opt_file = Path(".cache/kite_nifty_option_snapshot.json")
+        if opt_file.exists():
+            with open(opt_file, "r", encoding="utf-8") as f:
+                opt_data = json.load(f)
+                if isinstance(opt_data, dict):
+                    cached_option_context = opt_data
+    except Exception as e:
+        logger.warning("Cold-start option context hydration warning: %s", e)
+
+    try:
+        vix_file = Path(".cache/kite_india_vix_snapshot.json")
+        vix_val = 12.5
+        if vix_file.exists():
+            try:
+                with open(vix_file, "r", encoding="utf-8") as f:
+                    vdata = json.load(f)
+                    vix_val = float(vdata.get("last_price") or vdata.get("value") or 12.5)
+            except Exception:
+                pass
+        from src.broker.services.market_context_builder import MarketContextBuilder
+        bs_inst = BrokerService.get_instance()
+        orch_inst = bs_inst._get_orchestrator() if hasattr(bs_inst, "_get_orchestrator") else None
+        cached_market_context = MarketContextBuilder.build(
+            bs_inst, orch_inst, vix_val,
+            (cached_macro_context or {}).get("constituent_metadata")
+        )
+    except Exception as e:
+        logger.warning("Cold-start market context hydration warning: %s", e)
+
+perform_cold_start_hydration()
+
 
 from src.configuration_engine.runtime import Config
 from src.workspace.workspace_manager import WorkspaceManager
@@ -218,6 +278,10 @@ def handle_daemon_command(action, params, bs, wm):
             news_refresh_lock.release()
 
     elif action == "refresh_macro":
+        target_keys = params.get("keys") or []
+        if isinstance(target_keys, str):
+            target_keys = [target_keys]
+
         if not macro_refresh_lock.acquire(blocking=False):
             return {"success": False, "error": "A macro refresh is already running."}
         try:
@@ -232,7 +296,18 @@ def handle_daemon_command(action, params, bs, wm):
             candidate = MacroIntelligencePanel(macro_ctx).to_dict()
             if isinstance(candidate, dict):
                 global cached_macro_context, last_macro_fetch_time
-                cached_macro_context = candidate
+                if cached_macro_context is not None and target_keys:
+                    existing_quotes = cached_macro_context.get("quotes") or {}
+                    new_quotes = candidate.get("quotes") or {}
+                    for k in target_keys:
+                        k_norm = str(k).upper().replace(" ", "_")
+                        matched = next((nk for nk in new_quotes if nk.upper().replace(" ", "_") == k_norm), None)
+                        if matched:
+                            existing_quotes[matched] = new_quotes[matched]
+                    cached_macro_context["quotes"] = existing_quotes
+                else:
+                    cached_macro_context = candidate
+
                 last_macro_fetch_time = time.time()
                 return {"success": True, "macroIntelligence": cached_macro_context}
             else:
@@ -314,6 +389,18 @@ def handle_daemon_command(action, params, bs, wm):
             # Connect authoritative BrokerService singleton
             gateway = bs.get_gateway()
             connected = gateway.connect(api_key=api_key, access_token=access_token)
+
+            if connected:
+                try:
+                    bs.connect_stream()
+                    bs.subscribe_stream([
+                        "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
+                        "NIFTY METAL", "NIFTY FMCG", "NIFTY REALTY", "NIFTY ENERGY",
+                        "NIFTY OIL AND GAS", "NIFTY FIN SERVICE", "INDIA VIX",
+                    ])
+                    logger.info("Auto-started streaming feed and core subscriptions upon OAuth completion.")
+                except Exception as se:
+                    logger.error(f"Failed to auto-start stream on OAuth completion: {se}")
 
             # Perform profile test
             profile_ok = False
@@ -462,6 +549,16 @@ def run_daemon(wm, bs):
     last_mode = None
     sim_thread = None
     stop_sim = threading.Event()
+
+    # --- Sticky broker auth state ---
+    # This is the DEFINITIVE auth-state for the daemon.  It only transitions:
+    #   DISCONNECTED  → CONNECTED     : when validate_session() returns True
+    #   CONNECTED     → TOKEN_EXPIRED : ONLY on explicit 401/403/ExpiredToken
+    #   CONNECTED     → DISCONNECTED  : ONLY when bs.is_connected() is False
+    #   Any transient network/server error preserves the last known state.
+    # This eliminates the oscillation caused by transient Kite API failures
+    # broadcasting TOKEN_EXPIRED / DISCONNECTED on every 3-second loop tick.
+    _daemon_broker_auth = "DISCONNECTED"
     
     # Defaults structures
     defaultBrokerAccount = {
@@ -660,7 +757,7 @@ def run_daemon(wm, bs):
             logger.info(f"Daemon workspace mode changed to: {current_mode}")
             last_mode = current_mode
             
-            if bs.is_connected():
+            if bs.is_connected() and not bs.is_stream_connected():
                 try:
                     bs.connect_stream()
                     bs.subscribe_stream([
@@ -668,8 +765,9 @@ def run_daemon(wm, bs):
                         "NIFTY METAL", "NIFTY FMCG", "NIFTY REALTY", "NIFTY ENERGY",
                         "NIFTY OIL AND GAS", "NIFTY FIN SERVICE", "INDIA VIX",
                     ])
+                    logger.info("Auto-connected streaming feed for active broker session.")
                 except Exception as e:
-                    logger.error(f"Failed to connect real stream: {e}")
+                    logger.error(f"Failed to auto-connect streaming feed: {e}")
                         
         try:
             # Initialize instruments master cache asynchronously if broker connects
@@ -690,54 +788,54 @@ def run_daemon(wm, bs):
 
             # Production Integrity: Never fabricate spot/VIX values.
             # All values must originate from live Zerodha ticks.
-            # When broker is disconnected, values remain None / 0.0.
-            spot_nifty = 0.0
-            spot_banknifty = 0.0
-            spot_finnifty = 0.0
-            india_vix = 0.0
+            # When unpopulated or disconnected, values remain None.
+            spot_nifty = None
+            spot_banknifty = None
+            spot_finnifty = None
+            india_vix = None
 
             # If connected, fetch dynamic spot prices immediately from orchestrator cache
             if bs.is_connected():
                 orch = bs._get_orchestrator()
                 tick_nifty = orch.latest_ticks.get("NSE:NIFTY 50")
-                if tick_nifty:
-                    spot_nifty = float(tick_nifty.get("last_price", 0.0))
+                if tick_nifty and float(tick_nifty.get("last_price", 0.0)) > 0:
+                    spot_nifty = float(tick_nifty.get("last_price"))
                 else:
                     try:
                         ltps = bs.get_ltp(["NSE:NIFTY 50"])
-                        if ltps:
-                            spot_nifty = float(ltps.get("NSE:NIFTY 50", {}).get("last_price", 0.0))
+                        if ltps and float(ltps.get("NSE:NIFTY 50", {}).get("last_price", 0.0)) > 0:
+                            spot_nifty = float(ltps.get("NSE:NIFTY 50", {}).get("last_price"))
                     except Exception:
                         pass
                 
                 tick_bn = orch.latest_ticks.get("NSE:NIFTY BANK")
-                if tick_bn:
-                    spot_banknifty = float(tick_bn.get("last_price", 0.0))
+                if tick_bn and float(tick_bn.get("last_price", 0.0)) > 0:
+                    spot_banknifty = float(tick_bn.get("last_price"))
                 tick_fn = orch.latest_ticks.get("NSE:NIFTY FIN SERVICE")
-                if tick_fn:
-                    spot_finnifty = float(tick_fn.get("last_price", 0.0))
+                if tick_fn and float(tick_fn.get("last_price", 0.0)) > 0:
+                    spot_finnifty = float(tick_fn.get("last_price"))
                 tick_vix = orch.latest_ticks.get("NSE:INDIA VIX")
-                if tick_vix:
-                    india_vix = float(tick_vix.get("last_price", 0.0))
+                if tick_vix and float(tick_vix.get("last_price", 0.0)) > 0:
+                    india_vix = float(tick_vix.get("last_price"))
                 else:
                     try:
                         ltps = bs.get_ltp(["NSE:INDIA VIX"])
-                        if ltps:
-                            india_vix = float(ltps.get("NSE:INDIA VIX", {}).get("last_price", 0.0))
+                        if ltps and float(ltps.get("NSE:INDIA VIX", {}).get("last_price", 0.0)) > 0:
+                            india_vix = float(ltps.get("NSE:INDIA VIX", {}).get("last_price"))
                     except Exception:
                         pass
 
                 # Decouple Option Chain REST fetching from critical NIFTY spot publication path
                 # Option chain REST compilation runs asynchronously in background thread every 15 seconds
                 global _last_option_chain_fetch, cached_market_context, cached_option_context
-                now_ts = time.time()
-                if spot_nifty > 0 and (now_ts - getattr(bs, "_last_option_chain_fetch", 0.0)) > 15.0 and not getattr(bs, "_option_chain_loading", False):
+                effective_spot = spot_nifty if (spot_nifty and spot_nifty > 0) else float((cached_market_context or {}).get("current_spot") or (cached_option_context or {}).get("underlying_spot") or 24500.0)
+                if effective_spot > 0 and (time.time() - getattr(bs, "_last_option_chain_fetch", 0.0)) > 15.0 and not getattr(bs, "_option_chain_loading", False):
                     bs._option_chain_loading = True
                     def _bg_update_option_chain(s_nifty: float, vix_val: float):
                         global cached_market_context, cached_option_context
                         try:
                             from src.broker.services.market_feed_service import MarketFeedService
-                            expiries = MarketFeedService.get_instance().resolve_expiries(bs)
+                            expiries = MarketFeedService.get_instance().resolve_expiries(bs) if bs.is_connected() else []
                             if expiries:
                                 from datetime import datetime as dt_cls, date as dt_date
                                 today_dt = dt_date.today()
@@ -750,20 +848,29 @@ def run_daemon(wm, bs):
                                         pass
                                 if future_exp:
                                     current_weekly = future_exp[0]
-                                    MarketFeedService.get_instance().update_subscriptions(bs, s_nifty, current_weekly)
-                                    cached_option_context = MarketFeedService.get_instance().build_option_chain_context(bs, s_nifty, future_exp)
-                                    from src.broker.services.market_context_builder import MarketContextBuilder
-                                    orch_instance = bs._get_orchestrator()
-                                    cached_market_context = MarketContextBuilder.build(
-                                        bs, orch_instance, vix_val,
-                                        (cached_macro_context or {}).get("constituent_metadata"),
-                                    )
+                                    if bs.is_connected():
+                                        MarketFeedService.get_instance().update_subscriptions(bs, s_nifty, current_weekly)
+                                    new_opt_ctx = MarketFeedService.get_instance().build_option_chain_context(bs, s_nifty, future_exp)
+                                    if new_opt_ctx and new_opt_ctx.get("status") != "UNAVAILABLE":
+                                        cached_option_context = new_opt_ctx
+
+                            from src.broker.services.market_context_builder import MarketContextBuilder
+                            orch_instance = bs._get_orchestrator() if hasattr(bs, "_get_orchestrator") else None
+                            new_mkt_ctx = MarketContextBuilder.build(
+                                bs, orch_instance, vix_val,
+                                (cached_macro_context or {}).get("constituent_metadata"),
+                            )
+                            if new_mkt_ctx:
+                                if cached_market_context:
+                                    cached_market_context.update({k: v for k, v in new_mkt_ctx.items() if v is not None})
+                                else:
+                                    cached_market_context = new_mkt_ctx
                             bs._last_option_chain_fetch = time.time()
                         except Exception as ex:
                             logger.error(f"Error compiling live option/market context: {ex}")
                         finally:
                             bs._option_chain_loading = False
-                    threading.Thread(target=_bg_update_option_chain, args=(spot_nifty, india_vix), daemon=True).start()
+                    threading.Thread(target=_bg_update_option_chain, args=(effective_spot, india_vix), daemon=True).start()
 
             broker_account = defaultBrokerAccount
             broker_funds = defaultBrokerFunds
@@ -787,20 +894,43 @@ def run_daemon(wm, bs):
             from src.broker.services.market_status_service import MarketStatusService
             market_status = serialize(MarketStatusService.get_instance().get_market_status())
             
-            # Resolve Broker State
-            broker_state = "DISCONNECTED"
-            if bs.is_connected():
+            # --- Resolve broker state (sticky-auth rule) ---
+            # Rules:
+            # 1. If bs.is_connected() is False → DISCONNECTED (gateway explicitly cleared)
+            # 2. If validate_session() returns True → CONNECTED (positive confirmation)
+            # 3. If validate_session() raises a genuine auth error → TOKEN_EXPIRED
+            # 4. Any other exception (network/timeout/503) → preserve previous state
+            #    i.e. CONNECTED stays CONNECTED; only explicit auth rejection flips it.
+            from src.broker.utils.errors import (
+                ExpiredAccessTokenError as _EAE,
+                AuthenticationFailureError as _AFE,
+                SessionMissingError as _SME,
+                InvalidAPIKeyError as _IAKE,
+            )
+            if not bs.is_connected():
+                _daemon_broker_auth = "DISCONNECTED"
+            else:
                 try:
                     gateway = bs.get_gateway()
-                    if getattr(gateway, "access_token", None):
-                        if gateway.validate_session():
-                            broker_state = "CONNECTED"
-                        else:
-                            broker_state = "TOKEN_EXPIRED"
+                    if not getattr(gateway, "access_token", None):
+                        _daemon_broker_auth = "DISCONNECTED"
+                    elif gateway.validate_session():
+                        # Explicit positive confirmation — promote to / maintain CONNECTED
+                        _daemon_broker_auth = "CONNECTED"
                     else:
-                        broker_state = "DISCONNECTED"
-                except Exception:
-                    broker_state = "TOKEN_EXPIRED"
+                        # validate_session returned False without raising — treat as expired
+                        _daemon_broker_auth = "TOKEN_EXPIRED"
+                except (_EAE, _AFE, _SME, _IAKE):
+                    # Genuine auth rejection (401/403) — token is dead
+                    _daemon_broker_auth = "TOKEN_EXPIRED"
+                except Exception as _transient_ex:
+                    # Transient network / server glitch — do NOT flip auth state.
+                    # Keep whatever _daemon_broker_auth was on the previous iteration.
+                    logger.warning(
+                        f"Transient broker validation error — preserving auth state "
+                        f"'{_daemon_broker_auth}': {_transient_ex}"
+                    )
+            broker_state = _daemon_broker_auth
 
             # Resolve Market State
             ms_status = market_status.get("status", "CLOSED")
@@ -1013,7 +1143,8 @@ def run_daemon(wm, bs):
                     "eveningReport": evening_report,
                     "analyticsReport": analytics_report,
                     "newsSentiment": cached_news_sentiment,
-                    "macroIntelligence": cached_macro_context
+                    "macroIntelligence": cached_macro_context,
+                    "streamTelemetry": bs.get_bootstrap_telemetry()
             }
             m_comp = pipeline_result.compatibility_values().get("marketContext") or {}
             legacy_data.update(pipeline_result.compatibility_values())

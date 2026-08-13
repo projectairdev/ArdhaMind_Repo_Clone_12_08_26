@@ -25,12 +25,14 @@ export function WorkstationTopBar({ mobileOpen, onToggleMobile }: { mobileOpen: 
   const stateObj = canonicalState ?? lastValidState;
   const mStatus = stateObj?.market_session?.status || "closed";
   const marketStateStr = mStatus === "open" ? "OPEN" : mStatus === "holiday" ? "HOLIDAY" : mStatus === "pre_open" ? "PRE_OPEN" : "CLOSED";
-  const kite = broker?.status === "session_expired" ? "Kite Session Expired" : broker?.status === "connected" ? "Kite Connected" : "Kite Disconnected";
+  const isClosedSession = marketStateStr === "CLOSED" || marketStateStr === "HOLIDAY" || Boolean(stateObj?.market_session?.is_closed);
+  const isAuthValid = broker?.status === "connected" || broker?.session_valid === true;
+  const isAuthRequired = broker?.status === "session_expired" || broker?.status === "token_expired" || broker?.reconnect_required === true;
+  const kite = isAuthRequired ? "Kite Auth Required" : isAuthValid ? (isClosedSession ? "Kite Authenticated" : "Kite Connected") : "Kite Disconnected";
   const feedHealth = stateObj?.market_feed_status?.status || "offline";
   const feedLatencyMs = stateObj?.data_quality?.market_data?.age_seconds ? stateObj.data_quality.market_data.age_seconds * 1000 : 0;
-  const isClosedSession = marketStateStr === "CLOSED" || marketStateStr === "HOLIDAY" || Boolean(stateObj?.market_session?.is_closed);
   const coreFeedReady = Boolean(stateObj?.market_data?.current_spot || stateObj?.market_data?.status === "ready" || feedHealth === "healthy" || feedHealth === "ready");
-  const feed = isClosedSession ? "Closed" : marketConnection === "DISCONNECTED" ? "Offline" : marketConnection === "CONNECTING" ? "Connecting" : coreFeedReady ? "LIVE" : feedHealth === "degraded" ? `Delayed${feedLatencyMs ? ` ${Math.ceil(feedLatencyMs / 1000)}s` : ""}` : "Degraded";
+  const feed = isClosedSession ? "Idle" : marketConnection === "DISCONNECTED" ? "Offline" : marketConnection === "CONNECTING" ? "Reconnecting" : coreFeedReady ? "LIVE" : feedHealth === "degraded" ? `Delayed${feedLatencyMs ? ` ${Math.ceil(feedLatencyMs / 1000)}s` : ""}` : "Degraded";
 
   const providerHealth = { ...(stateObj?.news_intelligence?.provider_health || {}), ...(stateObj?.macro_intelligence?.provider_health || {}) } as Record<string, any>;
   const degradedProviders = Object.entries(providerHealth).filter(([, value]) => !["ready", "disabled", "available"].includes(String(value?.status || "").toLowerCase()));

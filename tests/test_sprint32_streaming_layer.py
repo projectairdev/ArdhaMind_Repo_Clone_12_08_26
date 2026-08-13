@@ -142,9 +142,11 @@ def test_streaming_orchestrator_fallback_and_reconnection():
     assert orchestrator.is_connected() is True
     assert orchestrator.is_fallback_active() is False
 
-    # Force a close event to trigger fallback and reconnection loop
-    orchestrator._on_status_changed("DISCONNECTED")
-    assert orchestrator.is_fallback_active() is True
+    # Force a close event to trigger fallback and reconnection loop (simulating open market)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("src.broker.services.market_status_service.MarketStatusService.get_market_status", lambda self: {"status": "open"})
+        orchestrator._on_status_changed("DISCONNECTED")
+        assert orchestrator.is_fallback_active() is True
 
     # Test latest quote retrieval falls back to HTTP gateway under fallback mode
     mock_gateway.get_quote.return_value = {"NIFTY 50": {"last_price": 22005.0}}

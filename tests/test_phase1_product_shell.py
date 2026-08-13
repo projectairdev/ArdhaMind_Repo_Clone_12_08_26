@@ -11,10 +11,10 @@ BRIDGE = (ROOT / "src/server_bridge.py").read_text(encoding="utf-8")
 
 
 def test_exact_primary_navigation_order():
-    labels = ["NIFTY Live", "Market Pulse", "Today’s Analysis", "NEWS & UPDATES", "Live Assistant", "Settings"]
+    labels = ["NIFTY Live", "Live Assistant", "Today’s Analysis", "Forward Outlook", "Pre-Market Planner", "Market Pulse", "NEWS & UPDATES", "Settings"]
     positions = [LAYOUT.index(f'label: "{label}"') for label in labels]
     assert positions == sorted(positions)
-    assert LAYOUT.count("label:") == 6
+    assert LAYOUT.count("label:") == 8
 
 
 def test_removed_surfaces_are_not_in_active_import_graph():

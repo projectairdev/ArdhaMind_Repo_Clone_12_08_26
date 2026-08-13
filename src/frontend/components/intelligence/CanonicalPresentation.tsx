@@ -29,11 +29,41 @@ export function SemanticBadge({ value, kind = "state" }: { value: unknown; kind?
 export function ProvenanceLine({ source, observedAt, freshness }: { source?: unknown; observedAt?: unknown; freshness?: unknown }) {
   const srcStr = safeString(source || "UNAVAILABLE");
   const displaySource = srcStr === "kite_historical_api" ? "Kite Historical API" : srcStr;
-  return <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-500">
+  return <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-500 font-mono">
     <span>Source: {displaySource}</span>
     <span>Observed: {safeString(observedAt || "UNAVAILABLE")}</span>
     <SemanticBadge value={freshness} kind="freshness" />
   </div>;
+}
+
+export function ObservedCheckedFreshness({ observedAt, checkedAt, freshness, tradingDate }: { observedAt?: string | null; checkedAt?: string | null; freshness?: string | null; tradingDate?: string | null }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[9px] font-mono text-slate-400">
+      {tradingDate && <span>Session Date: <strong className="text-slate-200">{tradingDate}</strong></span>}
+      {observedAt && <span>Observed: <strong className="text-slate-200">{observedAt}</strong></span>}
+      {checkedAt && <span>Checked: <strong className="text-slate-200">{checkedAt}</strong></span>}
+      <SemanticBadge value={freshness || "FRESH"} kind="freshness" />
+    </div>
+  );
+}
+
+export function DataDetailsDrawer({ title = "Data & Evidence Details", children, defaultOpen = false }: { title?: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div data-details-drawer className="mt-3 border-t border-slate-800/80 pt-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 text-[10px] font-mono text-cyan-400 hover:text-cyan-300 transition"
+      >
+        <span>{open ? "▼ Hide" : "▶ Show"} {title} ⓘ</span>
+      </button>
+      {open && (
+        <div data-provenance-details className="mt-2.5 rounded-lg border border-slate-800/80 bg-slate-950/80 p-3 text-[10px] font-mono text-slate-300 space-y-2">
+          {children}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function EvidenceList({ title, items, toneClass = "text-slate-300" }: { title: string; items: unknown; toneClass?: string }) {

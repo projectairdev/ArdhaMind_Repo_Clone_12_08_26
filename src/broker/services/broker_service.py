@@ -267,3 +267,7 @@ class BrokerService(IBrokerGateway):
     def get_stream_health(self) -> Any:
         """Returns the current immutable StreamHealthReport."""
         return self._get_orchestrator().get_health_report()
+
+    def get_bootstrap_telemetry(self) -> Dict[str, Any]:
+        """Returns stream operational telemetry and feed bootstrap status."""
+        return self._get_orchestrator().get_bootstrap_telemetry()

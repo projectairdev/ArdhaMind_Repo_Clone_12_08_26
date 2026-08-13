@@ -27,7 +27,23 @@ import { formatTimestampIST } from "../utils/timeFormatting";
 import { mapFreshness, mapTraderEnum } from "../utils/traderTerminology";
 import { getCanonicalQuote } from "../utils/canonicalQuotes";
 
-export function GlobalCuesWidget() {
+export function GlobalCuesWidget({
+  onRefresh,
+  onRefreshItem,
+  refreshing = false,
+  refreshingKeys = {},
+  checkedAt,
+  refreshStatus = "idle",
+  refreshMessage
+}: {
+  onRefresh?: () => void;
+  onRefreshItem?: (key: string) => void;
+  refreshing?: boolean;
+  refreshingKeys?: Record<string, boolean>;
+  checkedAt?: string;
+  refreshStatus?: string;
+  refreshMessage?: string | null;
+}) {
   const { canonicalState, lastValidState } = useWorkstationState();
   const macro = (canonicalState ?? lastValidState)?.macro_intelligence || {};
   const quotes = macro.quotes || {};
@@ -64,19 +80,22 @@ export function GlobalCuesWidget() {
     if (freshnessStr.includes("STALE")) return "Stale Data";
 
     if (upperKey.includes("S&P") || upperKey.includes("NASDAQ") || upperKey.includes("DOW")) {
-      return "Previous US Session";
+      return "PREVIOUS US SESSION";
     }
     if (upperKey.includes("NIKKEI") || upperKey.includes("HANG_SENG") || upperKey.includes("HANGSENG")) {
-      return "Current Asian Session";
+      return "CURRENT ASIAN SESSION";
     }
     if (upperKey.includes("GIFT")) {
-      return "Current Session";
+      return "CURRENT SESSION";
     }
-    if (upperKey.includes("BRENT") || upperKey.includes("GOLD") || upperKey.includes("USD_INR") || upperKey.includes("DXY") || upperKey.includes("US_10Y")) {
-      return "Global Telemetry";
+    if (upperKey.includes("BRENT") || upperKey.includes("GOLD")) {
+      return "24H COMMODITIES";
+    }
+    if (upperKey.includes("USD_INR") || upperKey.includes("DXY") || upperKey.includes("US_10Y") || upperKey.includes("TNX") || upperKey.includes("10Y")) {
+      return "GLOBAL FX & RATES";
     }
     if (freshnessStr.includes("LAST_VALID") || freshnessStr.includes("PREVIOUS")) {
-      return "Previous Trading Session";
+      return "PREVIOUS TRADING SESSION";
     }
     return mapFreshness(q.freshnessStatus || q.freshness_status || "LAST_VALID_SESSION");
   };
@@ -85,13 +104,34 @@ export function GlobalCuesWidget() {
     const q = getCanonicalQuote(quotes, key);
     const rawQuote = quotes[q.canonicalKey] || quotes[key];
     const sessionLabel = getTruthfulSessionLabel(key, rawQuote || q);
+    const isItemRefreshing = Boolean(refreshingKeys[key] || (refreshing && !onRefreshItem));
+
+    const handleTileRefresh = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (onRefreshItem) {
+        onRefreshItem(key);
+      } else if (onRefresh) {
+        onRefresh();
+      }
+    };
 
     if (!q.isAvailable) {
       return (
         <div key={key} data-macro-key={key} className={`p-3 bg-slate-900/60 rounded-lg border border-slate-850 space-y-1 font-mono ${isFeatured ? "border-cyan-800/80 bg-cyan-950/20" : ""}`}>
           <div className="flex justify-between items-center text-xs">
             <span className="font-bold text-slate-300">{label}</span>
-            <span className="text-[10px] text-slate-500 font-semibold">{sessionLabel}</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleTileRefresh}
+                disabled={isItemRefreshing}
+                title={`Refresh ${label}`}
+                aria-label={`Refresh ${label}`}
+                className="text-[9px] font-mono text-cyan-400 hover:text-cyan-300 p-0.5 rounded border border-slate-800 bg-slate-900/80 transition"
+              >
+                <RefreshCw size={10} className={isItemRefreshing ? "animate-spin text-cyan-400" : ""} />
+              </button>
+              <span className="text-[10px] text-slate-500 font-semibold">{sessionLabel}</span>
+            </div>
           </div>
           <p className="text-[10px] text-slate-500">{safeString(quoteStatus[key]?.reason || "No validated observation")}</p>
         </div>
@@ -105,7 +145,18 @@ export function GlobalCuesWidget() {
       <div key={key} data-macro-key={key} className={`p-3 bg-slate-900/60 rounded-lg border border-slate-850 space-y-1 font-mono transition hover:border-slate-700 ${isFeatured ? "border-cyan-500/50 bg-cyan-950/20" : ""}`}>
         <div className="flex items-center justify-between text-xs">
           <span className={`font-bold uppercase tracking-wider ${isFeatured ? "text-cyan-300" : "text-slate-200"}`}>{label}</span>
-          <span className="text-[10px] text-slate-400 font-sans">{sessionLabel}</span>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleTileRefresh}
+              disabled={isItemRefreshing}
+              title={`Refresh ${label}`}
+              aria-label={`Refresh ${label}`}
+              className="text-[9px] font-mono text-cyan-400 hover:text-cyan-300 p-0.5 rounded border border-slate-800 bg-slate-900/80 transition hover:bg-cyan-950/60"
+            >
+              <RefreshCw size={10} className={isItemRefreshing ? "animate-spin text-cyan-400" : ""} />
+            </button>
+            <span className="text-[10px] text-slate-400 font-sans">{sessionLabel}</span>
+          </div>
         </div>
         <div className="flex items-baseline justify-between pt-1">
           <span className="text-sm font-extrabold text-white">
@@ -169,7 +220,19 @@ export function GlobalCuesWidget() {
   );
 }
 
-export function InstitutionalFlowWidget() {
+export function InstitutionalFlowWidget({
+  onRefresh,
+  refreshing = false,
+  checkedAt,
+  refreshStatus = "idle",
+  refreshMessage
+}: {
+  onRefresh?: () => void;
+  refreshing?: boolean;
+  checkedAt?: string;
+  refreshStatus?: string;
+  refreshMessage?: string | null;
+}) {
   const { canonicalState, lastValidState } = useWorkstationState() as any;
   const macro = (canonicalState ?? lastValidState)?.macro_intelligence || {};
   const flows = safeArray(macro.institutional_flows) as any[];
@@ -191,14 +254,35 @@ export function InstitutionalFlowWidget() {
             <Activity size={14} className="text-emerald-400" />
             <span>FII / DII Trading Activity</span>
           </div>
-          <span className="text-[10px] font-bold text-slate-400">
-            {sessionContext}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold text-slate-400">
+              {sessionContext}
+            </span>
+            {onRefresh && (
+              <button
+                onClick={onRefresh}
+                disabled={refreshing}
+                title="Refresh Institutional Flows (FII/DII)"
+                className="text-[9px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1 border border-slate-800 bg-slate-950 px-1.5 py-0.5 rounded transition"
+              >
+                <RefreshCw size={10} className={refreshing ? "animate-spin" : ""} />
+                {refreshing ? "REFRESHING..." : "↻ REFRESH FII/DII"}
+              </button>
+            )}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-500">
-          <span>Report Date: {reportDate}</span>
-          <span>Observed: {observedAt}</span>
-          <span>Freshness: <span className="text-slate-400 font-semibold">{cleanFreshness}</span></span>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[9px] text-slate-500">
+          <div className="flex flex-wrap gap-x-3">
+            <span>Report Date: {reportDate}</span>
+            <span>Observed: {observedAt}</span>
+            {checkedAt && <span>Checked: <strong className="text-slate-300">{checkedAt}</strong></span>}
+            <span>Freshness: <span className="text-slate-400 font-semibold">{cleanFreshness}</span></span>
+          </div>
+          {refreshMessage && (
+            <span className={`font-semibold ${refreshStatus === "failed" || refreshStatus === "rate_limited" ? "text-rose-400" : "text-cyan-300"}`}>
+              {refreshMessage}
+            </span>
+          )}
         </div>
       </div>
 
