@@ -149,11 +149,11 @@ class WorkstationStateService:
             seen_3m_buckets = set()
             for s in d_snaps:
                 ts_str = str(s.get("timestamp") or "")
-                if len(ts_str) >= 16:
-                    time_part = ts_str[11:16]
+                if ts_str:
                     try:
-                        hh, mm = map(int, time_part.split(":"))
-                        bucket = f"{hh:02d}:{(mm // 3) * 3:02d}"
+                        dt_u = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                        dt_i = dt_u.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        bucket = f"{dt_i.hour:02d}:{(dt_i.minute // 3) * 3:02d}"
                         if bucket not in seen_3m_buckets:
                             seen_3m_buckets.add(bucket)
                             checkpoint_keys.add((s.get("timestamp"), s.get("state_sequence")))

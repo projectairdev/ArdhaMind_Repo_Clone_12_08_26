@@ -16,9 +16,11 @@ Principles & Rules:
 """
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Set
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 @dataclass
@@ -96,11 +98,63 @@ class LiveAssistantEngine:
     _completed_windows_cache: Dict[str, MarketWindowAnalysis] = {}
     _emitted_event_states: Set[str] = set()
 
+    CACHE_DIR = Path("data/cache")
+
     @classmethod
     def reset_engine_state(cls) -> None:
         """Reset internal caches for testing or session rollover."""
         cls._completed_windows_cache.clear()
         cls._emitted_event_states.clear()
+
+    @classmethod
+    def resolve_intraday_session(
+        cls,
+        m_session: Dict[str, Any],
+        now_ist: datetime,
+        snapshot_history: List[Dict[str, Any]],
+        cache_dir: Optional[Path] = None
+    ) -> Tuple[str, str, List[Dict[str, Any]]]:
+        """Resolves (intelligence_session_date, intelligence_mode, session_snapshots)."""
+        sess_status = str(m_session.get("status") or "OPEN").upper()
+        is_active_live = sess_status in ("OPEN", "MARKET_OPEN", "CONTINUOUS_TRADING")
+        runtime_session_date = str(m_session.get("session_date") or now_ist.strftime("%Y-%m-%d"))
+
+        # Rule 1: Active LIVE trading session -> STRICTLY current session_date only
+        if is_active_live:
+            live_snaps = [s for s in snapshot_history if s.get("session_date") is None or str(s.get("session_date")) == runtime_session_date]
+            return runtime_session_date, "LIVE", live_snaps
+
+        # Rule 2: In-memory snapshot history check
+        in_mem_snaps = [
+            s for s in snapshot_history
+            if s.get("session_date") is None or str(s.get("session_date")) == runtime_session_date
+        ]
+        if in_mem_snaps:
+            return runtime_session_date, "COMPLETED_SESSION", in_mem_snaps
+
+        # Search backward on disk / in memory for newest session_date with genuine continuous trading snapshots
+        target_dir = cache_dir if cache_dir is not None else cls.CACHE_DIR
+        if target_dir.exists():
+            history_files = sorted(target_dir.glob("session_history_*.json"), key=lambda p: p.name, reverse=True)
+            for f_path in history_files:
+                try:
+                    f_date = f_path.name.replace("session_history_", "").replace(".json", "")
+                    if f_date == runtime_session_date:
+                        continue
+                    with open(f_path, "r", encoding="utf-8") as handle:
+                        data = json.load(handle)
+                    snaps = data.get("snapshots") or []
+                    trading_count = sum(
+                        1 for s in snaps
+                        if s.get("market_session_phase") in ("MARKET_OPEN", "OPEN", "CONTINUOUS_TRADING")
+                    )
+                    if trading_count > 0:
+                        return f_date, "COMPLETED_SESSION", snaps
+                except Exception:
+                    continue
+
+        # Fallback if no historical file has trading snapshots
+        return runtime_session_date, "COMPLETED_SESSION", [s for s in snapshot_history if s.get("session_date") == runtime_session_date]
 
     @classmethod
     def analyze_live_session(
@@ -123,25 +177,34 @@ class LiveAssistantEngine:
         if sess_status in ("PRE_OPEN", "PRE_MARKET", "NOT_STARTED"):
             return {
                 "generated_at": now_str,
+                "runtime_session_date": session_date,
+                "session_date": session_date,
+                "intelligence_session_date": session_date,
+                "intelligence_mode": "LIVE" if sess_status == "OPEN" else "COMPLETED_SESSION",
                 "session_status": "MARKET_NOT_STARTED",
                 "windows": [],
                 "significant_events": [],
                 "active_monitoring": False
             }
 
+        intel_date, intel_mode, session_snaps = cls.resolve_intraday_session(m_session, now_ist, snapshot_history or [], cache_dir=cls.CACHE_DIR)
+
         # 1. Evaluate Session-Anchored 15-Minute Windows
-        windows = cls._evaluate_15m_windows(now_ist, session_date, snapshot_history or [], is_closed)
+        windows = cls._evaluate_15m_windows(now_ist, intel_date, session_snaps, is_closed)
 
         # 2. Detect Event-Driven Significant Changes
-        events = cls._detect_significant_events(state, snapshot_history or [], today_analysis_report, windows)
+        events = cls._detect_significant_events(state, session_snaps, today_analysis_report, windows)
 
         return {
             "generated_at": now_str,
+            "runtime_session_date": session_date,
             "session_date": session_date,
+            "intelligence_session_date": intel_date,
+            "intelligence_mode": intel_mode,
             "session_status": "SESSION_COMPLETE" if is_closed else "LIVE_MONITORING",
             "windows": [w.to_dict() for w in windows],
             "significant_events": [e.to_dict() for e in events],
-            "active_monitoring": not is_closed
+            "active_monitoring": not is_closed and intel_mode == "LIVE"
         }
 
     @classmethod
@@ -172,10 +235,10 @@ class LiveAssistantEngine:
         for w_start, w_end in boundary_times:
             win_key = f"{session_date}_{w_start}_{w_end}"
 
-            # Filter snapshots in history belonging to this window
+            # Filter snapshots in history belonging to this window and session_date
             win_snaps = [
                 s for s in history
-                if cls._snap_in_window(s, w_start, w_end)
+                if cls._snap_in_window(s, w_start, w_end, target_date=session_date)
             ]
 
             has_later_snaps = any(cls._snap_is_after(s, w_end) for s in history)
@@ -221,7 +284,9 @@ class LiveAssistantEngine:
             return None
 
     @classmethod
-    def _snap_in_window(cls, snap: Dict[str, Any], w_start: str, w_end: str) -> bool:
+    def _snap_in_window(cls, snap: Dict[str, Any], w_start: str, w_end: str, target_date: Optional[str] = None) -> bool:
+        if target_date and snap.get("session_date") and str(snap.get("session_date")) != str(target_date):
+            return False
         ts = snap.get("timestamp") or snap.get("generated_at")
         hm = cls._parse_ist_hm(ts)
         if not hm:

@@ -177,6 +177,9 @@ export function IntradayAssistant() {
     }, 300);
   };
 
+  const intelMode = assistantIntel.intelligence_mode || (isClosed ? "COMPLETED_SESSION" : "LIVE");
+  const intelDate = assistantIntel.intelligence_session_date || assistantIntel.session_date;
+
   return (
     <div id="live-assistant-workspace" className="space-y-6 text-left font-sans">
 
@@ -194,6 +197,11 @@ export function IntradayAssistant() {
               </span>
             </div>
             <h2 className="text-xl font-black text-white mt-1 uppercase tracking-tight">INTRADAY INTELLIGENCE TIMELINE</h2>
+            {intelDate && (
+              <div className="text-[11px] font-bold text-cyan-300 mt-0.5">
+                {intelMode === "LIVE" ? `Live Session · ${intelDate}` : `Completed Session Archive · ${intelDate}`}
+              </div>
+            )}
           </div>
           <div className="text-right text-[10px] text-slate-500 font-mono">
             <div>SPOT: <strong className="text-white">{spot ? formatNumber(spot, 2) : "--"}</strong></div>
