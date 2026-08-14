@@ -63,6 +63,7 @@ class ForwardOutlookReport:
     what_changed: Dict[str, Any]
     outcome_validation_stub: Dict[str, Any]
     data_quality: Dict[str, Any]
+    horizon_label: str = "Intraday Scenario Outlook (Horizon: next 15–30 minutes)"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -150,7 +151,7 @@ class ForwardOutlookEngine:
             if snaps:
                 spot = float(snaps[-1]["spot"])
 
-        prev_close_raw = m_data.get("previous_close") or spot
+        prev_close_raw = m_data.get("previous_close") or m_data.get("prev_close")
         prev_close = float(prev_close_raw) if prev_close_raw is not None else None
         vwap_raw = m_data.get("vwap") or spot
         vwap = float(vwap_raw) if vwap_raw is not None else None
@@ -253,7 +254,8 @@ class ForwardOutlookEngine:
                 scenario_spread=0.0, primary_scenario=closed_scenario, alternate_scenarios=[],
                 what_changed={"status": "EVENING_OUTLOOK_ACTIVE" if has_eve else "SESSION_CLOSED"},
                 outcome_validation_stub={"status": "NEXT_SESSION_PENDING" if has_eve else "SESSION_CLOSED"},
-                data_quality={"coverage_pct": 100.0, "status": status_str}
+                data_quality={"coverage_pct": 100.0, "status": status_str},
+                horizon_label="Session Outlook Archive & Next Session Horizon"
             )
 
         # Derive Key Canonical Levels from StructuralLevelEngine
@@ -324,17 +326,23 @@ class ForwardOutlookEngine:
             "actual_outcome": "PENDING_HORIZON_COMPLETION"
         }
 
+        horizon_lbl = (
+            "Session Outlook Archive & Next Session Horizon"
+            if is_closed
+            else "Intraday Scenario Outlook (Horizon: next 15–30 minutes)"
+        )
         report = ForwardOutlookReport(
             methodology_version=FORWARD_OUTLOOK_METHODOLOGY_VERSION,
             outlook_id=validation_stub["outlook_id"],
             generated_at=now_str, session_date=session_date, horizon_minutes=30,
             analysis_status="READY" if confidence != "LOW" else "LOW_CONFIDENCE",
-            current_regime="LIVE_SESSION",
+            current_regime="SESSION_COMPLETE" if is_closed else "LIVE_SESSION",
             current_trend=t_trend, overall_confidence=confidence,
             scenario_spread=spread, primary_scenario=primary,
             alternate_scenarios=alternates, what_changed=what_changed,
             outcome_validation_stub=validation_stub,
-            data_quality={"coverage_pct": round((coverage_valid / 50.0) * 100, 1), "status": "FULL_EVIDENCE"}
+            data_quality={"coverage_pct": round((coverage_valid / 50.0) * 100, 1), "status": "FULL_EVIDENCE"},
+            horizon_label=horizon_lbl
         )
 
         cls._last_outlook_report = report

@@ -146,7 +146,6 @@ export function SettingsDashboard() {
 
   const unavailableCapabilities = [
     { capability: "Licensed institutional terminal feed", state: "LICENSE_REQUIRED", provider: "Not configured" },
-    { capability: "Secondary broker execution adapter", state: "NOT_CONFIGURED", provider: "Not configured" },
   ];
 
   const handleExportDiagnostics = () => {
@@ -237,7 +236,7 @@ export function SettingsDashboard() {
         <div className={`p-4 rounded-xl border font-mono ${isWorkstationReady ? "bg-cyan-950/30 border-cyan-700 text-cyan-300" : "bg-amber-950/30 border-amber-800 text-amber-300"}`}>
           <div className="text-[10px] uppercase font-bold text-slate-400">4. Workstation Readiness</div>
           <div className="mt-1 text-sm font-extrabold flex items-center justify-between">
-            <span>{isWorkstationReady ? "READY FOR TRADING" : "ATTENTION REQ."}</span>
+            <span>{isWorkstationReady ? "WORKSTATION READY" : "ATTENTION REQ."}</span>
             {isWorkstationReady ? <ShieldCheck size={16} className="text-cyan-400" /> : <AlertCircle size={16} className="text-amber-400" />}
           </div>
           <div className="mt-1 text-[10px] text-slate-400 truncate">Read-Only Safety Invariant</div>

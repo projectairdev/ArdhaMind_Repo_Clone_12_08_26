@@ -55,8 +55,18 @@ export function PreMarketPlannerWorkspace() {
   const events = safeArray(macro.economic_events) as any[];
   const corporate = (safeArray(macro.official_india_events) as any[]).filter(event => ["CORPORATE_ANNOUNCEMENT", "EARNINGS", "CORPORATE_ACTION", "BOARD_MEETING"].includes(safeString(event.event_category).toUpperCase()));
 
-  const istDay = (value: string | Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
-  const todayEvents = events.filter(event => istDay(event.scheduled_at_ist || event.scheduled_at) === istDay(new Date()));
+  const targetSessionDate = preMarketReport.target_trading_date || canonicalState?.market_session?.session_date;
+  const istDay = (value: string | Date) => {
+    try {
+      return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+    } catch (e) {
+      return safeString(value).slice(0, 10);
+    }
+  };
+  const todayEvents = events.filter(event => {
+    const evDate = istDay(event.scheduled_at_ist || event.scheduled_at);
+    return targetSessionDate ? evDate === targetSessionDate : evDate === istDay(new Date());
+  });
   const highImpactToday = todayEvents.filter(event => ["HIGH", "CRITICAL"].includes(safeString(event.impact_level).toUpperCase()));
   const nextHigh = events.filter(event => ["HIGH", "CRITICAL"].includes(safeString(event.impact_level).toUpperCase()) && new Date(event.scheduled_at).getTime() >= Date.now()).sort((a, b) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())[0];
 
@@ -297,7 +307,7 @@ export function PreMarketPlannerWorkspace() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono text-xs">
               <div className="p-2 bg-slate-900 border border-slate-800 rounded">
                 <span className="text-[10px] text-slate-500 block">PREVIOUS CLOSE</span>
-                <strong className="text-white text-sm">{formatNumber(levels.previous_close, 2)}</strong>
+                <strong className="text-white text-sm">{formatNumber(levels.previous_close ?? market.previous_close ?? market.prev_close, 2)}</strong>
               </div>
               <div className="p-2 bg-slate-900 border border-slate-800 rounded">
                 <span className="text-[10px] text-slate-500 block">GAP REFERENCE</span>

@@ -205,14 +205,14 @@ class PreMarketIntelligenceEngine:
         events = macro.get("economic_events") or []
         official_events = macro.get("official_india_events") or []
 
-        # 1. Previous Session Context
-        spot_raw = m_data.get("current_spot") or m_data.get("previous_close")
+        # Previous Session Context
+        spot_raw = m_data.get("current_spot")
         spot = float(spot_raw) if spot_raw is not None else None
-        prev_close_raw = m_data.get("previous_close") or spot
+        prev_close_raw = m_data.get("previous_close") or m_data.get("prev_close") or m_data.get("close") or state.get("marketContext", {}).get("previous_close")
         prev_close = float(prev_close_raw) if prev_close_raw is not None else None
-        prev_high = float(m_data["high"]) if m_data.get("high") is not None else (spot + 40.0 if spot is not None else None)
-        prev_low = float(m_data["low"]) if m_data.get("low") is not None else (spot - 40.0 if spot is not None else None)
-        prev_open = float(m_data["open"]) if m_data.get("open") is not None else spot
+        prev_high = float(m_data["high"]) if m_data.get("high") is not None else None
+        prev_low = float(m_data["low"]) if m_data.get("low") is not None else None
+        prev_open = float(m_data["open"]) if m_data.get("open") is not None else None
 
         breadth = m_data.get("breadth") or {}
         advances = int(breadth["advances"]) if (breadth.get("advances") is not None) else None
@@ -453,15 +453,54 @@ class PreMarketIntelligenceEngine:
             why_today.append(f"Top Overnight Catalyst: {news_event_context['headlines'][0]}")
 
         event_timeline = [
-            {"time_ist": "09:15 IST", "country": "IND", "event_name": "NSE Equity Market Open", "impact": "CRITICAL"},
+            {"time_ist": "09:15 IST", "country": "IND", "event_name": "NSE Equity Market Open", "impact": "CRITICAL", "scope": "TODAY"},
         ]
         for ev in events:
-            if ev.get("event_name"):
+            ev_name = ev.get("event_name")
+            if not ev_name:
+                continue
+            ev_date = ""
+            time_display = "Time Unconfirmed"
+            if ev.get("scheduled_at_ist"):
+                raw_ist = str(ev["scheduled_at_ist"])
+                ev_date = raw_ist[:10]
+                time_display = raw_ist[11:16] + " IST" if len(raw_ist) >= 16 else raw_ist
+            elif ev.get("scheduled_at"):
+                raw_utc = str(ev["scheduled_at"])
+                try:
+                    dt_u = datetime.fromisoformat(raw_utc.replace("Z", "+00:00"))
+                    dt_i = dt_u + timedelta(hours=5, minutes=30)
+                    ev_date = dt_i.strftime("%Y-%m-%d")
+                    time_display = dt_i.strftime("%H:%M IST")
+                except Exception:
+                    ev_date = raw_utc[:10]
+                    time_display = raw_utc[11:16] + " UTC" if len(raw_utc) >= 16 else raw_utc
+
+            if ev_date:
+                if ev_date == session_date:
+                    event_timeline.append({
+                        "time_ist": time_display,
+                        "country": ev.get("country") or "GLOBAL",
+                        "event_name": ev_name,
+                        "impact": ev.get("impact_level") or "MEDIUM",
+                        "scope": "TODAY"
+                    })
+                elif ev_date > session_date:
+                    event_timeline.append({
+                        "time_ist": f"UPCOMING ({ev_date}) {time_display}".strip(),
+                        "country": ev.get("country") or "GLOBAL",
+                        "event_name": ev_name,
+                        "impact": ev.get("impact_level") or "MEDIUM",
+                        "scope": "UPCOMING"
+                    })
+                # Note: Stale historical events (ev_date < session_date) are intentionally excluded from active timeline
+            else:
                 event_timeline.append({
-                    "time_ist": ev.get("scheduled_at_ist") or ev.get("scheduled_at") or "Time Unconfirmed",
+                    "time_ist": "Time Unconfirmed",
                     "country": ev.get("country") or "GLOBAL",
-                    "event_name": ev.get("event_name"),
-                    "impact": ev.get("impact_level") or "MEDIUM"
+                    "event_name": ev_name,
+                    "impact": ev.get("impact_level") or "MEDIUM",
+                    "scope": "TODAY"
                 })
 
         # Critical Levels derived from StructuralLevelEngine

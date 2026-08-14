@@ -57,7 +57,7 @@ class StructuralLevelEngine:
 
         spot_raw = m_data.get("current_spot") or m_data.get("previous_close")
         spot = float(spot_raw) if spot_raw is not None else None
-        prev_close_raw = m_data.get("previous_close") or spot
+        prev_close_raw = m_data.get("previous_close") or m_data.get("prev_close")
         prev_close = float(prev_close_raw) if prev_close_raw is not None else None
         prev_high = float(m_data["high"]) if m_data.get("high") is not None else (spot + 40.0 if spot is not None else None)
         prev_low = float(m_data["low"]) if m_data.get("low") is not None else (spot - 40.0 if spot is not None else None)

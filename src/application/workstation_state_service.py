@@ -35,6 +35,7 @@ class WorkstationStateService:
     _last_persisted_snap_count: int = 0
     _last_persisted_seq: int = 0
     _last_disk_flush_timestamp: float = 0.0
+    _closed_flushed_date: str | None = None
     MIN_PERSIST_INTERVAL_SECONDS: float = 30.0
     CACHE_DIR = Path("data/cache")
 
@@ -48,6 +49,7 @@ class WorkstationStateService:
         cls._last_persisted_snap_count = 0
         cls._last_persisted_seq = 0
         cls._last_disk_flush_timestamp = 0.0
+        cls._closed_flushed_date = None
         cls._allow_disk_cache_in_test = False
         cls.CACHE_DIR = Path("data/cache")
 
@@ -128,10 +130,10 @@ class WorkstationStateService:
             d_snaps = [s for s in snapshots if s.get("session_date") == d]
             checkpoint_keys = set()
 
-            # Preserve first PRE_MARKET, PRE_OPEN, MARKET_OPEN
-            for phase in ("PRE_MARKET", "PRE_OPEN", "MARKET_OPEN"):
+            # Preserve first PRE_MARKET, PRE_OPEN, MARKET_OPEN, OPEN
+            for phase in ("PRE_MARKET", "PRE_OPEN", "MARKET_OPEN", "OPEN", "CONTINUOUS_TRADING"):
                 for s in d_snaps:
-                    if s.get("market_session_phase") == phase or (phase == "MARKET_OPEN" and s.get("continuous_session_open") and s.get("spot") is not None):
+                    if s.get("market_session_phase") == phase or (phase in ("MARKET_OPEN", "OPEN") and s.get("continuous_session_open") and s.get("spot") is not None):
                         checkpoint_keys.add((s.get("timestamp"), s.get("state_sequence")))
                         break
 
@@ -392,10 +394,11 @@ class WorkstationStateService:
         gift = macro_quotes.get("GIFT_NIFTY") or {}
         nifty_reference = (
             market.get("previous_close")
-            or market.get("current_spot")
+            or market.get("prev_close")
             or macro.get("nifty_previous_close")
-            or options.get("underlying_spot")
-            or (payload.get("eveningReport") or {}).get("market_summary", {}).get("spot_price")
+            or (market.get("close") if market_closed else None)
+            or ((payload.get("eveningReport") or {}).get("market_summary") or {}).get("previous_close")
+            or (market.get("current_spot") if market_closed else None)
         )
         gap_session_eligible = market_closed or str(market_state).upper() in {"PRE_OPEN", "PRE_MARKET"}
         gap_ready = (
@@ -550,7 +553,7 @@ class WorkstationStateService:
                 return {"status": status.value}
             if isinstance(value, dict):
                 if name == "marketContext":
-                    pc = value.get("previous_close") or nifty_reference
+                    pc = value.get("previous_close") or value.get("prev_close") or nifty_reference
                     if pc and float(pc) > 0:
                         value["previous_close"] = float(pc)
                         sp = value.get("current_spot")
@@ -561,6 +564,8 @@ class WorkstationStateService:
                             value.setdefault("spot_change_pct", chg_pct)
                             value.setdefault("change_points", chg)
                             value.setdefault("change_percent", chg_pct)
+                    else:
+                        value["previous_close"] = None
                 return {**value, "status": status.value}
             return {"status": status.value, "value": value}
 
@@ -601,7 +606,7 @@ class WorkstationStateService:
 
         now_dt = parse_iso(generated) or datetime.now(timezone.utc)
         ist_now = MarketStatusService.get_ist_time(now_dt)
-        session_date = ist_now.strftime("%Y-%m-%d")
+        session_date = market.get("session_date") or ist_now.strftime("%Y-%m-%d")
 
         if market_closed:
             auth_session = "CLOSED"
@@ -1258,7 +1263,17 @@ class WorkstationStateService:
         live_assistant_temporal_state["forward_outlook"] = forward_outlook_report
         live_assistant_temporal_state["live_feed_latency_truth"] = latency_diagnostics
 
-        force_flush = market_closed or market_session_phase in ("CLOSED", "POST_CLOSE")
+        is_closed_phase = market_closed or market_session_phase in ("CLOSED", "POST_CLOSE")
+        if is_closed_phase:
+            if cls._closed_flushed_date != session_date:
+                force_flush = True
+                cls._closed_flushed_date = session_date
+            else:
+                force_flush = False
+        else:
+            cls._closed_flushed_date = None
+            force_flush = False
+
         cls._persist_session_history(session_date, force=force_flush)
 
         return CanonicalWorkstationState(

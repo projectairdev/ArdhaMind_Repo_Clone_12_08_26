@@ -94,7 +94,7 @@ class TodayAnalysisEngine:
 
         session_snaps = [s for s in (snapshot_history or []) if s.get("session_date") == session_date and s.get("spot") is not None]
 
-        mkt_snaps = [s for s in session_snaps if s.get("market_session_phase") in ("MARKET_OPEN", "OPEN")]
+        mkt_snaps = [s for s in session_snaps if s.get("market_session_phase") in ("MARKET_OPEN", "OPEN", "CONTINUOUS_TRADING", "CONTINUOUS")]
         eval_snaps = mkt_snaps if mkt_snaps else session_snaps
 
         # Hydrate from snapshot_history if spot or OHLC is missing

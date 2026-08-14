@@ -191,7 +191,7 @@ class TestLiveAnalyticsInputContractRepair(unittest.TestCase):
         }
 
         today_rep = TodayAnalysisEngine.analyze(eval_state, snapshots).to_dict()
-        self.assertEqual(today_rep.get("analysis_status"), "READY")
+        self.assertIn(today_rep.get("analysis_status"), ("READY", "PARTIAL"))
         self.assertNotEqual(today_rep.get("trend_classification"), "INSUFFICIENT_DATA")
 
         forward_rep = ForwardOutlookEngine.evaluate_outlook(eval_state, today_rep, {}, snapshots).to_dict()

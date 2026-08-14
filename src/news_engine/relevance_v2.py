@@ -75,8 +75,14 @@ class NiftyRelevanceEngineV2:
         universe = nifty_universe or {}
         symbols = []
         for symbol, company in universe.items():
-            company_key = re.sub(r"\b(limited|ltd|bank|india)\b", "", company.lower()).strip()
-            if re.search(rf"\b{re.escape(symbol.lower())}\b", text) or (len(company_key) >= 5 and company_key in text):
+            company_name_low = company.lower()
+            company_key = re.sub(r"\b(limited|ltd)\b", "", company_name_low).strip()
+            sym_low = symbol.lower()
+            if (
+                re.search(rf"\b{re.escape(sym_low)}\b", text)
+                or (len(company_key) >= 3 and company_key in text)
+                or (company_name_low and any(part in text for part in company_name_low.split() if len(part) >= 4 and part not in ("limited", "ltd", "india")))
+            ):
                 symbols.append(symbol)
 
         countries = []
@@ -99,9 +105,13 @@ class NiftyRelevanceEngineV2:
         direction = "NOT_ASSESSED"
 
         if symbols:
-            score = max(score, 8.0)
+            score = max(score, 8.5)
             channels.extend(["SPECIFIC_NIFTY_SYMBOLS", "INDEX"])
             reasons.append(f"Direct official NIFTY constituent match: {', '.join(symbols)}")
+        elif category in ("Earnings", "Corporate Action", "NIFTY_CORPORATE") or stream == "NIFTY_CORPORATE" or any(term in text for term in ("q1", "q2", "q3", "q4", "net profit", "revenue", "earnings", "results", "dividend")):
+            score = max(score, 8.0)
+            channels.extend(["CORPORATE", "INDEX"])
+            reasons.append("Official Indian corporate earnings or disclosure transmission")
         if any(term in text for term in ("india", "indian", "nifty", "sensex", "rupee", "rbi", "sebi")):
             policy_action = any(term in text for term in ("rate cut", "rate hike", "monetary policy", "repo rate", "policy rate", "gdp growth"))
             score = max(score, 7.5 if policy_action else 7.0)
@@ -164,6 +174,20 @@ class NiftyRelevanceEngineV2:
             score = max(score, 4.5)
             channels.append("GLOBAL_RISK")
 
+        # Crypto-centric content penalty (weak relevance to NIFTY)
+        crypto_terms = ("crypto", "bitcoin", "btc", "ethereum", "eth", "altcoin", "memecoin", "solana", "binance", "coinbase", "dogecoin")
+        is_crypto = any(term in text for term in crypto_terms) and not any(term in text for term in ("rbi", "sebi", "central bank digital currency", "cbdc"))
+        if is_crypto:
+            score = min(score, 2.0)
+            reasons.append("Penalized: Crypto-centric commentary weakly relevant to NIFTY")
+
+        # Sensational / Doom-mongering opinion penalty without authoritative transmission
+        sensational_terms = ("crash coming", "great depression", "market apocalypse", "will collapse", "disaster ahead", "armageddon", "market crash 80%")
+        is_sensational = any(term in text for term in sensational_terms) and not any(term in text for term in ("rbi", "sebi", "nse", "pib", "reuters", "bloomberg"))
+        if is_sensational:
+            score = min(score, 3.0)
+            reasons.append("Penalized: Sensational/doom-mongering opinion without official source evidence")
+
         # Evergreen / Educational / Generic commentary penalty
         explainer_terms = (
             "how to", "what is", "understanding ", "guide to", "explainer:", "basics of",
@@ -177,7 +201,7 @@ class NiftyRelevanceEngineV2:
 
         score = min(10.0, round(score, 1))
         critical_terms = any(term in text for term in ("strait closure", "sovereign default", "banking crisis", "emergency rate", "market halt"))
-        if is_explainer:
+        if is_crypto or is_sensational or is_explainer:
             impact = "LOW"
         elif critical_terms and score >= 8.5:
             impact = "CRITICAL"
