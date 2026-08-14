@@ -901,7 +901,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
   }, [canonicalState, lastValidState]);
 
   const tradePlan = useMemo<TradePlan>(() => defaultTradePlan, []);
-  
+
   const operationsReport = useMemo<OperationsReport>(() => {
     const state = canonicalState ?? lastValidState;
     return state?.operations_health ?? defaultOperationsReport;
@@ -1019,6 +1019,8 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
   // The daemon broadcasts full state every 3 seconds automatically.
   // auth_event broadcasts handle instant auth-state changes.
   */
+  const firstWsReceivedRef = React.useRef(false);
+
   // Bootstrap from the latest canonical server snapshot so the UI does not
   // depend on the first WebSocket frame to leave its loading state. Subsequent
   // state updates continue to arrive over the WebSocket channel.
@@ -1027,7 +1029,9 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
     try {
       const response = await fetch("/api/workspace");
       if (!response.ok) throw new Error(`Workspace bootstrap failed (${response.status})`);
-      if (!acceptCanonicalState(await response.json())) throw new Error("Workspace bootstrap returned an invalid canonical state");
+      const rawData = await response.json();
+      console.log("[BOOT-FE] first REST snapshot received");
+      if (!acceptCanonicalState(rawData)) throw new Error("Workspace bootstrap returned an invalid canonical state");
       setErrorState(null);
     } catch (err: any) {
       setErrorState(err.message || "Workspace bootstrap failed.");
@@ -1116,11 +1120,11 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
     function connect() {
       if (isUnmounted) return;
       setMarketConnection("CONNECTING");
-      
+
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const host = window.location.host;
       const wsUrl = `${protocol}//${host}/api/ws`;
-      
+
       console.log(`Connecting to workstation WebSocket: ${wsUrl}`);
       ws = new WebSocket(wsUrl);
 
@@ -1135,6 +1139,10 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === "state") {
+            if (!firstWsReceivedRef.current) {
+              firstWsReceivedRef.current = true;
+              console.log("[BOOT-FE] first WS snapshot received");
+            }
             acceptCanonicalState(msg.data);
           } else if (msg.type === "auth_event") {
             const bState = msg.brokerState;
@@ -1193,7 +1201,10 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
       };
     }
 
-    syncBroker(true).finally(connect);
+    console.log("[BOOT-FE] provider mounted");
+    console.log("[BOOT-FE] websocket connect initiated");
+    connect();
+    syncBroker(true);
 
     return () => {
       isUnmounted = true;

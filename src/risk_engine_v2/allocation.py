@@ -24,7 +24,7 @@ def get_option_premium(candidate: TradeCandidate, option_context: OptionContext)
 
     for strike_dict in option_context.top_candidate_strikes:
         if (
-            abs(float(strike_dict.get("strike", 0.0)) - candidate.strike) < 0.01 
+            abs(float(strike_dict.get("strike", 0.0)) - candidate.strike) < 0.01
             and strike_dict.get("instrument_type") == candidate.instrument_type
         ):
             for field_name in ["option_ltp", "ltp", "ask_price", "bid_price", "price"]:
@@ -36,8 +36,8 @@ def get_option_premium(candidate: TradeCandidate, option_context: OptionContext)
     # Mathematical fallback based on spot price and ATM distance
     spot = option_context.underlying_spot if option_context.underlying_spot > 0 else candidate.strike
     if spot <= 0:
-        spot = 24300.0  # standard default
-    
+        return 0.0
+
     base_premium = spot * 0.008  # roughly 195 for NIFTY at 24300
     dist_pct = candidate.distance_from_atm / spot
     decay = math.exp(-15.0 * dist_pct)

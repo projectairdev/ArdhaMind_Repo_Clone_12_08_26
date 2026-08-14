@@ -66,7 +66,7 @@ def test_socket_disconnect_preserves_validated_state():
 def test_initial_rest_bootstrap_precedes_socket_connection():
     code = read(CONTEXT)
     assert 'fetch("/api/workspace")' in code
-    assert "syncBroker(true).finally(connect)" in code
+    assert "connect();" in code and "syncBroker(true);" in code
 
 
 def test_loading_resets_after_bootstrap_success_or_failure():

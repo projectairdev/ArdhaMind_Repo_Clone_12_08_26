@@ -29,7 +29,7 @@ class BrokerService(IBrokerGateway):
     def __init__(self) -> None:
         if getattr(self, "_initialized", False):
             return
-        
+
         self.trading_mode = TradingMode.LIVE_ZERODHA
 
         self._init_gateway()
@@ -41,7 +41,7 @@ class BrokerService(IBrokerGateway):
         if self.trading_mode != TradingMode.LIVE_ZERODHA:
             raise ValueError("AIR ArdhaMind supports only the read-only Zerodha gateway")
         self._gateway = KiteBrokerGateway()
-        
+
         class_name = "LiveKiteBroker"
         import sys
         print(f"BrokerService initialized:\nClass:\n{class_name}", file=sys.stderr, flush=True)
@@ -232,11 +232,11 @@ class BrokerService(IBrokerGateway):
 
     def _get_orchestrator(self):
         from src.broker.services.streaming_orchestrator import StreamingOrchestrator
-        orch = StreamingOrchestrator.get_instance(self._gateway)
         api_key = getattr(self._gateway, "api_key", "") or getattr(Config, "KITE_API_KEY", "")
         access_token = getattr(self._gateway, "access_token", None) or getattr(Config, "KITE_ACCESS_TOKEN", "")
         if not api_key or not access_token:
             raise PermissionError("A genuine authenticated Kite session is required for market streaming")
+        orch = StreamingOrchestrator.get_instance(self._gateway)
         orch.configure(api_key, access_token)
         return orch
 
@@ -246,28 +246,84 @@ class BrokerService(IBrokerGateway):
 
     def disconnect_stream(self) -> None:
         """Disconnects the real-time WebSocket streaming feed."""
-        self._get_orchestrator().disconnect_stream()
+        try:
+            self._get_orchestrator().disconnect_stream()
+        except PermissionError:
+            pass
 
     def is_stream_connected(self) -> bool:
         """Checks if real-time streaming is active."""
-        return self._get_orchestrator().is_connected()
+        try:
+            return self._get_orchestrator().is_connected()
+        except PermissionError:
+            return False
 
     def is_fallback_active(self) -> bool:
         """Checks if HTTP fallback polling is active."""
-        return self._get_orchestrator().is_fallback_active()
+        try:
+            return self._get_orchestrator().is_fallback_active()
+        except PermissionError:
+            return False
 
     def subscribe_stream(self, symbols: List[str]) -> List[int]:
         """Subscribes dynamically to symbol feeds."""
-        return self._get_orchestrator().subscribe(symbols)
+        try:
+            return self._get_orchestrator().subscribe(symbols)
+        except PermissionError:
+            return []
 
     def unsubscribe_stream(self, symbols: List[str]) -> List[int]:
         """Unsubscribes dynamically from symbol feeds."""
-        return self._get_orchestrator().unsubscribe(symbols)
+        try:
+            return self._get_orchestrator().unsubscribe(symbols)
+        except PermissionError:
+            return []
 
     def get_stream_health(self) -> Any:
         """Returns the current immutable StreamHealthReport."""
-        return self._get_orchestrator().get_health_report()
+        try:
+            return self._get_orchestrator().get_health_report()
+        except PermissionError:
+            from src.broker.models.stream_health import StreamHealthReport
+            from src.broker.services.session_manager import SessionManager
+            state = "DISCONNECTED" if SessionManager.is_explicitly_logged_out() else "AUTH_REQUIRED"
+            return StreamHealthReport(
+                connection_status="DISCONNECTED",
+                last_heartbeat="",
+                reconnect_count=0,
+                tick_rate=0.0,
+                average_latency_ms=0.0,
+                message_throughput=0,
+                last_received_timestamp="",
+                active_subscriptions=[],
+                fallback_active=False,
+                feed_liveness_status=state,
+                observation_age_seconds=None,
+                last_source_observation_at=None,
+                stale_since=None,
+                auth_required_reason="Broker authentication required" if state == "AUTH_REQUIRED" else None,
+                reconnect_state="IDLE"
+            )
 
     def get_bootstrap_telemetry(self) -> Dict[str, Any]:
         """Returns stream operational telemetry and feed bootstrap status."""
-        return self._get_orchestrator().get_bootstrap_telemetry()
+        try:
+            return self._get_orchestrator().get_bootstrap_telemetry()
+        except PermissionError:
+            from src.broker.services.session_manager import SessionManager
+            state = "DISCONNECTED" if SessionManager.is_explicitly_logged_out() else "AUTH_REQUIRED"
+            return {
+                "bootstrap_state": state,
+                "stream_status": "DISCONNECTED",
+                "connection_started_at": None,
+                "connection_uptime_seconds": 0.0,
+                "generation_id": 1,
+                "reconnect_count": 0,
+                "last_reconnect_time": "IDLE",
+                "subscribed_symbol_count": 0,
+                "last_subscription_time": None,
+                "last_valid_tick_time": None,
+                "last_valid_nifty_time": None,
+                "tick_age_seconds": None,
+                "connection_telemetry": []
+            }

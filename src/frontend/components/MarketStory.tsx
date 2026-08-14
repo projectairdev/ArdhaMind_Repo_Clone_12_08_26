@@ -60,7 +60,7 @@ export function MarketStory() {
 
   return (
     <div id="market-story-workspace" className={`space-y-6 text-left ${fontClasses.base}`}>
-      
+
       {/* ── 1. HEADER & DEDICATED CANONICAL STATUS ── */}
       <div className={`flex flex-col md:flex-row md:items-center justify-between border-b ${themeClasses.border} pb-4 gap-3`}>
         <div>
@@ -113,7 +113,7 @@ export function MarketStory() {
           </div>
           <div className="text-right text-xs text-slate-400 space-y-0.5">
             <div>Multi-Factor Score: <strong className={isPos ? "text-emerald-400" : "text-rose-400"}>{trendScore > 0 ? "+" : ""}{trendScore.toFixed(1)}</strong> / 100</div>
-            <div className="text-[10px] text-slate-500">India VIX: {stats.india_vix ? stats.india_vix.toFixed(2) : "12.66"}</div>
+            <div className="text-[10px] text-slate-500">India VIX: {stats.india_vix != null ? stats.india_vix.toFixed(2) : "UNAVAILABLE"}</div>
           </div>
         </div>
 
@@ -155,9 +155,13 @@ export function MarketStory() {
             </div>
             <div className="p-2 bg-slate-900/60 rounded border border-slate-850">
               <span className="text-[9px] text-slate-500 block">Session Change</span>
-              <span className={`font-bold ${stats.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                {stats.change >= 0 ? "+" : ""}{formatNumber(stats.change || 0, 2)} ({stats.change_pct >= 0 ? "+" : ""}{formatNumber(stats.change_pct || 0, 2)}%)
-              </span>
+              {stats.change != null && stats.change_pct != null ? (
+                <span className={`font-bold ${stats.change >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                  {stats.change >= 0 ? "+" : ""}{formatNumber(stats.change, 2)} ({stats.change_pct >= 0 ? "+" : ""}{formatNumber(stats.change_pct, 2)}%)
+                </span>
+              ) : (
+                <span className="font-bold text-slate-400">UNAVAILABLE</span>
+              )}
             </div>
             <div className="p-2 bg-slate-900/60 rounded border border-slate-850">
               <span className="text-[9px] text-slate-500 block">Day High / Low</span>
@@ -165,7 +169,9 @@ export function MarketStory() {
             </div>
             <div className="p-2 bg-slate-900/60 rounded border border-slate-850">
               <span className="text-[9px] text-slate-500 block">Breadth (A / D)</span>
-              <span className="font-bold text-cyan-300">{stats.advances ?? 28} A / {stats.declines ?? 21} D</span>
+              <span className="font-bold text-cyan-300">
+                {stats.advances != null && stats.declines != null ? `${stats.advances} A / ${stats.declines} D` : "UNAVAILABLE"}
+              </span>
             </div>
           </div>
         </div>
@@ -187,7 +193,9 @@ export function MarketStory() {
               ))
             ) : (
               <div className="p-2 bg-slate-900/40 rounded border border-slate-850 text-slate-400">
-                Broad market factors are balanced across price and breadth inputs.
+                {analysisReport.analysis_status === "INSUFFICIENT_DATA" || analysisReport.analysis_status === "MARKET_NOT_STARTED" || trendClass === "INSUFFICIENT_DATA" || trendClass === "PARTIAL_EVIDENCE"
+                  ? "Sufficient authoritative evidence is unavailable to determine key drivers."
+                  : "Broad market factors are balanced across price and breadth inputs."}
               </div>
             )}
           </div>
@@ -205,14 +213,14 @@ export function MarketStory() {
           <div className="p-3 bg-rose-950/20 border border-rose-900/40 rounded-lg space-y-1">
             <span className="font-bold text-rose-400 uppercase text-[10px]">VIEW WEAKENS IF...</span>
             <p className="text-[11px] font-sans text-rose-200">
-              {invalidation.view_weakens_if || `NIFTY loses immediate support at ${formatNumber(keyLevels.immediate_support || 24400, 0)} or constituent advances drop below 20.`}
+              {invalidation.view_weakens_if || (keyLevels.immediate_support != null ? `NIFTY loses immediate support at ${formatNumber(keyLevels.immediate_support, 0)} or constituent advances drop below 20.` : "Immediate support threshold unavailable.")}
             </p>
           </div>
 
           <div className="p-3 bg-emerald-950/20 border border-emerald-900/40 rounded-lg space-y-1">
             <span className="font-bold text-emerald-400 uppercase text-[10px]">VIEW STRENGTHENS IF...</span>
             <p className="text-[11px] font-sans text-emerald-200">
-              {invalidation.view_strengthens_if || `NIFTY clears immediate resistance at ${formatNumber(keyLevels.immediate_resistance || 24580, 0)} with sustained buying momentum.`}
+              {invalidation.view_strengthens_if || (keyLevels.immediate_resistance != null ? `NIFTY clears immediate resistance at ${formatNumber(keyLevels.immediate_resistance, 0)} with sustained buying momentum.` : "Immediate resistance threshold unavailable.")}
             </p>
           </div>
         </div>

@@ -83,6 +83,45 @@ class PreMarketIntelligenceEngine:
         cls._frozen_report_cache.clear()
 
     @classmethod
+    def _determine_canonical_lifecycle(cls, m_session: Dict[str, Any], now_ist: datetime) -> str:
+        raw_status = m_session.get("status")
+        is_closed_flag = bool(m_session.get("is_closed"))
+        session_date = str(m_session.get("session_date") or now_ist.strftime("%Y-%m-%d"))
+
+        # 1. Explicit CLOSED / POST_CLOSE / HOLIDAY -> historical/finalized semantics
+        if raw_status is not None:
+            st_upper = str(raw_status).upper()
+            if st_upper in ("CLOSED", "POST_CLOSE", "POST_MARKET") or is_closed_flag:
+                return "CLOSED"
+            if st_upper == "HOLIDAY":
+                return "HOLIDAY"
+            # 2. Explicit REGULAR / OPEN -> active-session semantics
+            if st_upper in ("OPEN", "REGULAR", "REGULAR_MARKET"):
+                return "OPEN"
+            # 3. Explicit PRE_MARKET / PRE_OPEN -> awaiting/opening-preparation semantics
+            if st_upper in ("PRE_MARKET", "PRE_OPEN", "NOT_STARTED"):
+                return "PRE_MARKET"
+
+        if is_closed_flag:
+            return "CLOSED"
+
+        # 4. Only if explicit canonical status is absent/unknown: use date/time heuristics as fallback
+        today_str = now_ist.strftime("%Y-%m-%d")
+        current_hhmm = now_ist.strftime("%H:%M")
+
+        if session_date < today_str:
+            return "CLOSED"
+        elif session_date > today_str:
+            return "PRE_MARKET"
+        else:  # session_date == today_str
+            if current_hhmm < "09:15":
+                return "PRE_MARKET"
+            elif current_hhmm >= "15:30":
+                return "CLOSED"
+            else:
+                return "OPEN"
+
+    @classmethod
     def analyze_pre_market(
         cls,
         state: Dict[str, Any],
@@ -94,39 +133,72 @@ class PreMarketIntelligenceEngine:
         now_str = now_utc.isoformat().replace("+00:00", "Z")
 
         m_session = state.get("market_session") or {}
-        sess_status = str(m_session.get("status") or "OPEN").upper()
-        is_closed = bool(m_session.get("is_closed") or sess_status in ("CLOSED", "HOLIDAY", "POST_CLOSE"))
         session_date = str(m_session.get("session_date") or now_ist.strftime("%Y-%m-%d"))
+
+        canonical_lifecycle = cls._determine_canonical_lifecycle(m_session, now_ist)
+        is_closed = canonical_lifecycle in ("CLOSED", "HOLIDAY")
+        is_market_open_or_past = canonical_lifecycle in ("OPEN", "CLOSED", "HOLIDAY")
 
         # Freeze-after-open rule check
         cache_key = f"PREMARKET_{session_date}"
-        is_market_open_or_past = (sess_status == "OPEN") or (now_ist.strftime("%H:%M") >= "09:15") or is_closed
+
+        macro = state.get("macro_intelligence") or {}
+        quotes = macro.get("quotes") or {}
 
         if is_market_open_or_past and cache_key in cls._frozen_report_cache:
             existing = cls._frozen_report_cache[cache_key]
-            # Update opening validation if market is open/closed
-            if is_market_open_or_past and existing.opening_validation.get("status") == "PENDING_OPEN":
-                m_data = state.get("market_data") or state.get("marketContext") or {}
-                actual_spot = m_data.get("current_spot") or m_data.get("open")
-                if actual_spot and existing.gift_nifty_context.get("reference_close"):
-                    prev_c = existing.gift_nifty_context["reference_close"]
-                    actual_gap = round(actual_spot - prev_c, 2)
-                    exp_gap = existing.gift_nifty_context.get("implied_gap_points", 0.0)
-                    
-                    val_status = "OPENING_THESIS_CONFIRMED" if (actual_gap * exp_gap >= 0) else "OPENING_THESIS_INVALIDATED"
-                    existing.opening_validation = {
-                        "status": val_status,
-                        "actual_open_price": actual_spot,
-                        "actual_gap_points": actual_gap,
-                        "expected_gap_points": exp_gap,
-                        "summary": f"Market opened at {actual_spot:,.2f} ({'+' if actual_gap>=0 else ''}{actual_gap:.2f} pts). Thesis: {val_status}."
-                    }
-            return existing
+            m_data = state.get("market_data") or state.get("marketContext") or {}
+            actual_spot = m_data.get("current_spot") or m_data.get("open")
+
+            if canonical_lifecycle in ("CLOSED", "HOLIDAY"):
+                val_summary = (
+                    f"Market closed for scheduled trading holiday on session ({session_date})."
+                    if canonical_lifecycle == "HOLIDAY"
+                    else (
+                        f"Opening validation completed for session ({session_date}). Session closed at spot {actual_spot:,.2f}."
+                        if actual_spot is not None
+                        else f"Opening validation completed for session ({session_date}). Session subsequently closed."
+                    )
+                )
+                existing.opening_validation = {
+                    "status": "OPENING_THESIS_EVALUATED" if canonical_lifecycle == "CLOSED" else "HOLIDAY_CLOSED",
+                    "expected_open_gap_points": existing.opening_validation.get("expected_open_gap_points"),
+                    "actual_open_price": actual_spot or existing.opening_validation.get("actual_open_price"),
+                    "actual_gap_points": (
+                        round(actual_spot - existing.gift_nifty_context.get("reference_close", actual_spot), 2)
+                        if (actual_spot is not None and existing.gift_nifty_context.get("reference_close"))
+                        else existing.opening_validation.get("actual_gap_points")
+                    ),
+                    "summary": val_summary
+                }
+                existing.analysis_status = "SESSION_COMPLETE"
+                return existing
+            elif canonical_lifecycle == "OPEN":
+                if existing.opening_validation.get("status") == "PENDING_OPEN":
+                    if actual_spot and existing.gift_nifty_context.get("reference_close"):
+                        prev_c = existing.gift_nifty_context["reference_close"]
+                        actual_gap = round(actual_spot - prev_c, 2)
+                        exp_gap = existing.gift_nifty_context.get("implied_gap_points") or 0.0
+
+                        val_status = "OPENING_THESIS_CONFIRMED" if (actual_gap * exp_gap >= 0) else "OPENING_THESIS_INVALIDATED"
+                        existing.opening_validation = {
+                            "status": val_status,
+                            "actual_open_price": actual_spot,
+                            "actual_gap_points": actual_gap,
+                            "expected_gap_points": exp_gap,
+                            "summary": f"Market opened at {actual_spot:,.2f} ({'+' if actual_gap>=0 else ''}{actual_gap:.2f} pts). Thesis: {val_status}."
+                        }
+                return existing
+        elif (canonical_lifecycle == "PRE_MARKET") and cache_key in cls._frozen_report_cache:
+            existing = cls._frozen_report_cache[cache_key]
+            gift_quote_now = quotes.get("GIFT_NIFTY") or quotes.get("GIFT NIFTY") or quotes.get("GIFT") or {}
+            has_gift_now = gift_quote_now.get("price") is not None or gift_quote_now.get("last_price") is not None
+            cached_gift_missing = existing.gift_nifty_context.get("gift_price") is None
+            if not (cached_gift_missing and has_gift_now):
+                return existing
 
         # Extract Canonical Inputs
         m_data = state.get("market_data") or state.get("marketContext") or {}
-        macro = state.get("macro_intelligence") or {}
-        quotes = macro.get("quotes") or {}
         options = state.get("option_intelligence") or state.get("optionContext") or {}
         news_intel = state.get("news_intelligence") or {}
         flows = macro.get("institutional_flows") or []
@@ -134,42 +206,49 @@ class PreMarketIntelligenceEngine:
         official_events = macro.get("official_india_events") or []
 
         # 1. Previous Session Context
-        spot = m_data.get("current_spot") or m_data.get("previous_close") or 24500.0
-        prev_close = m_data.get("previous_close") or spot
-        prev_high = m_data.get("high") or (spot + 40.0)
-        prev_low = m_data.get("low") or (spot - 40.0)
-        prev_open = m_data.get("open") or spot
+        spot_raw = m_data.get("current_spot") or m_data.get("previous_close")
+        spot = float(spot_raw) if spot_raw is not None else None
+        prev_close_raw = m_data.get("previous_close") or spot
+        prev_close = float(prev_close_raw) if prev_close_raw is not None else None
+        prev_high = float(m_data["high"]) if m_data.get("high") is not None else (spot + 40.0 if spot is not None else None)
+        prev_low = float(m_data["low"]) if m_data.get("low") is not None else (spot - 40.0 if spot is not None else None)
+        prev_open = float(m_data["open"]) if m_data.get("open") is not None else spot
 
         breadth = m_data.get("breadth") or {}
-        advances = int(breadth.get("advances") or 25)
-        declines = int(breadth.get("declines") or 25)
+        advances = int(breadth["advances"]) if (breadth.get("advances") is not None) else None
+        declines = int(breadth["declines"]) if (breadth.get("declines") is not None) else None
 
         vix_info = macro.get("india_vix") or {}
-        vix_val = float(vix_info.get("value") or 12.5)
-        vix_change = float(vix_info.get("change") or 0.0)
+        vix_val = float(vix_info["value"]) if (vix_info.get("value") is not None) else None
+        vix_change = float(vix_info["change"]) if (vix_info.get("change") is not None) else None
 
-        pcr = float(options.get("pcr") or 1.0)
+        pcr = float(options["pcr"]) if (options.get("pcr") is not None) else None
         max_pain = options.get("max_pain")
 
         # 2. GIFT Nifty Context
         gift_quote = quotes.get("GIFT_NIFTY") or quotes.get("GIFT NIFTY") or quotes.get("GIFT") or {}
         gift_price = gift_quote.get("price") or gift_quote.get("last_price")
-        gift_freshness = str(gift_quote.get("freshness_status") or gift_quote.get("status") or ("FRESH" if gift_price else "UNAVAILABLE")).upper()
+        gift_freshness = str(gift_quote.get("freshness_status") or gift_quote.get("status") or ("FRESH" if gift_price is not None else "UNAVAILABLE")).upper()
         gift_obs_at = gift_quote.get("observed_at") or gift_quote.get("timestamp") or "Unavailable"
         gift_chk_at = gift_quote.get("checked_at") or now_str
 
-        implied_gap_pts = round(gift_price - prev_close, 2) if (gift_price and prev_close) else 0.0
-        implied_gap_pct = round((implied_gap_pts / prev_close) * 100, 2) if (prev_close and prev_close > 0) else 0.0
+        if gift_price is not None and prev_close is not None and float(prev_close) > 0:
+            gift_p = float(gift_price)
+            implied_gap_pts = round(gift_p - float(prev_close), 2)
+            implied_gap_pct = round((implied_gap_pts / float(prev_close)) * 100, 2)
+        else:
+            implied_gap_pts = None
+            implied_gap_pct = None
 
         gift_context = {
-            "gift_price": gift_price,
+            "gift_price": float(gift_price) if gift_price is not None else None,
             "reference_close": prev_close,
             "implied_gap_points": implied_gap_pts,
             "implied_gap_percent": implied_gap_pct,
             "observed_at": gift_obs_at,
             "checked_at": gift_chk_at,
             "freshness": gift_freshness,
-            "source_session": gift_quote.get("session_label") or "Current Pre-Open Session"
+            "source_session": gift_quote.get("source_session") or gift_quote.get("session_label") or "Current Pre-Open Session"
         }
 
         # 3. Global Equities & Cross-Asset Context (US & Asian Families)
@@ -227,7 +306,7 @@ class PreMarketIntelligenceEngine:
         volatility_context = {
             "vix": vix_val if vix_info.get("value") is not None else None,
             "vix_change": vix_change if vix_info.get("change") is not None else None,
-            "regime": "ELEVATED" if vix_val >= 16.0 else ("LOW" if vix_val < 11.5 else "NORMAL")
+            "regime": "ELEVATED" if (vix_val is not None and vix_val >= 16.0) else ("LOW" if (vix_val is not None and vix_val < 11.5) else ("NORMAL" if vix_val is not None else "UNAVAILABLE"))
         }
 
         options_context = {
@@ -250,7 +329,7 @@ class PreMarketIntelligenceEngine:
         neutralizing: List[str] = []
 
         # A. GIFT Nifty Gap Factor (Weight ~35%)
-        if gift_price:
+        if gift_price is not None and implied_gap_pts is not None and implied_gap_pct is not None:
             if implied_gap_pts >= 40.0:
                 setup_score += 35.0
                 bullish_ev.append(f"GIFT Nifty indicates strong gap up (+{implied_gap_pts:.2f} pts / +{implied_gap_pct:.2f}%).")
@@ -284,22 +363,24 @@ class PreMarketIntelligenceEngine:
             bearish_ev.append(f"Asian markets trading negative (avg {avg_asian_change:.2f}%).")
 
         # C. FII / DII Flow Factor (Weight ~20%)
-        if fii_cash_val >= 1000.0:
-            setup_score += 15.0
-            bullish_ev.append(f"FII cash net buyers (+{fii_cash_val:,.1f} Cr on {fii_date}).")
-        elif fii_cash_val <= -1000.0:
-            setup_score -= 15.0
-            bearish_ev.append(f"FII cash net sellers ({fii_cash_val:,.1f} Cr on {fii_date}).")
+        if fii_cash_val is not None:
+            if fii_cash_val >= 1000.0:
+                setup_score += 15.0
+                bullish_ev.append(f"FII cash net buyers (+{fii_cash_val:,.1f} Cr on {fii_date}).")
+            elif fii_cash_val <= -1000.0:
+                setup_score -= 15.0
+                bearish_ev.append(f"FII cash net sellers ({fii_cash_val:,.1f} Cr on {fii_date}).")
 
         # D. Options & VIX Context (Weight ~20%)
-        if pcr >= 1.15:
-            setup_score += 10.0
-            bullish_ev.append(f"Option PCR at {pcr:.2f} indicates strong put building below spot.")
-        elif pcr <= 0.85:
-            setup_score -= 10.0
-            bearish_ev.append(f"Option PCR at {pcr:.2f} reflects call writing concentration.")
+        if pcr is not None:
+            if pcr >= 1.15:
+                setup_score += 10.0
+                bullish_ev.append(f"Option PCR at {pcr:.2f} indicates strong put building below spot.")
+            elif pcr <= 0.85:
+                setup_score -= 10.0
+                bearish_ev.append(f"Option PCR at {pcr:.2f} reflects call writing concentration.")
 
-        if vix_change >= 0.5:
+        if vix_change is not None and vix_change >= 0.5:
             setup_score -= 10.0
             bearish_ev.append(f"India VIX expanded (+{vix_change:.2f} pts), signaling elevated volatility risk.")
 
@@ -322,7 +403,9 @@ class PreMarketIntelligenceEngine:
             opening_bias = "NEUTRAL / MIXED OPENING"
 
         # Opening Character
-        if implied_gap_pts >= 45.0:
+        if gift_price is None or implied_gap_pts is None:
+            opening_char = "UNCERTAIN"
+        elif implied_gap_pts >= 45.0:
             opening_char = "GAP_UP"
         elif implied_gap_pts >= 15.0:
             opening_char = "MILD_GAP_UP"
@@ -330,13 +413,15 @@ class PreMarketIntelligenceEngine:
             opening_char = "GAP_DOWN"
         elif implied_gap_pts <= -15.0:
             opening_char = "MILD_GAP_DOWN"
-        elif vix_change >= 0.8:
+        elif vix_change is not None and vix_change >= 0.8:
             opening_char = "VOLATILE_OPEN"
         else:
             opening_char = "FLAT_OPEN"
 
         # Session Setup Determination
-        if abs(implied_gap_pts) >= 60.0 and ((implied_gap_pts > 0 and pcr <= 0.9) or (implied_gap_pts < 0 and pcr >= 1.2)):
+        if implied_gap_pts is None:
+            session_setup = "MIXED / UNCLEAR"
+        elif abs(implied_gap_pts) >= 60.0 and ((implied_gap_pts > 0 and (pcr is not None and pcr <= 0.9)) or (implied_gap_pts < 0 and (pcr is not None and pcr >= 1.2))):
             session_setup = "GAP_AND_FADE_RISK"
         elif abs(implied_gap_pts) >= 50.0 and setup_score >= 40.0:
             session_setup = "GAP_AND_CONTINUE_SETUP"
@@ -362,7 +447,7 @@ class PreMarketIntelligenceEngine:
         # Why Today & Event Timeline
         why_today = [
             f"Pre-Market Opening Bias: {opening_bias} (Setup Score: {setup_score:+.1f}).",
-            f"Expected Opening Gap: {opening_char} (~{implied_gap_pts:+.2f} pts based on GIFT Nifty)."
+            f"Expected Opening Gap: {opening_char}" + (f" (~{implied_gap_pts:+.2f} pts based on GIFT Nifty)." if implied_gap_pts is not None else " (GIFT Nifty price unavailable).")
         ]
         if news_event_context["headlines"]:
             why_today.append(f"Top Overnight Catalyst: {news_event_context['headlines'][0]}")
@@ -395,10 +480,15 @@ class PreMarketIntelligenceEngine:
         }
 
         # Sector & Heavyweight Watch
+        brent_pct = brent.get("change_pct")
+        it_posture = "BULLISH" if (avg_us_change is not None and avg_us_change > 0.3) else ("BEARISH" if (avg_us_change is not None and avg_us_change < -0.3) else ("NEUTRAL" if avg_us_change is not None else "INSUFFICIENT_DATA"))
+        banking_posture = "BULLISH" if (fii_cash is not None and fii_cash > 300) else ("BEARISH" if (fii_cash is not None and fii_cash < -300) else ("NEUTRAL" if fii_cash is not None else "INSUFFICIENT_DATA"))
+        energy_posture = "BULLISH" if (brent_pct is not None and float(brent_pct) < -1.0) else ("BEARISH" if (brent_pct is not None and float(brent_pct) > 1.0) else ("NEUTRAL" if brent_pct is not None else "INSUFFICIENT_DATA"))
+
         sector_watch = [
-            {"sector": "BANKING / FINANCIALS", "sensitivity": "Yields, FII Cash Flow, RBI Policy", "posture": "BULLISH" if fii_cash_val >= 0 else "BEARISH"},
-            {"sector": "IT / TECH", "sensitivity": "Nasdaq Cues, USD/INR FX Rate", "posture": "BULLISH" if avg_us_change >= 0 else "CAUTIOUS"},
-            {"sector": "ENERGY / OIL", "sensitivity": "Brent Crude Benchmark", "posture": "NEUTRAL"}
+            {"sector": "BANKING / FINANCIALS", "sensitivity": "Yields, FII Cash Flow, RBI Policy", "posture": banking_posture},
+            {"sector": "IT / TECH", "sensitivity": "Nasdaq Cues, USD/INR FX Rate", "posture": it_posture},
+            {"sector": "ENERGY / OIL", "sensitivity": "Brent Crude Benchmark", "posture": energy_posture}
         ]
 
         heavyweight_watch = [
@@ -408,12 +498,16 @@ class PreMarketIntelligenceEngine:
         ]
 
         # Confirmation & Invalidation Conditions
+        spot_disp = f"{spot:,.2f}" if spot is not None else "opening level"
+        prev_high_disp = f"{prev_high:,.2f}" if prev_high is not None else "unconfirmed high"
+        prev_low_disp = f"{prev_low:,.2f}" if prev_low is not None else "unconfirmed low"
+
         confirmations = [
-            f"NIFTY spot holding {'above' if setup_score >= 0 else 'below'} opening level ({spot:,.2f}) after 09:30 IST.",
-            f"Constituent breadth advances remaining > 28 for bullish setup (or < 20 for bearish)."
+            f"NIFTY spot holding {'above' if setup_score >= 0 else 'below'} {spot_disp} after 09:30 IST.",
+            "Constituent breadth advances remaining > 28 for bullish setup (or < 20 for bearish)."
         ]
         invalidations = [
-            f"Reversal clearing previous session high ({prev_high:,.2f}) or low ({prev_low:,.2f}).",
+            f"Reversal clearing previous session high ({prev_high_disp}) or low ({prev_low_disp}).",
             "Sharp constituent breadth divergence opposite to pre-market bias."
         ]
 
@@ -436,12 +530,30 @@ class PreMarketIntelligenceEngine:
             "invalidation": ["Breakout above resistance or breakdown below support."]
         }
 
+        actual_gap = round(spot - prev_close, 2) if (spot is not None and prev_close is not None) else None
+        if canonical_lifecycle == "HOLIDAY":
+            val_summary = f"Market closed for scheduled trading holiday on session ({session_date})."
+            val_status = "HOLIDAY_CLOSED"
+        elif canonical_lifecycle == "CLOSED":
+            val_summary = (
+                f"Opening validation completed for session ({session_date}). Session closed at spot {spot:,.2f}."
+                if spot is not None
+                else f"Opening validation completed for session ({session_date}). Session subsequently closed."
+            )
+            val_status = "OPENING_THESIS_EVALUATED"
+        elif canonical_lifecycle == "OPEN":
+            val_summary = f"Regular market session active. Spot: {spot:,.2f}." if spot is not None else "Regular market session active."
+            val_status = "OPENING_THESIS_EVALUATED"
+        else:  # PRE_MARKET
+            val_summary = "Awaiting market open at 09:15 IST to evaluate opening thesis."
+            val_status = "PENDING_OPEN"
+
         opening_validation = {
-            "status": "PENDING_OPEN" if not is_market_open_or_past else "OPENING_THESIS_EVALUATED",
+            "status": val_status,
             "expected_open_gap_points": implied_gap_pts,
-            "actual_open_price": None if not is_market_open_or_past else spot,
-            "actual_gap_points": None if not is_market_open_or_past else round(spot - prev_close, 2),
-            "summary": "Awaiting market open at 09:15 IST to evaluate opening thesis." if not is_market_open_or_past else f"Session active. Spot: {spot:,.2f} IST."
+            "actual_open_price": spot if (canonical_lifecycle in ("OPEN", "CLOSED")) else None,
+            "actual_gap_points": actual_gap if (canonical_lifecycle in ("OPEN", "CLOSED")) else None,
+            "summary": val_summary
         }
 
         report = PreMarketIntelligenceReport(
@@ -449,7 +561,7 @@ class PreMarketIntelligenceEngine:
             report_id=f"PREMARKET-{session_date}-{now_ist.strftime('%H%M%S')}",
             generated_at=now_str,
             target_trading_date=session_date,
-            analysis_status="SESSION_COMPLETE" if is_closed else ("SESSION_IN_PROGRESS" if is_market_open_or_past else "READY"),
+            analysis_status="SESSION_COMPLETE" if canonical_lifecycle in ("CLOSED", "HOLIDAY") else ("SESSION_IN_PROGRESS" if canonical_lifecycle == "OPEN" else "READY"),
             opening_bias=opening_bias,
             opening_character=opening_char,
             session_setup=session_setup,

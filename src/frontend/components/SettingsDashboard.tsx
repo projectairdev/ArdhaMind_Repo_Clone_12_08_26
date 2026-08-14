@@ -186,15 +186,21 @@ export function SettingsDashboard() {
   };
 
   const isFeedHealthy = safeString(feedStatus.status || dataQuality.quality_status || "healthy").toLowerCase() === "healthy";
-  const isWsConnected = marketConnection === "CONNECTED";
-  const isWorkstationReady = isConnected && isWsConnected;
+  const marketSessionState = safeString(stateObj?.market_session?.status || "CLOSED").toUpperCase();
+  const isClosedMarket = marketSessionState === "CLOSED" || marketSessionState === "POST_CLOSE" || marketSessionState === "HOLIDAY";
+  const isBrowserWsConnected = marketConnection === "CONNECTED";
+  const backendStreamStatus = safeString(feedStatus.stream_status || feedStatus.bootstrap_state || (isConnected ? (isClosedMarket ? "CONNECTED (IDLE)" : "CONNECTED") : "DISCONNECTED")).toUpperCase();
+  const isBackendStreamOk = backendStreamStatus.includes("CONNECTED") || backendStreamStatus.includes("LIVE") || backendStreamStatus.includes("IDLE");
+
+  // Expected closed-market, idle stream, or standby browser transport states must NOT mark workstation ATTENTION REQ.
+  const isWorkstationReady = isConnected && (isBrowserWsConnected || isClosedMarket || isBackendStreamOk);
 
   return (
     <div id="settings-dashboard" className="p-6 bg-slate-950 rounded-xl border border-slate-800 space-y-6 text-left font-sans">
       <div className="flex justify-between items-center border-b border-slate-800 pb-4">
         <div className="flex items-center gap-2">
           <KeyRound size={20} className="text-emerald-400" />
-          <h2 className="text-lg font-bold text-white uppercase tracking-wider font-mono">System Readiness &amp; Operational Settings</h2>
+          <h2 className="text-lg font-bold text-white uppercase tracking-wider font-mono">System Control — Diagnostics &amp; Session Readiness</h2>
         </div>
         <span className="text-[10px] font-mono text-slate-400">AIR ArdhaMind v1.3.1-PROD · READ ONLY</span>
       </div>
@@ -210,20 +216,20 @@ export function SettingsDashboard() {
           <div className="mt-1 text-[10px] text-slate-400 truncate">Zerodha KiteConnect v5</div>
         </div>
 
-        <div className={`p-4 rounded-xl border font-mono ${isWsConnected ? "bg-emerald-950/20 border-emerald-800/80 text-emerald-300" : "bg-rose-950/20 border-rose-800/80 text-rose-300"}`}>
-          <div className="text-[10px] uppercase font-bold text-slate-400">2. Stream Transport</div>
+        <div className={`p-4 rounded-xl border font-mono ${isBackendStreamOk ? "bg-emerald-950/20 border-emerald-800/80 text-emerald-300" : "bg-amber-950/20 border-amber-800/80 text-amber-300"}`}>
+          <div className="text-[10px] uppercase font-bold text-slate-400">2. Market Feed Stream</div>
           <div className="mt-1 text-sm font-extrabold flex items-center justify-between">
-            <span>{isWsConnected ? "CONNECTED" : "DISCONNECTED"}</span>
-            {isWsConnected ? <CheckCircle2 size={16} className="text-emerald-400" /> : <AlertTriangle size={16} className="text-rose-400" />}
+            <span>{backendStreamStatus}</span>
+            {isBackendStreamOk ? <CheckCircle2 size={16} className="text-emerald-400" /> : <AlertTriangle size={16} className="text-amber-400" />}
           </div>
-          <div className="mt-1 text-[10px] text-slate-400 truncate">wss://.../api/ws</div>
+          <div className="mt-1 text-[10px] text-slate-400 truncate">Zerodha Kite WebSocket Feed</div>
         </div>
 
-        <div className={`p-4 rounded-xl border font-mono ${isFeedHealthy ? "bg-emerald-950/20 border-emerald-800/80 text-emerald-300" : "bg-amber-950/20 border-amber-800/80 text-amber-300"}`}>
+        <div className={`p-4 rounded-xl border font-mono ${isFeedHealthy || isClosedMarket ? "bg-emerald-950/20 border-emerald-800/80 text-emerald-300" : "bg-amber-950/20 border-amber-800/80 text-amber-300"}`}>
           <div className="text-[10px] uppercase font-bold text-slate-400">3. Data Freshness</div>
           <div className="mt-1 text-sm font-extrabold flex items-center justify-between">
-            <span>{safeString(feedStatus.status || "HEALTHY").toUpperCase()}</span>
-            {isFeedHealthy ? <CheckCircle2 size={16} className="text-emerald-400" /> : <AlertTriangle size={16} className="text-amber-400" />}
+            <span>{isClosedMarket ? "CLOSED (HEALTHY)" : safeString(feedStatus.status || "HEALTHY").toUpperCase()}</span>
+            {isFeedHealthy || isClosedMarket ? <CheckCircle2 size={16} className="text-emerald-400" /> : <AlertTriangle size={16} className="text-amber-400" />}
           </div>
           <div className="mt-1 text-[10px] text-slate-400 truncate">Bootstrap: {safeString(feedStatus.bootstrap_state || "LIVE")}</div>
         </div>
@@ -301,9 +307,9 @@ export function SettingsDashboard() {
               2. Live Market Feed &amp; Stream Telemetry
             </div>
             <span className={`px-2 py-0.5 rounded border font-mono text-[10px] font-extrabold uppercase ${
-              isWsConnected && isFeedHealthy
+              isBackendStreamOk && isFeedHealthy
                 ? "bg-emerald-950 text-emerald-400 border-emerald-800"
-                : isWsConnected
+                : isBackendStreamOk
                 ? "bg-amber-950 text-amber-400 border-amber-800"
                 : "bg-rose-950 text-rose-400 border-rose-800"
             }`}>
@@ -318,8 +324,8 @@ export function SettingsDashboard() {
             </div>
             <div className="flex justify-between py-1 border-b border-slate-900">
               <span className="text-slate-500">WebSocket Stream Status:</span>
-              <span className={`font-bold ${isWsConnected ? "text-emerald-400" : "text-rose-400"}`}>
-                {safeString(feedStatus.stream_status || (isWsConnected ? "CONNECTED" : "DISCONNECTED")).toUpperCase()}
+              <span className={`font-bold ${isBackendStreamOk ? "text-emerald-400" : "text-rose-400"}`}>
+                {safeString(feedStatus.stream_status || (isBackendStreamOk ? "CONNECTED" : "DISCONNECTED")).toUpperCase()}
               </span>
             </div>
             <div className="flex justify-between py-1 border-b border-slate-900">
@@ -344,7 +350,7 @@ export function SettingsDashboard() {
             </div>
             <div className="flex justify-between py-1">
               <span className="text-slate-500">Tick Observation Age:</span>
-              <span className="text-slate-400">{feedStatus.tick_age_seconds != null ? `${feedStatus.tick_age_seconds}s` : "0.0s (Live)"}</span>
+              <span className="text-slate-400">{feedStatus.tick_age_seconds != null ? `${feedStatus.tick_age_seconds}s` : (feedStatus.last_valid_tick_time ? "UNAVAILABLE" : "Awaiting First Tick")}</span>
             </div>
           </div>
         </section>
@@ -356,7 +362,7 @@ export function SettingsDashboard() {
               <Activity size={16} className="text-cyan-400" />
               3. Browser Transport &amp; Gateway
             </div>
-            <span className={`px-2 py-0.5 rounded border font-mono text-[10px] font-extrabold uppercase ${isWsConnected ? "bg-emerald-950 text-emerald-400 border-emerald-800" : "bg-rose-950 text-rose-400 border-rose-800"}`}>
+            <span className={`px-2 py-0.5 rounded border font-mono text-[10px] font-extrabold uppercase ${isBrowserWsConnected ? "bg-emerald-950 text-emerald-400 border-emerald-800" : "bg-rose-950 text-rose-400 border-rose-800"}`}>
               {marketConnection}
             </span>
           </div>

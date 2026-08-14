@@ -55,29 +55,34 @@ class StructuralLevelEngine:
         macro = state.get("macro_intelligence") or {}
         quotes = macro.get("quotes") or {}
 
-        spot = float(m_data.get("current_spot") or m_data.get("previous_close") or 24500.0)
-        prev_close = float(m_data.get("previous_close") or spot)
-        prev_high = float(m_data.get("high") or (spot + 40.0))
-        prev_low = float(m_data.get("low") or (spot - 40.0))
-        prev_open = float(m_data.get("open") or spot)
+        spot_raw = m_data.get("current_spot") or m_data.get("previous_close")
+        spot = float(spot_raw) if spot_raw is not None else None
+        prev_close_raw = m_data.get("previous_close") or spot
+        prev_close = float(prev_close_raw) if prev_close_raw is not None else None
+        prev_high = float(m_data["high"]) if m_data.get("high") is not None else (spot + 40.0 if spot is not None else None)
+        prev_low = float(m_data["low"]) if m_data.get("low") is not None else (spot - 40.0 if spot is not None else None)
+        prev_open = float(m_data["open"]) if m_data.get("open") is not None else spot
 
         # GIFT Nifty reference
         gift_quote = quotes.get("GIFT_NIFTY") or quotes.get("GIFT NIFTY") or {}
-        gift_price = float(gift_quote.get("price") or gift_quote.get("last_price") or 0.0)
+        gift_p_raw = gift_quote.get("price") or gift_quote.get("last_price")
+        gift_price = float(gift_p_raw) if (gift_p_raw is not None and float(gift_p_raw) > 0) else None
 
         # Option structure
-        pcr = float(options.get("pcr") or 1.0)
-        max_pain = float(options.get("max_pain") or prev_close) if options.get("max_pain") else None
+        pcr = float(options["pcr"]) if options.get("pcr") is not None else None
+        max_pain = float(options["max_pain"]) if options.get("max_pain") is not None else None
 
         # OI concentrations if available
-        highest_call_oi = float(options.get("highest_call_oi_strike") or (prev_close + 100.0))
-        highest_put_oi = float(options.get("highest_put_oi_strike") or (prev_close - 100.0))
-        atm_strike = float(options.get("atm_strike") or round(prev_close / 50.0) * 50.0)
+        highest_call_oi = float(options["highest_call_oi_strike"]) if options.get("highest_call_oi_strike") is not None else (prev_close + 100.0 if prev_close is not None else None)
+        highest_put_oi = float(options["highest_put_oi_strike"]) if options.get("highest_put_oi_strike") is not None else (prev_close - 100.0 if prev_close is not None else None)
+        atm_strike = float(options["atm_strike"]) if options.get("atm_strike") is not None else (round(prev_close / 50.0) * 50.0 if prev_close is not None else None)
 
         # Build candidate levels from genuine evidence
         candidate_map: Dict[float, List[str]] = {}
 
-        def _add_evidence(price_val: float, source_name: str):
+        def _add_evidence(price_val: Optional[float], source_name: str):
+            if price_val is None or price_val <= 0:
+                return
             rounded_p = round(price_val, 2)
             if rounded_p not in candidate_map:
                 candidate_map[rounded_p] = []
@@ -89,7 +94,7 @@ class StructuralLevelEngine:
             _add_evidence(prev_low, "PREVIOUS_SESSION_LOW")
         if prev_close:
             _add_evidence(prev_close, "PREVIOUS_CLOSE")
-        if gift_price > 0:
+        if gift_price:
             _add_evidence(gift_price, "GIFT_NIFTY_REFERENCE")
 
         if highest_call_oi:
@@ -124,9 +129,10 @@ class StructuralLevelEngine:
             confidence = "HIGH" if ev_count >= 3 else ("MODERATE" if ev_count >= 2 else "LOW")
 
             # Determine level type relative to spot / prev_close
-            if avg_price < spot - 30.0:
+            ref_spot = spot or prev_close or 0.0
+            if ref_spot > 0 and avg_price < ref_spot - 30.0:
                 l_type = "MAJOR_SUPPORT" if strength == "STRONG" else "SUPPORT"
-            elif avg_price > spot + 30.0:
+            elif ref_spot > 0 and avg_price > ref_spot + 30.0:
                 l_type = "MAJOR_RESISTANCE" if strength == "STRONG" else "RESISTANCE"
             else:
                 l_type = "PIVOT"
@@ -159,18 +165,19 @@ class StructuralLevelEngine:
             "sources": ["PREVIOUS_SESSION_LOW"],
             "as_of": now_str,
             "confidence": "MODERATE",
-            "description": f"Previous session low boundary at {prev_low:,.2f}."
+            "description": f"Previous session low boundary at {prev_low:,.2f}." if prev_low is not None else "Previous session low boundary unavailable."
         }
 
+        imm_sup_price = imm_sup.get("price") or spot or 0.0
         maj_sup = supports[1].to_dict() if len(supports) > 1 else {
-            "price": highest_put_oi if highest_put_oi < imm_sup.get("price", spot) else round(prev_low - 80.0, 2),
+            "price": highest_put_oi if (highest_put_oi is not None and highest_put_oi < imm_sup_price) else (round(prev_low - 80.0, 2) if prev_low is not None else None),
             "type": "MAJOR_SUPPORT",
-            "strength": "MODERATE" if highest_put_oi else "WEAK",
+            "strength": "MODERATE" if highest_put_oi is not None else "WEAK",
             "evidence_count": 1,
-            "sources": ["HIGHEST_PUT_OI_STRIKE"] if highest_put_oi else ["PREVIOUS_RANGE_BOUNDARY"],
+            "sources": ["HIGHEST_PUT_OI_STRIKE"] if highest_put_oi is not None else ["PREVIOUS_RANGE_BOUNDARY"],
             "as_of": now_str,
-            "confidence": "MODERATE" if highest_put_oi else "LOW",
-            "description": f"Put OI concentration support at {highest_put_oi:,.2f}."
+            "confidence": "MODERATE" if highest_put_oi is not None else "LOW",
+            "description": f"Put OI concentration support at {highest_put_oi:,.2f}." if highest_put_oi is not None else "Major support boundary unconfirmed."
         }
 
         imm_res = resistances[0].to_dict() if resistances else {
@@ -181,29 +188,30 @@ class StructuralLevelEngine:
             "sources": ["PREVIOUS_SESSION_HIGH"],
             "as_of": now_str,
             "confidence": "MODERATE",
-            "description": f"Previous session high boundary at {prev_high:,.2f}."
+            "description": f"Previous session high boundary at {prev_high:,.2f}." if prev_high is not None else "Previous session high boundary unavailable."
         }
 
+        imm_res_price = imm_res.get("price") or spot or 0.0
         maj_res = resistances[1].to_dict() if len(resistances) > 1 else {
-            "price": highest_call_oi if highest_call_oi > imm_res.get("price", spot) else round(prev_high + 80.0, 2),
+            "price": highest_call_oi if (highest_call_oi is not None and highest_call_oi > imm_res_price) else (round(prev_high + 80.0, 2) if prev_high is not None else None),
             "type": "MAJOR_RESISTANCE",
-            "strength": "MODERATE" if highest_call_oi else "WEAK",
+            "strength": "MODERATE" if highest_call_oi is not None else "WEAK",
             "evidence_count": 1,
-            "sources": ["HIGHEST_CALL_OI_STRIKE"] if highest_call_oi else ["PREVIOUS_RANGE_BOUNDARY"],
+            "sources": ["HIGHEST_CALL_OI_STRIKE"] if highest_call_oi is not None else ["PREVIOUS_RANGE_BOUNDARY"],
             "as_of": now_str,
-            "confidence": "MODERATE" if highest_call_oi else "LOW",
-            "description": f"Call OI concentration resistance at {highest_call_oi:,.2f}."
+            "confidence": "MODERATE" if highest_call_oi is not None else "LOW",
+            "description": f"Call OI concentration resistance at {highest_call_oi:,.2f}." if highest_call_oi is not None else "Major resistance boundary unconfirmed."
         }
 
         pivot_level = pivots[0].to_dict() if pivots else {
             "price": prev_close,
             "type": "PIVOT",
-            "strength": "STRONG" if pcr else "MODERATE",
-            "evidence_count": 2 if max_pain else 1,
+            "strength": "STRONG" if pcr is not None else "MODERATE",
+            "evidence_count": 2 if max_pain is not None else 1,
             "sources": ["PREVIOUS_CLOSE", "ATM_STRIKE"],
             "as_of": now_str,
-            "confidence": "HIGH",
-            "description": f"Previous session close anchor at {prev_close:,.2f}."
+            "confidence": "HIGH" if prev_close is not None else "LOW",
+            "description": f"Previous session close anchor at {prev_close:,.2f}." if prev_close is not None else "Pivot anchor unavailable."
         }
 
         return {
@@ -212,7 +220,7 @@ class StructuralLevelEngine:
             "previous_close": prev_close,
             "previous_high": prev_high,
             "previous_low": prev_low,
-            "gap_reference": gift_price if gift_price > 0 else prev_close,
+            "gap_reference": gift_price if (gift_price is not None and gift_price > 0) else prev_close,
             "immediate_support": imm_sup,
             "major_support": maj_sup,
             "immediate_resistance": imm_res,

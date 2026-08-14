@@ -84,7 +84,7 @@ class TestMarketPulseScopedRefreshUI(unittest.TestCase):
 
     def test_15_forward_outlook_wired_in_navigation(self):
         self.assertIn('id: "forward-outlook"', self.layout_code)
-        self.assertIn('label: "Forward Outlook"', self.layout_code)
+        self.assertIn('label: "Scenario Outlook"', self.layout_code)
         self.assertIn("ForwardOutlookWorkspace", self.layout_code)
 
 

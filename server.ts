@@ -267,7 +267,7 @@ function sendDaemonRequest(action: string, params: any = {}): Promise<any> {
     }
     const requestId = `REQ-${++requestCounter}-${Date.now()}`;
     pendingRequests.set(requestId, { resolve, reject });
-    
+
     pyDaemon.stdin.write(JSON.stringify({ requestId, action, params }) + "\n", (error) => {
       if (!error) return;
       pendingRequests.delete(requestId);
@@ -425,12 +425,8 @@ app.post("/api/broker/logout", async (req, res) => {
   console.log("[AUTH] Broker DISCONNECTED — auth_event broadcast to all clients.");
   try {
     const result = await sendDaemonRequest("logout");
-    // Restart daemon to stop stream and clean mock gateway
-    startPythonDaemon();
     res.json(result);
   } catch (err: any) {
-    // Even if sendDaemonRequest fails, restart the daemon cleanly
-    startPythonDaemon();
     res.status(500).json({ error: err.message });
   }
 });

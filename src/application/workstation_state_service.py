@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import atexit
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Lock
@@ -31,6 +32,10 @@ class WorkstationStateService:
     _persistence_health: str = "READY"
     _test_mode_isolated: bool = False
     _allow_disk_cache_in_test: bool = False
+    _last_persisted_snap_count: int = 0
+    _last_persisted_seq: int = 0
+    _last_disk_flush_timestamp: float = 0.0
+    MIN_PERSIST_INTERVAL_SECONDS: float = 30.0
     CACHE_DIR = Path("data/cache")
 
     @classmethod
@@ -40,6 +45,11 @@ class WorkstationStateService:
         cls._live_event_stream = []
         cls._last_loaded_session_date = "TEST_ISOLATED"
         cls._test_mode_isolated = True
+        cls._last_persisted_snap_count = 0
+        cls._last_persisted_seq = 0
+        cls._last_disk_flush_timestamp = 0.0
+        cls._allow_disk_cache_in_test = False
+        cls.CACHE_DIR = Path("data/cache")
 
     @classmethod
     def _load_session_history(cls, session_date: str) -> None:
@@ -133,17 +143,17 @@ class WorkstationStateService:
                 checkpoint_keys.add((max_s.get("timestamp"), max_s.get("state_sequence")))
                 checkpoint_keys.add((min_s.get("timestamp"), min_s.get("state_sequence")))
 
-            # Preserve canonical 15-minute interval anchor snapshots
-            seen_15m_buckets = set()
+            # Preserve 3-minute interval anchor snapshots (providing at least 5 observations per 15m window)
+            seen_3m_buckets = set()
             for s in d_snaps:
                 ts_str = str(s.get("timestamp") or "")
                 if len(ts_str) >= 16:
                     time_part = ts_str[11:16]
                     try:
                         hh, mm = map(int, time_part.split(":"))
-                        bucket = f"{hh:02d}:{(mm // 15) * 15:02d}"
-                        if bucket not in seen_15m_buckets:
-                            seen_15m_buckets.add(bucket)
+                        bucket = f"{hh:02d}:{(mm // 3) * 3:02d}"
+                        if bucket not in seen_3m_buckets:
+                            seen_3m_buckets.add(bucket)
                             checkpoint_keys.add((s.get("timestamp"), s.get("state_sequence")))
                     except Exception:
                         pass
@@ -163,8 +173,22 @@ class WorkstationStateService:
         return retained_all
 
     @classmethod
-    def _persist_session_history(cls, session_date: str) -> None:
-        """Persists bounded session observations and material events atomically."""
+    def _persist_session_history(cls, session_date: str, force: bool = False) -> None:
+        """Persists bounded session observations and material events atomically with dirty tracking & throttling."""
+        import time
+        now_ts = time.time()
+        curr_snap_count = len(cls._snapshots_history)
+        curr_seq = cls._sequence
+
+        is_dirty = (curr_snap_count != cls._last_persisted_snap_count or curr_seq != cls._last_persisted_seq)
+        time_elapsed = now_ts - cls._last_disk_flush_timestamp
+
+        if not force and not is_dirty:
+            return
+
+        if not force and time_elapsed < cls.MIN_PERSIST_INTERVAL_SECONDS:
+            return
+
         if os.environ.get("PYTEST_CURRENT_TEST"):
             default_prod_dir = Path("data/cache").resolve()
             current_target_dir = cls.CACHE_DIR.resolve()
@@ -191,9 +215,18 @@ class WorkstationStateService:
 
             atomic_write_json(str(cache_file), payload)
             cls._last_persistence_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            cls._last_persisted_snap_count = curr_snap_count
+            cls._last_persisted_seq = curr_seq
+            cls._last_disk_flush_timestamp = now_ts
             cls._persistence_health = "READY"
         except Exception:
             cls._persistence_health = "DEGRADED"
+
+    @classmethod
+    def flush_session_history(cls, session_date: str | None = None) -> None:
+        """Forces an immediate atomic disk flush of pending session history state."""
+        target_date = session_date or cls._last_loaded_session_date or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        cls._persist_session_history(target_date, force=True)
 
     @classmethod
     def get_cache_diagnostics(cls) -> dict[str, Any]:
@@ -215,6 +248,12 @@ class WorkstationStateService:
         with cls._lock:
             cls._sequence += 1
             return cls._sequence
+
+    @classmethod
+    def build_canonical_state(cls, payload: dict[str, Any], *, broker_state: str = "DISCONNECTED",
+                              market_state: str = "UNKNOWN", now: datetime | None = None) -> CanonicalWorkstationState:
+        """Alias for build_from_legacy producing authoritative CanonicalWorkstationState."""
+        return cls.build_from_legacy(payload, broker_state=broker_state, market_state=market_state, now=now)
 
     @classmethod
     def build_from_legacy(cls, payload: dict[str, Any], *, broker_state: str = "DISCONNECTED",
@@ -566,6 +605,8 @@ class WorkstationStateService:
 
         if market_closed:
             auth_session = "CLOSED"
+        elif market_state and str(market_state).upper() in ("OPEN", "MARKET_OPEN"):
+            auth_session = "MARKET_OPEN"
         else:
             status_report = MarketStatusService.get_instance().get_market_status(now_dt)
             auth_session = status_report.status  # "PRE_OPEN", "OPEN", "POST_CLOSE", "CLOSED"
@@ -602,6 +643,31 @@ class WorkstationStateService:
         else:
             session_transition_sequence = 1
 
+        spots = [s.get("spot") for s in same_date_snaps if isinstance(s.get("spot"), (int, float))]
+        if isinstance(spot, (int, float)):
+            spots.append(spot)
+
+        open_val = market.get("open")
+        if open_val is None:
+            open_snap = next(
+                (s for s in same_date_snaps if s.get("market_session_phase") in ("MARKET_OPEN", "OPEN") and s.get("continuous_session_open") and s.get("spot") is not None),
+                next((s for s in same_date_snaps if s.get("spot") is not None), None)
+            )
+            open_val = float(open_snap["spot"]) if (open_snap and open_snap.get("spot") is not None) else (spots[0] if spots else None)
+
+        high_candidates = [v for v in [market.get("high")] + spots if isinstance(v, (int, float))]
+        high_val = max(high_candidates) if high_candidates else spot
+
+        low_candidates = [v for v in [market.get("low")] + spots if isinstance(v, (int, float))]
+        low_val = min(low_candidates) if low_candidates else spot
+
+        close_val = market.get("close") or spot
+
+        market["open"] = open_val
+        market["high"] = high_val
+        market["low"] = low_val
+        market["close"] = close_val
+
         snap = {
             "timestamp": generated,
             "runtime_id": cls._runtime_id,
@@ -614,6 +680,10 @@ class WorkstationStateService:
             "session_date": session_date,
             "session_transition_sequence": session_transition_sequence,
             "spot": spot,
+            "open": open_val,
+            "high": high_val,
+            "low": low_val,
+            "close": close_val,
             "breadth": {
                 "advances": int(adv) if adv is not None else None,
                 "declines": int(dec) if dec is not None else None,
@@ -628,7 +698,13 @@ class WorkstationStateService:
             "vix": vix_val,
             "regime": unified.get("market_regime"),
             "alignment": unified.get("alignment"),
-            "heavyweight_ratio": hw_ratio
+            "heavyweight_ratio": hw_ratio,
+            "provenance": {
+                "source_type": market.get("source_type") or ("WEBSOCKET_STREAM" if broker_state == "CONNECTED" else "REST_POLL"),
+                "observed_at": generated,
+                "trading_date": session_date,
+                "freshness": "REALTIME" if broker_state == "CONNECTED" else "LAST_VALID_SESSION"
+            }
         }
 
         cls._snapshots_history.append(snap)
@@ -1126,15 +1202,47 @@ class WorkstationStateService:
         from src.intelligence_engine.forward_outlook_engine import ForwardOutlookEngine
         from src.intelligence_engine.pre_market_engine import PreMarketIntelligenceEngine
 
-        pre_market_report = PreMarketIntelligenceEngine.analyze_pre_market(unified, cls._snapshots_history).to_dict()
-        todays_analysis_report = TodayAnalysisEngine.analyze(unified, cls._snapshots_history).to_dict()
+        eval_state = cls._build_analytical_evaluation_state(
+            market=market,
+            options=options,
+            macro=macro,
+            news=news,
+            market_state=market_state,
+            market_closed=market_closed,
+            session_date=session_date,
+        )
+
+        pre_market_report = PreMarketIntelligenceEngine.analyze_pre_market(eval_state, cls._snapshots_history).to_dict()
+        todays_analysis_report = TodayAnalysisEngine.analyze(eval_state, cls._snapshots_history).to_dict()
         session_story["todays_analysis"] = todays_analysis_report
         session_story["pre_market_report"] = pre_market_report
 
-        live_assistant_intel = LiveAssistantEngine.analyze_live_session(unified, cls._snapshots_history, todays_analysis_report)
+        live_assistant_intel = LiveAssistantEngine.analyze_live_session(eval_state, cls._snapshots_history, todays_analysis_report)
         forward_outlook_report = ForwardOutlookEngine.evaluate_outlook(
-            unified, todays_analysis_report, live_assistant_intel, cls._snapshots_history
+            eval_state, todays_analysis_report, live_assistant_intel, cls._snapshots_history
         ).to_dict()
+
+        prim_scen = forward_outlook_report.get("primary_scenario") or {}
+        scen_levels = prim_scen.get("relevant_levels") or {}
+        scen_list = [prim_scen.get("scenario_type")] + [s.get("scenario_type") for s in (forward_outlook_report.get("alternate_scenarios") or [])]
+        snap["forward_outlook"] = {
+            "timestamp": forward_outlook_report.get("generated_at") or generated,
+            "session_date": session_date,
+            "analysis_status": forward_outlook_report.get("analysis_status") or "UNAVAILABLE",
+            "status": forward_outlook_report.get("analysis_status") or "UNAVAILABLE",
+            "classification": prim_scen.get("scenario_type") or forward_outlook_report.get("current_trend"),
+            "scenario": prim_scen.get("scenario_type") or forward_outlook_report.get("current_trend"),
+            "directional_bias": forward_outlook_report.get("current_trend"),
+            "confidence": forward_outlook_report.get("overall_confidence"),
+            "support": scen_levels.get("support"),
+            "resistance": scen_levels.get("resistance"),
+            "vwap": scen_levels.get("vwap") or market.get("vwap"),
+            "scenarios": [s for s in scen_list if s],
+            "confirmation_conditions": prim_scen.get("confirmation_conditions") or [],
+            "invalidation_conditions": prim_scen.get("invalidation_conditions") or [],
+            "key_evidence": prim_scen.get("supporting_evidence") or [],
+            "full_report": forward_outlook_report
+        }
 
         unified["session_story"] = session_story
         unified["pre_market_report"] = pre_market_report
@@ -1150,7 +1258,8 @@ class WorkstationStateService:
         live_assistant_temporal_state["forward_outlook"] = forward_outlook_report
         live_assistant_temporal_state["live_feed_latency_truth"] = latency_diagnostics
 
-        cls._persist_session_history(session_date)
+        force_flush = market_closed or market_session_phase in ("CLOSED", "POST_CLOSE")
+        cls._persist_session_history(session_date, force=force_flush)
 
         return CanonicalWorkstationState(
             cls.SCHEMA_VERSION, cls._next_sequence(), generated, cls._runtime_id,
@@ -2348,6 +2457,32 @@ class WorkstationStateService:
         }
 
     @classmethod
+    def _build_analytical_evaluation_state(
+        cls,
+        market: dict[str, Any],
+        options: dict[str, Any],
+        macro: dict[str, Any],
+        news: dict[str, Any],
+        market_state: str,
+        market_closed: bool,
+        session_date: str
+    ) -> dict[str, Any]:
+        """Assembles authoritative canonical evaluation state for analytical engines."""
+        return {
+            "market_session": {
+                "status": str(market_state).upper(),
+                "is_closed": bool(market_closed),
+                "session_date": str(session_date),
+            },
+            "market_data": market,
+            "marketContext": market,
+            "option_intelligence": options,
+            "optionContext": options,
+            "macro_intelligence": macro,
+            "news_intelligence": news,
+        }
+
+    @classmethod
     def _derive_session_story(cls, *, generated: str, now: datetime, snap: dict[str, Any],
                               unified: dict[str, Any], live_decision: dict[str, Any],
                               primary_temporal: dict[str, Any] | None, news: dict[str, Any],
@@ -2394,8 +2529,11 @@ class WorkstationStateService:
             next((s for s in same_day_snaps if s.get("spot") is not None), same_day_snaps[0])
         )
 
-        prev_close = unified.get("previous_close") or 24583.80
-        open_price = open_snap.get("spot")
+        prev_close = unified.get("previous_close")
+        if prev_close is None and same_day_snaps:
+            prev_close = next((s.get("previous_close") for s in reversed(same_day_snaps) if s.get("previous_close") is not None), None)
+
+        open_price = open_snap.get("spot") if open_snap else None
         current_price = close_snap.get("spot") or (same_day_snaps[-1].get("spot") if same_day_snaps else None)
 
         spots = [s.get("spot") for s in same_day_snaps if isinstance(s.get("spot"), (int, float))]
@@ -2403,11 +2541,11 @@ class WorkstationStateService:
         day_low = min(spots) if spots else current_price
         day_range = round(day_high - day_low, 2) if (day_high is not None and day_low is not None) else 0.0
 
-        change_points = round(current_price - prev_close, 2) if (current_price is not None and prev_close is not None) else 0.0
-        change_pct = round((change_points / prev_close) * 100, 2) if (prev_close and prev_close > 0) else 0.0
+        change_points = round(current_price - prev_close, 2) if (current_price is not None and prev_close is not None and prev_close > 0) else None
+        change_pct = round((change_points / prev_close) * 100, 2) if (change_points is not None and prev_close and prev_close > 0) else None
 
-        opening_gap = round(open_price - prev_close, 2) if (open_price is not None and prev_close is not None) else 0.0
-        opening_char = "GAP_DOWN" if opening_gap < -10 else "GAP_UP" if opening_gap > 10 else "FLAT_OPEN"
+        opening_gap = round(open_price - prev_close, 2) if (open_price is not None and prev_close is not None and prev_close > 0) else None
+        opening_char = ("GAP_DOWN" if opening_gap < -10 else "GAP_UP" if opening_gap > 10 else "FLAT_OPEN") if opening_gap is not None else "FLAT_OPEN"
 
         b_open = open_snap.get("breadth") or {}
         b_curr = (close_snap.get("breadth") or (same_day_snaps[-1].get("breadth") if same_day_snaps else {})) or {}
@@ -2420,7 +2558,10 @@ class WorkstationStateService:
         vix_curr = close_snap.get("vix") or (same_day_snaps[-1].get("vix") if same_day_snaps else None)
 
         bias = live_decision.get("structural_bias", "NEUTRAL")
-        dom_character = "BEARISH_TREND" if change_points < -30 and bias == "BEARISH" else "BULLISH_TREND" if change_points > 30 and bias == "BULLISH" else "RANGE" if abs(change_points) <= 30 else "MIXED"
+        if change_points is not None:
+            dom_character = "BEARISH_TREND" if change_points < -30 and bias == "BEARISH" else "BULLISH_TREND" if change_points > 30 and bias == "BULLISH" else "RANGE" if abs(change_points) <= 30 else "MIXED"
+        else:
+            dom_character = "MIXED"
 
         timeline: list[dict[str, Any]] = []
         turning_points: list[dict[str, Any]] = []
@@ -2551,13 +2692,14 @@ class WorkstationStateService:
                     attr_conf = "POSSIBLE_CATALYST"
 
                 sp_val_str = f"{sp_val:g}" if isinstance(sp_val, (int, float)) else "Unavailable"
+                pc_str = f"{prev_close:g}" if isinstance(prev_close, (int, float)) else "Unavailable"
                 interp = f"NIFTY trading at {sp_val_str} ({sp_chg:+.2f} pts, {sp_pct:+.2f}%) with breadth {b_str}."
                 if phase_str == "PRE_MARKET":
                     interp = "Overnight global equity cues indicated stable risk sentiment prior to domestic pre-open."
                 elif phase_str == "PRE_OPEN":
                     interp = "Pre-open equilibrium price discovery cooling relative to early indications."
                 elif phase_str == "MARKET_OPEN":
-                    interp = f"NIFTY opened at {sp_val_str} ({sp_chg:+.2f} pts vs previous close {prev_close:g}) with breadth {b_str}."
+                    interp = f"NIFTY opened at {sp_val_str} ({sp_chg:+.2f} pts vs previous close {pc_str}) with breadth {b_str}."
 
                 item_dict = {
                     "timestamp": target_time_str,
@@ -2607,8 +2749,9 @@ class WorkstationStateService:
             min_time_ist = _get_ist_time_str(min_spot_snap)
             if min_time_ist and min_time_ist not in [t["timestamp"] for t in timeline]:
                 low_val = min_spot_snap["spot"]
-                low_chg = round(low_val - prev_close, 2)
-                low_pct = round((low_chg / prev_close) * 100, 2)
+                low_chg = round(low_val - prev_close, 2) if (prev_close and prev_close > 0) else 0.0
+                low_pct = round((low_chg / prev_close) * 100, 2) if (prev_close and prev_close > 0) else 0.0
+                pc_str = f"{prev_close:g}" if isinstance(prev_close, (int, float)) else "Unavailable"
                 low_item = {
                     "timestamp": min_time_ist,
                     "time_ist": f"{min_time_ist} IST",
@@ -2627,9 +2770,9 @@ class WorkstationStateService:
                         "momentum": "WEAKENING",
                         "scenario": "Lower Support Testing"
                     },
-                    "interpretation": f"NIFTY hit intraday session low of {low_val:g} ({low_chg:+.2f} pts vs previous close {prev_close:g}) at {min_time_ist} IST.",
+                    "interpretation": f"NIFTY hit intraday session low of {low_val:g} ({low_chg:+.2f} pts vs previous close {pc_str}) at {min_time_ist} IST.",
                     "why": [f"Session low observed at {min_time_ist} IST"],
-                    "evidence": [f"Spot low: {low_val:g}", f"Previous close: {prev_close:g}"],
+                    "evidence": [f"Spot low: {low_val:g}", f"Previous close: {pc_str}"],
                     "news_context": [{"attribution": "NO_VERIFIED_CATALYST", "attribution_note": "Intraday price extrema observation."}],
                     "attribution_confidence": "OBSERVATION",
                     "provenance": ["canonical.state_history"],
@@ -2668,7 +2811,7 @@ class WorkstationStateService:
                 "headline": f"OBSERVATION GAP: {t1_ist} → {t2_ist} (Host Telemetry Unavailable · {dur_str})",
                 "market_snapshot": {
                     "nifty": gap_curr.get("spot"),
-                    "change_points": round((gap_curr.get("spot", 0) - prev_close), 2) if gap_curr.get("spot") else 0.0,
+                    "change_points": round((gap_curr.get("spot", 0) - prev_close), 2) if (gap_curr.get("spot") and prev_close is not None) else 0.0,
                     "change_percent": 0.0,
                     "breadth": "Gap Window",
                     "pcr": gap_curr.get("options", {}).get("pcr"),
@@ -2711,7 +2854,7 @@ class WorkstationStateService:
             },
             "opening_15m": {
                 "status": "READY",
-                "summary": f"NIFTY opened at {open_price:g} ({opening_gap:+.2f} pts) with breadth {breadth_open_str}." if isinstance(open_price, (int, float)) else "Opening 15M observation recorded."
+                "summary": f"NIFTY opened at {open_price:g} ({opening_gap:+.2f} pts) with breadth {breadth_open_str}." if (isinstance(open_price, (int, float)) and opening_gap is not None) else "Opening 15M observation recorded."
             },
             "morning": {
                 "status": "READY" if not gaps else "DEGRADED",
@@ -2727,11 +2870,14 @@ class WorkstationStateService:
             },
             "closing": {
                 "status": "READY",
-                "summary": f"NIFTY settled at {current_price:g} ({change_points:+.2f} pts, {change_pct:+.2f}%)." if isinstance(current_price, (int, float)) else "Closing phase completed."
+                "summary": f"NIFTY settled at {current_price:g} ({change_points:+.2f} pts, {change_pct:+.2f}%)." if (isinstance(current_price, (int, float)) and change_points is not None and change_pct is not None) else f"NIFTY settled at {current_price:g}." if isinstance(current_price, (int, float)) else "Closing phase completed."
             }
         }
 
-        verdict_text = f"NIFTY finished {'lower' if change_points < 0 else 'higher' if change_points > 0 else 'flat'} ({change_points:+.2f} pts, {change_pct:+.2f}%) after opening {'weakness' if opening_gap < 0 else 'strength'}."
+        if change_points is not None and change_pct is not None:
+            verdict_text = f"NIFTY finished {'lower' if change_points < 0 else 'higher' if change_points > 0 else 'flat'} ({change_points:+.2f} pts, {change_pct:+.2f}%)."
+        else:
+            verdict_text = f"NIFTY spot is {current_price:g}." if isinstance(current_price, (int, float)) else "Session complete."
         has_real_history = len(same_day_snaps) > 1 or any(s.get("continuous_session_open") for s in same_day_snaps)
         if not has_real_history and market_closed:
             status_classification = "UNAVAILABLE"
@@ -2745,12 +2891,12 @@ class WorkstationStateService:
             "primary_character": dom_character,
             "verdict_text": verdict_text,
             "what_drove_session": [
-                f"Constituent breadth {'deterioration' if change_points < 0 else 'expansion'} ({breadth_curr_str})",
+                f"Constituent breadth {'deterioration' if (change_points or 0) < 0 else 'expansion'} ({breadth_curr_str})",
                 "Decision Area structural level testing",
                 f"Option PCR context ({pcr_curr})"
             ],
             "what_limited_move": [
-                "Lower Decision Area support holding near 24428.0",
+                f"Lower Decision Area support holding near {day_low:g}" if isinstance(day_low, (int, float)) else "Lower Decision Area support holding",
                 "India VIX remaining contained below 13.0"
             ],
             "what_changed_into_close": [
@@ -2834,3 +2980,4 @@ class WorkstationStateService:
 
 
 validate_setup_geometry = WorkstationStateService.validate_setup_geometry
+atexit.register(lambda: WorkstationStateService.flush_session_history())

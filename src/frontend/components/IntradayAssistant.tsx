@@ -168,7 +168,9 @@ export function IntradayAssistant() {
       } else if (textToSend.toLowerCase().includes("option")) {
         reply = `Option Context: PCR is ${safeNumber(state?.option_intelligence?.pcr, 1.15).toFixed(2)}. ATM strike near ${spot ? Math.round(spot / 50) * 50 : 24500}.`;
       } else if (textToSend.toLowerCase().includes("breadth")) {
-        reply = `Constituent Breadth: ${safeNumber(mData?.breadth?.advances, 28)} Advances / ${safeNumber(mData?.breadth?.declines, 22)} Declines.`;
+        reply = mData?.breadth?.advances != null && mData?.breadth?.declines != null
+          ? `Constituent Breadth: ${mData.breadth.advances} Advances / ${mData.breadth.declines} Declines.`
+          : `Constituent Breadth: UNAVAILABLE.`;
       }
 
       setChatMessages(prev => [...prev, { sender: "assistant", text: reply }]);
@@ -184,14 +186,14 @@ export function IntradayAssistant() {
           <div>
             <div className="flex items-center gap-2 text-[10px] font-bold text-cyan-400 uppercase tracking-widest">
               <Compass size={16} className="animate-spin-slow" />
-              <span>LIVE ASSISTANT · INTRADAY MARKET INTELLIGENCE NARRATOR</span>
+              <span>INTRADAY INTELLIGENCE · MARKET NARRATOR &amp; TIMELINE</span>
               <span className={`px-2 py-0.5 rounded text-[9px] border font-bold ${
                 isClosed ? "bg-slate-900 border-slate-700 text-slate-400" : "bg-emerald-950/80 border-emerald-700 text-emerald-300"
               }`}>
                 {isClosed ? "SESSION COMPLETE" : "● MARKET MONITORING ACTIVE"}
               </span>
             </div>
-            <h2 className="text-xl font-black text-white mt-1 uppercase tracking-tight">REAL-TIME INTRADAY INTELLIGENCE TIMELINE</h2>
+            <h2 className="text-xl font-black text-white mt-1 uppercase tracking-tight">INTRADAY INTELLIGENCE TIMELINE</h2>
           </div>
           <div className="text-right text-[10px] text-slate-500 font-mono">
             <div>SPOT: <strong className="text-white">{spot ? formatNumber(spot, 2) : "--"}</strong></div>
@@ -312,10 +314,16 @@ export function IntradayAssistant() {
 
                       {/* Optional Compact Metrics */}
                       <div className="grid grid-cols-4 gap-2 pt-2 border-t border-slate-850 text-[10px] text-slate-400">
-                        <div>Price Δ: <strong className={w.price_change_points >= 0 ? "text-emerald-400" : "text-rose-400"}>{w.price_change_points >= 0 ? "+" : ""}{formatNumber(w.price_change_points, 2)} pts</strong></div>
-                        <div>Breadth Δ: <strong className="text-slate-200">{w.breadth_change}</strong></div>
-                        <div>VIX Δ: <strong className="text-slate-200">{w.vix_change >= 0 ? "+" : ""}{formatNumber(w.vix_change, 2)}</strong></div>
-                        <div>Range: <strong className="text-slate-200">{w.window_range} pts</strong></div>
+                        <div>Price Δ: <strong className={w.price_change_points == null ? "text-slate-400" : w.price_change_points >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                          {w.price_change_points != null ? `${w.price_change_points >= 0 ? "+" : ""}${formatNumber(w.price_change_points, 2)} pts` : "UNAVAILABLE"}
+                        </strong></div>
+                        <div>Breadth Δ: <strong className="text-slate-200">{w.breadth_change || "UNAVAILABLE"}</strong></div>
+                        <div>VIX Δ: <strong className="text-slate-200">
+                          {w.vix_change != null ? `${w.vix_change >= 0 ? "+" : ""}${formatNumber(w.vix_change, 2)}` : "UNAVAILABLE"}
+                        </strong></div>
+                        <div>Range: <strong className="text-slate-200">
+                          {w.window_range != null ? `${formatNumber(w.window_range, 2)} pts` : "UNAVAILABLE"}
+                        </strong></div>
                       </div>
                     </div>
                   );

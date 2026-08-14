@@ -20,11 +20,14 @@ from src.application.analytical_pipeline_service import AnalyticalPipelineServic
 from src.configuration_engine.runtime import Config
 
 # Disable verbose logging to stdout to preserve clean JSON output
-logging.basicConfig(level=logging.ERROR)
+logging.basicConfig(level=logging.ERROR, stream=sys.stderr, force=True)
 
 logger = logging.getLogger("ServerBridge")
 
 import threading
+
+_boot_start_time = time.time()
+_first_state_emitted = False
 
 cached_market_context = None
 cached_option_context = None
@@ -71,23 +74,13 @@ news_refresh_lock = threading.Lock()
 last_macro_fetch_time = 0.0
 macro_refresh_lock = threading.Lock()
 
-def perform_cold_start_hydration():
-    global cached_macro_context, cached_news_sentiment, cached_market_context, cached_option_context
-    global last_macro_fetch_time, last_news_fetch_time
-
+def _bg_refresh_news():
+    global cached_news_sentiment, last_news_fetch_time
+    if not news_refresh_lock.acquire(blocking=False):
+        return
     try:
-        from src.pipeline.macro_pipeline import MacroPipeline
-        from src.dashboard.macro_panel import MacroIntelligencePanel
-        pipeline = MacroPipeline()
-        macro_ctx = pipeline.run()
-        candidate = MacroIntelligencePanel(macro_ctx).to_dict()
-        if isinstance(candidate, dict):
-            cached_macro_context = candidate
-            last_macro_fetch_time = time.time()
-    except Exception as e:
-        logger.warning("Cold-start macro hydration warning: %s", e)
-
-    try:
+        t0 = time.time()
+        logger.info(f"[BACKGROUND] Async news refresh started at {(t0 - _boot_start_time)*1000:.1f}ms")
         from src.pipeline.news_pipeline import NewsPipeline
         from src.dashboard.news_panel import NewsIntelligencePanel
         pipeline = NewsPipeline()
@@ -96,9 +89,39 @@ def perform_cold_start_hydration():
         if isinstance(candidate, dict):
             cached_news_sentiment = candidate
             last_news_fetch_time = time.time()
+            logger.info(f"[BACKGROUND] Async news refresh completed in {(time.time() - t0)*1000:.1f}ms: {len(getattr(news_ctx, 'items', []))} items.")
     except Exception as e:
-        logger.warning("Cold-start news hydration warning: %s", e)
+        logger.warning(f"[BACKGROUND] Async news refresh error: {e}")
+    finally:
+        news_refresh_lock.release()
 
+def _bg_refresh_macro():
+    global cached_macro_context, last_macro_fetch_time
+    if not macro_refresh_lock.acquire(blocking=False):
+        return
+    try:
+        t0 = time.time()
+        logger.info(f"[BACKGROUND] Async macro refresh started at {(t0 - _boot_start_time)*1000:.1f}ms")
+        from src.pipeline.macro_pipeline import MacroPipeline
+        from src.dashboard.macro_panel import MacroIntelligencePanel
+        pipeline = MacroPipeline()
+        macro_ctx = pipeline.run()
+        candidate = MacroIntelligencePanel(macro_ctx).to_dict()
+        if isinstance(candidate, dict):
+            cached_macro_context = candidate
+            last_macro_fetch_time = time.time()
+            logger.info(f"[BACKGROUND] Async macro refresh completed in {(time.time() - t0)*1000:.1f}ms: {len(getattr(macro_ctx, 'quotes', {}))} quotes.")
+    except Exception as e:
+        logger.warning(f"[BACKGROUND] Async macro refresh error: {e}")
+    finally:
+        macro_refresh_lock.release()
+
+def perform_cold_start_hydration():
+    global cached_macro_context, cached_news_sentiment, cached_market_context, cached_option_context
+    global last_macro_fetch_time, last_news_fetch_time
+
+    # Non-blocking cold start hydration: disk cache snapshots only.
+    # External network pipelines (NewsPipeline/MacroPipeline) run asynchronously in background threads.
     try:
         opt_file = Path(".cache/kite_nifty_option_snapshot.json")
         if opt_file.exists():
@@ -121,7 +144,12 @@ def perform_cold_start_hydration():
                 pass
         from src.broker.services.market_context_builder import MarketContextBuilder
         bs_inst = BrokerService.get_instance()
-        orch_inst = bs_inst._get_orchestrator() if hasattr(bs_inst, "_get_orchestrator") else None
+        orch_inst = None
+        if hasattr(bs_inst, "_get_orchestrator") and bs_inst.is_connected():
+            try:
+                orch_inst = bs_inst._get_orchestrator()
+            except PermissionError:
+                orch_inst = None
         cached_market_context = MarketContextBuilder.build(
             bs_inst, orch_inst, vix_val,
             (cached_macro_context or {}).get("constituent_metadata")
@@ -192,7 +220,7 @@ def handle_daemon_command(action, params, bs, wm):
     if rejected:
         return rejected
     ws_mode = wm.current_mode
-    
+
     if action == "get_context":
         ctx = wm.get_context()
         payload = serialize_read_only_context(ctx)
@@ -203,13 +231,13 @@ def handle_daemon_command(action, params, bs, wm):
             "auto_fallback_to_development": Config.AUTO_FALLBACK_TO_DEVELOPMENT,
         })
         return payload
-        
+
     elif action == "login":
         api_key = params.get("api_key")
         access_token = params.get("access_token")
         persist_key = params.get("persist_key") == True or params.get("persist_key") == "True"
         persist_token = params.get("persist_token") == True or params.get("persist_token") == "True"
-        
+
         gateway = bs.get_gateway()
         if hasattr(gateway, "api_key"):
             gateway.api_key = api_key
@@ -220,7 +248,7 @@ def handle_daemon_command(action, params, bs, wm):
         if not success:
             last_error = getattr(gateway, "_last_error", "Kite connection failed")
             return {"success": False, "error": last_error}
-            
+
         from src.broker.services.session_manager import SessionManager
         SessionManager.save_session(
             access_token=access_token,
@@ -231,9 +259,9 @@ def handle_daemon_command(action, params, bs, wm):
         return {"success": True, "context": serialize(wm.get_context())}
 
     elif action == "logout":
-        bs.disconnect()
+        bs.logout()
         from src.broker.services.session_manager import SessionManager
-        SessionManager.clear_session()
+        SessionManager.delete_session()
         return {"success": True}
 
     elif action == "get_broker_config":
@@ -319,7 +347,7 @@ def handle_daemon_command(action, params, bs, wm):
 
     elif action == "get_broker_health":
         return serialize(bs.get_stream_health())
-        
+
     elif action in [
         "get_market_score", "get_opportunity_context", "get_strategy_evaluation",
         "get_confidence_report", "get_risk_report", "get_decision_report",
@@ -330,7 +358,7 @@ def handle_daemon_command(action, params, bs, wm):
             cached_market_context, cached_option_context,
             market_state="OPEN", broker_state="CONNECTED" if bs.is_connected() else "DISCONNECTED")
         data = result.compatibility_values()
-        
+
         action_map = {
             "get_market_score": "marketScore",
             "get_opportunity_context": "opportunityContext",
@@ -392,6 +420,7 @@ def handle_daemon_command(action, params, bs, wm):
 
             if connected:
                 try:
+                    setup_real_ticks_callback()
                     bs.connect_stream()
                     bs.subscribe_stream([
                         "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
@@ -520,31 +549,8 @@ def run_daemon(wm, bs):
     from datetime import datetime
     from src.broker.services.streaming_service import STATIC_TOKENS
     from src.broker.services.instrument_service import InstrumentService
-    
-    logger.info("Starting Python Bridge Daemon...")
-    
-    # Initialize News and Macro pipelines immediately on daemon startup
-    try:
-        from src.pipeline.news_pipeline import NewsPipeline
-        from src.dashboard.news_panel import NewsIntelligencePanel
-        p_news = NewsPipeline()
-        n_ctx = p_news.run()
-        cached_news_sentiment = NewsIntelligencePanel(n_ctx).to_dict()
-        last_news_fetch_time = time.time()
-        logger.info("Initial news pipeline execution completed.")
-    except Exception as e:
-        logger.error(f"Initial news pipeline fetch error: {e}")
 
-    try:
-        from src.pipeline.macro_pipeline import MacroPipeline
-        from src.dashboard.macro_panel import MacroIntelligencePanel
-        p_macro = MacroPipeline()
-        m_ctx = p_macro.run()
-        cached_macro_context = MacroIntelligencePanel(m_ctx).to_dict()
-        last_macro_fetch_time = time.time()
-        logger.info("Initial macro pipeline execution completed.")
-    except Exception as e:
-        logger.error(f"Initial macro pipeline fetch error: {e}")
+    logger.info(f"[BOOT] Starting Python Bridge Daemon at {(time.time() - _boot_start_time)*1000:.1f}ms...")
 
     last_mode = None
     sim_thread = None
@@ -559,7 +565,7 @@ def run_daemon(wm, bs):
     # This eliminates the oscillation caused by transient Kite API failures
     # broadcasting TOKEN_EXPIRED / DISCONNECTED on every 3-second loop tick.
     _daemon_broker_auth = "DISCONNECTED"
-    
+
     # Defaults structures
     defaultBrokerAccount = {
         "client_id": "N/A",
@@ -622,7 +628,7 @@ def run_daemon(wm, bs):
             "margin_utilisation_pct": 0.0
         }
     }
-    
+
     def stdin_reader():
         for line in sys.stdin:
             line = line.strip()
@@ -633,7 +639,7 @@ def run_daemon(wm, bs):
                 req_id = req.get("requestId")
                 action = req.get("action")
                 params = req.get("params", {})
-                
+
                 res = handle_daemon_command(action, params, bs, wm)
                 print(json.dumps({"type": "response", "requestId": req_id, "success": True, "data": res}), flush=True)
             except Exception as e:
@@ -643,7 +649,7 @@ def run_daemon(wm, bs):
                     pass
 
     threading.Thread(target=stdin_reader, daemon=True).start()
-    
+
     def run_simulator():
         """
         Production Integrity: When broker is disconnected, do NOT simulate
@@ -665,17 +671,24 @@ def run_daemon(wm, bs):
             }
             print(json.dumps(tick_null), flush=True)
             time.sleep(3.0)
-            
 
 
 
-            
+
+
     def setup_real_ticks_callback():
-        orch = bs._get_orchestrator()
+        try:
+            orch = bs._get_orchestrator()
+        except PermissionError:
+            logger.warning("Cannot setup real ticks callback: broker session unauthenticated.")
+            return
+        if getattr(orch, "_real_ticks_callback_set", False):
+            return
         original_on_ticks = orch._on_tick_received
-        
+
         def new_on_ticks(raw_ticks):
-            original_on_ticks(raw_ticks)
+            if original_on_ticks:
+                original_on_ticks(raw_ticks)
             t_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
             for raw in raw_ticks:
                 token = raw.get("instrument_token")
@@ -686,7 +699,7 @@ def run_daemon(wm, bs):
                     inst = InstrumentService.get_instance().lookup_instrument_by_token(token)
                     if inst:
                         symbol = inst.get("tradingsymbol") or "N/A"
-                
+
                 tick_payload = {
                     "type": "tick",
                     "symbol": symbol,
@@ -700,8 +713,9 @@ def run_daemon(wm, bs):
                     }
                 }
                 print(json.dumps(tick_payload), flush=True)
-        
+
         orch._on_tick_received = new_on_ticks
+        orch._real_ticks_callback_set = True
 
     instruments_df = None
     # Auto-restore valid Zerodha session at daemon startup
@@ -712,6 +726,17 @@ def run_daemon(wm, bs):
             if session_loaded and gateway.validate_session():
                 logger.info("Successfully restored active Zerodha session at daemon startup.")
                 setup_real_ticks_callback()
+                if bs.is_connected() and not bs.is_stream_connected():
+                    try:
+                        bs.connect_stream()
+                        bs.subscribe_stream([
+                            "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
+                            "NIFTY METAL", "NIFTY FMCG", "NIFTY REALTY", "NIFTY ENERGY",
+                            "NIFTY OIL AND GAS", "NIFTY FIN SERVICE", "INDIA VIX",
+                        ])
+                        logger.info("Auto-connected streaming feed during startup session restoration.")
+                    except Exception as e:
+                        logger.error(f"Failed to connect streaming feed during startup session restore: {e}")
             else:
                 gateway.disconnect()
                 logger.info("No active Zerodha session restored at daemon startup.")
@@ -721,54 +746,39 @@ def run_daemon(wm, bs):
 
     # Spawn initial background refreshes for news and macro providers
     def run_initial_refreshes():
-        try:
-            from src.pipeline.news_pipeline import NewsPipeline
-            from src.dashboard.news_panel import NewsIntelligencePanel
-            n_pipeline = NewsPipeline()
-            n_ctx = n_pipeline.run()
-            n_candidate = NewsIntelligencePanel(n_ctx).to_dict()
-            if isinstance(n_candidate, dict):
-                global cached_news_sentiment, last_news_fetch_time
-                cached_news_sentiment = n_candidate
-                last_news_fetch_time = time.time()
-                logger.info(f"Startup news refresh complete: {len(n_ctx.items)} items.")
-        except Exception as ne:
-            logger.warning(f"Startup news refresh failed: {ne}")
-
-        try:
-            from src.pipeline.macro_pipeline import MacroPipeline
-            from src.dashboard.macro_panel import MacroIntelligencePanel
-            m_pipeline = MacroPipeline()
-            m_ctx = m_pipeline.run()
-            m_candidate = MacroIntelligencePanel(m_ctx).to_dict()
-            if isinstance(m_candidate, dict):
-                global cached_macro_context, last_macro_fetch_time
-                cached_macro_context = m_candidate
-                last_macro_fetch_time = time.time()
-                logger.info(f"Startup macro refresh complete: {len(m_ctx.quotes)} quotes.")
-        except Exception as me:
-            logger.warning(f"Startup macro refresh failed: {me}")
+        logger.info(f"[BACKGROUND] Initial background provider refreshes triggered at {(time.time() - _boot_start_time)*1000:.1f}ms")
+        threading.Thread(target=_bg_refresh_news, daemon=True, name="bg-news-init").start()
+        threading.Thread(target=_bg_refresh_macro, daemon=True, name="bg-macro-init").start()
 
     threading.Thread(target=run_initial_refreshes, daemon=True).start()
+
+    _last_stream_connect_attempt = 0.0
+
+    logger.info(f"[BOOT] Entering canonical main loop at {(time.time() - _boot_start_time)*1000:.1f}ms")
 
     while True:
         current_mode = wm.current_mode
         if current_mode != last_mode:
             logger.info(f"Daemon workspace mode changed to: {current_mode}")
             last_mode = current_mode
-            
-            if bs.is_connected() and not bs.is_stream_connected():
+
+        if bs.is_connected() and not bs.is_stream_connected():
+            now_ts = time.time()
+            if now_ts - _last_stream_connect_attempt >= 10.0:
+                _last_stream_connect_attempt = now_ts
                 try:
-                    bs.connect_stream()
-                    bs.subscribe_stream([
-                        "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
-                        "NIFTY METAL", "NIFTY FMCG", "NIFTY REALTY", "NIFTY ENERGY",
-                        "NIFTY OIL AND GAS", "NIFTY FIN SERVICE", "INDIA VIX",
-                    ])
-                    logger.info("Auto-connected streaming feed for active broker session.")
+                    setup_real_ticks_callback()
+                    connected = bs.connect_stream()
+                    if connected:
+                        bs.subscribe_stream([
+                            "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
+                            "NIFTY METAL", "NIFTY FMCG", "NIFTY REALTY", "NIFTY ENERGY",
+                            "NIFTY OIL AND GAS", "NIFTY FIN SERVICE", "INDIA VIX",
+                        ])
+                        logger.info("Auto-connected streaming feed for active broker session.")
                 except Exception as e:
                     logger.error(f"Failed to auto-connect streaming feed: {e}")
-                        
+
         try:
             # Initialize instruments master cache asynchronously if broker connects
             if bs.is_connected() and instruments_df is None and not getattr(bs, "_instruments_loading", False):
@@ -796,30 +806,44 @@ def run_daemon(wm, bs):
 
             # If connected, fetch dynamic spot prices immediately from orchestrator cache
             if bs.is_connected():
-                orch = bs._get_orchestrator()
-                tick_nifty = orch.latest_ticks.get("NSE:NIFTY 50")
-                if tick_nifty and float(tick_nifty.get("last_price", 0.0)) > 0:
-                    spot_nifty = float(tick_nifty.get("last_price"))
+                try:
+                    orch = bs._get_orchestrator()
+                except PermissionError:
+                    orch = None
+
+                if orch:
+                    tick_nifty = orch.latest_ticks.get("NSE:NIFTY 50")
+                    if tick_nifty and float(tick_nifty.get("last_price", 0.0)) > 0:
+                        spot_nifty = float(tick_nifty.get("last_price"))
+                    else:
+                        try:
+                            ltps = bs.get_ltp(["NSE:NIFTY 50"])
+                            if ltps and float(ltps.get("NSE:NIFTY 50", {}).get("last_price", 0.0)) > 0:
+                                spot_nifty = float(ltps.get("NSE:NIFTY 50", {}).get("last_price"))
+                        except Exception:
+                            pass
+
+                    tick_bn = orch.latest_ticks.get("NSE:NIFTY BANK")
+                    if tick_bn and float(tick_bn.get("last_price", 0.0)) > 0:
+                        spot_banknifty = float(tick_bn.get("last_price"))
+                    tick_fn = orch.latest_ticks.get("NSE:NIFTY FIN SERVICE")
+                    if tick_fn and float(tick_fn.get("last_price", 0.0)) > 0:
+                        spot_finnifty = float(tick_fn.get("last_price"))
+                    tick_vix = orch.latest_ticks.get("NSE:INDIA VIX")
+                    if tick_vix and float(tick_vix.get("last_price", 0.0)) > 0:
+                        india_vix = float(tick_vix.get("last_price"))
+                    else:
+                        try:
+                            ltps = bs.get_ltp(["NSE:INDIA VIX"])
+                            if ltps and float(ltps.get("NSE:INDIA VIX", {}).get("last_price", 0.0)) > 0:
+                                india_vix = float(ltps.get("NSE:INDIA VIX", {}).get("last_price"))
+                        except Exception:
+                            pass
                 else:
                     try:
-                        ltps = bs.get_ltp(["NSE:NIFTY 50"])
+                        ltps = bs.get_ltp(["NSE:NIFTY 50", "NSE:INDIA VIX"])
                         if ltps and float(ltps.get("NSE:NIFTY 50", {}).get("last_price", 0.0)) > 0:
                             spot_nifty = float(ltps.get("NSE:NIFTY 50", {}).get("last_price"))
-                    except Exception:
-                        pass
-                
-                tick_bn = orch.latest_ticks.get("NSE:NIFTY BANK")
-                if tick_bn and float(tick_bn.get("last_price", 0.0)) > 0:
-                    spot_banknifty = float(tick_bn.get("last_price"))
-                tick_fn = orch.latest_ticks.get("NSE:NIFTY FIN SERVICE")
-                if tick_fn and float(tick_fn.get("last_price", 0.0)) > 0:
-                    spot_finnifty = float(tick_fn.get("last_price"))
-                tick_vix = orch.latest_ticks.get("NSE:INDIA VIX")
-                if tick_vix and float(tick_vix.get("last_price", 0.0)) > 0:
-                    india_vix = float(tick_vix.get("last_price"))
-                else:
-                    try:
-                        ltps = bs.get_ltp(["NSE:INDIA VIX"])
                         if ltps and float(ltps.get("NSE:INDIA VIX", {}).get("last_price", 0.0)) > 0:
                             india_vix = float(ltps.get("NSE:INDIA VIX", {}).get("last_price"))
                     except Exception:
@@ -828,7 +852,7 @@ def run_daemon(wm, bs):
                 # Decouple Option Chain REST fetching from critical NIFTY spot publication path
                 # Option chain REST compilation runs asynchronously in background thread every 15 seconds
                 global _last_option_chain_fetch, cached_market_context, cached_option_context
-                effective_spot = spot_nifty if (spot_nifty and spot_nifty > 0) else float((cached_market_context or {}).get("current_spot") or (cached_option_context or {}).get("underlying_spot") or 24500.0)
+                effective_spot = spot_nifty if (spot_nifty and spot_nifty > 0) else float((cached_market_context or {}).get("current_spot") or (cached_option_context or {}).get("underlying_spot") or 0.0)
                 if effective_spot > 0 and (time.time() - getattr(bs, "_last_option_chain_fetch", 0.0)) > 15.0 and not getattr(bs, "_option_chain_loading", False):
                     bs._option_chain_loading = True
                     def _bg_update_option_chain(s_nifty: float, vix_val: float):
@@ -855,7 +879,12 @@ def run_daemon(wm, bs):
                                         cached_option_context = new_opt_ctx
 
                             from src.broker.services.market_context_builder import MarketContextBuilder
-                            orch_instance = bs._get_orchestrator() if hasattr(bs, "_get_orchestrator") else None
+                            orch_instance = None
+                            if hasattr(bs, "_get_orchestrator") and bs.is_connected():
+                                try:
+                                    orch_instance = bs._get_orchestrator()
+                                except PermissionError:
+                                    orch_instance = None
                             new_mkt_ctx = MarketContextBuilder.build(
                                 bs, orch_instance, vix_val,
                                 (cached_macro_context or {}).get("constituent_metadata"),
@@ -875,7 +904,7 @@ def run_daemon(wm, bs):
             broker_account = defaultBrokerAccount
             broker_funds = defaultBrokerFunds
             portfolio_report = defaultPortfolioReport
-            
+
             if bs.is_connected():
                 try:
                     broker_account = serialize(bs.get_profile())
@@ -890,10 +919,10 @@ def run_daemon(wm, bs):
                     portfolio_report = serialize(LivePortfolioReportBuilder.generate(bs.get_gateway()))
                 except Exception:
                     pass
-            
+
             from src.broker.services.market_status_service import MarketStatusService
             market_status = serialize(MarketStatusService.get_instance().get_market_status())
-            
+
             # --- Resolve broker state (sticky-auth rule) ---
             # Rules:
             # 1. If bs.is_connected() is False → DISCONNECTED (gateway explicitly cleared)
@@ -907,12 +936,13 @@ def run_daemon(wm, bs):
                 SessionMissingError as _SME,
                 InvalidAPIKeyError as _IAKE,
             )
-            if not bs.is_connected():
+            from src.broker.services.session_manager import SessionManager
+            if not bs.is_connected() or SessionManager.is_explicitly_logged_out():
                 _daemon_broker_auth = "DISCONNECTED"
             else:
                 try:
                     gateway = bs.get_gateway()
-                    if not getattr(gateway, "access_token", None):
+                    if not getattr(gateway, "access_token", None) or SessionManager.is_explicitly_logged_out():
                         _daemon_broker_auth = "DISCONNECTED"
                     elif gateway.validate_session():
                         # Explicit positive confirmation — promote to / maintain CONNECTED
@@ -1038,13 +1068,13 @@ def run_daemon(wm, bs):
                 from src.analytics_engine.builder import PerformanceAnalyticsBuilder
                 from src.dashboard.performance_analytics_panel import PerformanceAnalyticsPanel
                 from src.models import TradeJournalEntry
-                
+
                 # Convert portfolio_report trades to TradeJournalEntry
                 entries = []
                 trades_list = []
                 if isinstance(portfolio_report, dict):
                     trades_list = portfolio_report.get("trades", [])
-                
+
                 for idx, t in enumerate(trades_list):
                     try:
                         pnl = float(t.get("pnl", 0.0))
@@ -1078,45 +1108,19 @@ def run_daemon(wm, bs):
                         entries.append(entry)
                     except Exception:
                         pass
-                
+
                 report = PerformanceAnalyticsBuilder.build_report(entries)
                 analytics_report = PerformanceAnalyticsPanel(report).to_dict()
             except Exception as e:
                 logger.error(f"Failed to build analytics report: {e}")
 
-            # Compile News Sentiment
+            # Compile News Sentiment (Non-blocking async background thread)
             if cached_news_sentiment is None or time.time() - last_news_fetch_time > 300:
-                if news_refresh_lock.acquire(blocking=False):
-                    try:
-                        from src.pipeline.news_pipeline import NewsPipeline
-                        from src.dashboard.news_panel import NewsIntelligencePanel
-                        pipeline = NewsPipeline()
-                        news_ctx = pipeline.run()
-                        candidate = NewsIntelligencePanel(news_ctx).to_dict()
-                        if isinstance(candidate, dict):
-                            cached_news_sentiment = candidate
-                            last_news_fetch_time = time.time()
-                    except Exception as e:
-                        logger.error(f"Failed to compile news sentiment: {e}")
-                    finally:
-                        news_refresh_lock.release()
+                threading.Thread(target=_bg_refresh_news, daemon=True, name="bg-news-periodic").start()
 
-            # Compile Macro Context
+            # Compile Macro Context (Non-blocking async background thread)
             if cached_macro_context is None or time.time() - last_macro_fetch_time > 300:
-                if macro_refresh_lock.acquire(blocking=False):
-                    try:
-                        from src.pipeline.macro_pipeline import MacroPipeline
-                        from src.dashboard.macro_panel import MacroIntelligencePanel
-                        pipeline = MacroPipeline()
-                        macro_ctx = pipeline.run()
-                        candidate = MacroIntelligencePanel(macro_ctx).to_dict()
-                        if isinstance(candidate, dict):
-                            cached_macro_context = candidate
-                            last_macro_fetch_time = time.time()
-                    except Exception as e:
-                        logger.error(f"Failed to compile macro context: {e}")
-                    finally:
-                        macro_refresh_lock.release()
+                threading.Thread(target=_bg_refresh_macro, daemon=True, name="bg-macro-periodic").start()
 
             legacy_data = {
                     "workspaceContext": {
@@ -1168,9 +1172,13 @@ def run_daemon(wm, bs):
                 "data": canonical_state.to_dict()
             }
             print(json.dumps(state_payload), flush=True)
+            global _first_state_emitted
+            if not _first_state_emitted:
+                _first_state_emitted = True
+                logger.info(f"[BOOT] First canonical state emitted at {(time.time() - _boot_start_time)*1000:.1f}ms")
         except Exception as err:
             logger.exception(f"Daemon state generation failed: {err}")
-            
+
         time.sleep(3.0)
 
 def main():
@@ -1231,7 +1239,7 @@ def main():
                 cached_market_context, cached_option_context,
                 market_state="OPEN", broker_state="CONNECTED" if bs.is_connected() else "DISCONNECTED")
             data = result.compatibility_values()
-            
+
             action_map = {
                 "get_market_score": "marketScore",
                 "get_opportunity_context": "opportunityContext",
@@ -1249,7 +1257,7 @@ def main():
             }
             key = action_map.get(args.action)
             print(json.dumps(data.get(key, {})))
- 
+
         elif args.action == "get_market_context":
             # Production Integrity: Use MarketContextBuilder for ALL context data.
             # Never fabricate spot, VIX, expiry, PCR, OI, or option chain values.
@@ -1453,7 +1461,7 @@ def main():
 
             bs.set_mode(TradingMode.LIVE_ZERODHA)
             gateway = bs.get_gateway()
-            
+
             if hasattr(gateway, "api_key"):
                 gateway.api_key = api_key
             if hasattr(gateway, "access_token"):

@@ -69,9 +69,18 @@ class MarketFeedService:
 
     def get_feed_health(self) -> Dict[str, Any]:
         bs = BrokerService.get_instance()
-        orchestrator = bs._get_orchestrator()
-        liveness = orchestrator.check_feed_liveness()
         health = bs.get_stream_health()
+        try:
+            orchestrator = bs._get_orchestrator()
+            liveness = orchestrator.check_feed_liveness()
+        except PermissionError:
+            liveness = {
+                "status": getattr(health, "feed_liveness_status", "AUTH_REQUIRED"),
+                "observation_age_seconds": None,
+                "stale_duration_seconds": 0.0,
+                "auth_required_reason": getattr(health, "auth_required_reason", "Broker authentication required"),
+                "reconnect_state": "IDLE"
+            }
         latency = float(getattr(health, "average_latency_ms", getattr(health, "latency", 0.0)) or 0.0)
         return {
             "status": liveness["status"],
@@ -324,7 +333,11 @@ class MarketFeedService:
             quotes = bs.get_quote(keys) or {}
         except Exception as exc:
             logger.warning("Kite option quote request failed: %s", exc)
-        orch = bs._get_orchestrator()
+        orch = None
+        try:
+            orch = bs._get_orchestrator()
+        except PermissionError:
+            orch = None
         rows: List[Dict[str, Any]] = []
         for contract, key in zip(contracts, keys):
             websocket_quote = (orch.latest_ticks.get(key) or orch.latest_ticks.get(contract["trading_symbol"]) or {}) if orch else {}

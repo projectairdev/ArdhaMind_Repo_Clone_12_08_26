@@ -59,6 +59,22 @@ class CanonicalWorkstationState:
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
+    @property
+    def todays_analysis(self) -> Optional[dict[str, Any]]:
+        if self.unified_intelligence and isinstance(self.unified_intelligence, dict):
+            return self.unified_intelligence.get("todays_analysis")
+        if self.session_story and isinstance(self.session_story, dict):
+            return self.session_story.get("todays_analysis")
+        return None
+
+    @property
+    def forward_outlook(self) -> Optional[dict[str, Any]]:
+        if self.unified_intelligence and isinstance(self.unified_intelligence, dict):
+            return self.unified_intelligence.get("forward_outlook")
+        if self.session_story and isinstance(self.session_story, dict):
+            return self.session_story.get("forward_outlook")
+        return None
+
     def to_dict(self) -> dict[str, Any]:
         result = sanitize_read_only(asdict(self))
         self._assert_read_only(result)

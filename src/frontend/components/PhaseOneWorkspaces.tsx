@@ -105,12 +105,28 @@ function ClosedSessionIntelligence({ mode }: { mode: "analysis" | "assistant" })
 }
 
 export function NiftyLiveWorkspace() {
-  const { marketContext, loading } = useWorkstationState();
-  const marketAvailable = Boolean(marketContext?.current_spot && marketContext?.last_tick_time);
-  return <ErrorBoundary fallbackTitle="NIFTY Live Workspace Error">
+  const { marketContext, canonicalState, lastValidState, loading } = useWorkstationState() as any;
+  const sessionStatus = canonicalState?.market_session?.status || "CLOSED";
+  const isClosedSession = Boolean(
+    canonicalState?.market_session?.is_closed ||
+    sessionStatus === "CLOSED" ||
+    sessionStatus === "HOLIDAY" ||
+    sessionStatus === "WEEKEND" ||
+    marketContext?.session_mode === "LAST_SESSION" ||
+    marketContext?.session_mode === "LAST_VALID_SESSION"
+  );
+
+  const spot = marketContext?.current_spot || canonicalState?.market_data?.current_spot || lastValidState?.market_data?.current_spot;
+  const lastTickTime = marketContext?.last_tick_time || canonicalState?.data_quality?.market_data?.observed_at;
+
+  const marketAvailable = isClosedSession
+    ? Boolean(spot)
+    : Boolean(spot && lastTickTime);
+
+  return <ErrorBoundary fallbackTitle="Market Command Workspace Error">
     <div className="space-y-5">
-      <Heading eyebrow="Live market" title="NIFTY Live" description="Live NIFTY market intelligence. No fallback price is shown." />
-      {loading && !marketAvailable ? (
+      <Heading eyebrow="Live market" title="Market Command" description="Live NIFTY market intelligence. No fallback price is shown." />
+      {loading && !spot ? (
         <ReadinessState kind="initializing" title="Initializing market data" reason="Waiting for market observations." />
       ) : !marketAvailable ? (
         <ReadinessState kind="unavailable" title="Live market data unavailable" reason="Connect broker or wait for a valid market snapshot." />
@@ -134,7 +150,7 @@ export function TodaysAnalysisWorkspace() {
       ) : (marketContext?.current_spot && marketContext.feed_health === "HEALTHY") ? (
         <MarketStory />
       ) : (
-        <ReadinessState kind="blocked" title="Today’s Analysis is waiting" reason="A healthy current-session market feed is required." />
+        <ReadinessState kind="blocked" title="Session Intelligence is waiting" reason="A healthy current-session market feed is required." />
       )}
     </div>
   );
@@ -186,7 +202,7 @@ export function ForwardOutlookWorkspace() {
   const isClosed = Boolean(state?.market_session?.is_closed || ["CLOSED", "HOLIDAY", "POST_CLOSE"].includes(sessionStatus));
 
   return (
-    <ErrorBoundary fallbackTitle="Forward Outlook Workspace Error">
+    <ErrorBoundary fallbackTitle="Scenario Outlook Workspace Error">
       <div id="forward-outlook-workspace" className="space-y-6 text-left font-sans">
 
         {/* ── 1. HEADER BANNER ── */}
@@ -195,14 +211,14 @@ export function ForwardOutlookWorkspace() {
             <div>
               <div className="flex items-center gap-2 text-[10px] font-bold text-cyan-400 uppercase tracking-widest">
                 <Clock size={16} />
-                <span>FORWARD OUTLOOK · HORIZON: NEXT 15–30 MINUTES</span>
+                <span>SCENARIO OUTLOOK · HORIZON: NEXT 15–30 MINUTES</span>
                 <span className={`px-2 py-0.5 rounded text-[9px] border font-bold ${
                   isClosed ? "bg-slate-900 border-slate-700 text-slate-400" : "bg-emerald-950/80 border-emerald-700 text-emerald-300"
                 }`}>
                   {isClosed ? "SESSION COMPLETE" : "● LIVE OUTLOOK"}
                 </span>
               </div>
-              <h2 className="text-xl font-black text-white mt-1 uppercase tracking-tight">DETERMINISTIC NEAR-TERM SCENARIO INTELLIGENCE</h2>
+              <h2 className="text-xl font-black text-white mt-1 uppercase tracking-tight">SCENARIO OUTLOOK — NEAR-TERM DETERMINISTIC SCENARIOS</h2>
             </div>
             <div className="text-right text-[10px] font-mono">
               <span className="text-slate-400 block uppercase">OUTLOOK CONFIDENCE</span>
@@ -215,12 +231,12 @@ export function ForwardOutlookWorkspace() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-sans">
             <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-850">
               <span className="text-[10px] font-mono uppercase text-slate-400 block">Current Session Trend (Today's Analysis)</span>
-              <span className="font-bold text-white mt-0.5 block">{safeString(todayReport.trend_classification || "MODERATELY BULLISH → SIDEWAYS")}</span>
+              <span className="font-bold text-white mt-0.5 block">{safeString(todayReport.trend_classification || "INSUFFICIENT_DATA")}</span>
             </div>
             <div className="p-3 bg-slate-900/60 rounded-lg border border-slate-850">
               <span className="text-[10px] font-mono uppercase text-slate-400 block">Scenario Separation / Spread</span>
               <span className="font-bold text-cyan-300 mt-0.5 block">
-                {safeNumber(outlook.scenario_spread, 15.0).toFixed(1)} score pts ({confidence === "LOW" ? "Mixed / Low Separation" : "Clear Primary Lead"})
+                {outlook.scenario_spread != null ? `${safeNumber(outlook.scenario_spread, 0.0).toFixed(1)} score pts` : "UNAVAILABLE"} ({confidence === "LOW" ? "Mixed / Low Separation" : "Clear Primary Lead"})
               </span>
             </div>
           </div>
@@ -233,13 +249,13 @@ export function ForwardOutlookWorkspace() {
               <span className="px-2.5 py-1 bg-cyan-950 border border-cyan-800 text-cyan-300 rounded text-xs font-bold uppercase tracking-wider">
                 PRIMARY SCENARIO
               </span>
-              <span className="text-lg font-black text-white">{safeString(primary.headline || "RANGE CONTINUATION & CONSOLIDATION")}</span>
+              <span className="text-lg font-black text-white">{safeString(primary.headline || (outlook.analysis_status === "INSUFFICIENT_DATA" ? "INSUFFICIENT MARKET DATA — OUTLOOK UNAVAILABLE" : "RANGE CONTINUATION & CONSOLIDATION"))}</span>
             </div>
-            <span className="text-xs text-slate-400">Score: <strong className="text-cyan-300">{safeNumber(primary.scenario_score, 70.0).toFixed(1)}</strong> / 100</span>
+            <span className="text-xs text-slate-400">Score: <strong className="text-cyan-300">{primary.scenario_score != null ? safeNumber(primary.scenario_score, 0.0).toFixed(1) : "0.0"}</strong> / 100</span>
           </div>
 
           <p className="text-sm text-slate-300 font-sans leading-relaxed">
-            {safeString(primary.description || "NIFTY expected to trade bound within support and resistance boundaries over the next 15–30 minutes.")}
+            {safeString(primary.description || "Authoritative spot price telemetry is currently unavailable.")}
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 font-sans text-xs pt-2">
@@ -268,9 +284,9 @@ export function ForwardOutlookWorkspace() {
 
           {/* Relevant Levels Bar */}
           <div className="p-3 bg-slate-900/80 rounded-lg border border-slate-850 flex flex-wrap justify-between items-center text-xs font-mono gap-3">
-            <div>Support: <strong className="text-emerald-400">{formatNumber(primary.relevant_levels?.support || 24400, 0)}</strong></div>
-            <div>VWAP Anchor: <strong className="text-cyan-300">{formatNumber(primary.relevant_levels?.vwap || 24480, 2)}</strong></div>
-            <div>Resistance: <strong className="text-rose-400">{formatNumber(primary.relevant_levels?.resistance || 24580, 0)}</strong></div>
+            <div>Support: <strong className="text-emerald-400">{primary.relevant_levels?.support != null ? formatNumber(primary.relevant_levels.support, 0) : "UNAVAILABLE"}</strong></div>
+            <div>VWAP Anchor: <strong className="text-cyan-300">{primary.relevant_levels?.vwap != null ? formatNumber(primary.relevant_levels.vwap, 2) : "UNAVAILABLE"}</strong></div>
+            <div>Resistance: <strong className="text-rose-400">{primary.relevant_levels?.resistance != null ? formatNumber(primary.relevant_levels.resistance, 0) : "UNAVAILABLE"}</strong></div>
           </div>
         </div>
 

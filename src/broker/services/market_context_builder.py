@@ -222,7 +222,7 @@ class MarketContextBuilder:
         feed_latency_ms = float(feed_health_data.get("latency_ms", 0.0))
 
         # ---- NIFTY 50 spot from latest tick ----
-        nifty_tick = orch.latest_ticks.get("NSE:NIFTY 50") if orch else None
+        nifty_tick = (orch.latest_ticks.get("NSE:NIFTY 50") or orch.latest_ticks.get("NIFTY 50")) if orch else None
         spot = 0.0
         ltp = 0.0
         volume = 0
@@ -232,6 +232,11 @@ class MarketContextBuilder:
         ask = 0.0
         spread = 0.0
         last_tick_time = ""
+
+        previous_close = None
+        open_price = None
+        high_price = None
+        low_price = None
 
         if nifty_tick:
             spot = float(nifty_tick.get("last_price", 0.0))
@@ -244,7 +249,18 @@ class MarketContextBuilder:
             spread = round(ask - bid, 2)
             ts = nifty_tick.get("timestamp")
             last_tick_time = str(ts) if ts else now_str
-        previous_close = None
+
+            tick_ohlc = nifty_tick.get("ohlc") or {}
+            if tick_ohlc.get("open") is not None and float(tick_ohlc.get("open")) > 0:
+                open_price = float(tick_ohlc["open"])
+            if tick_ohlc.get("high") is not None and float(tick_ohlc.get("high")) > 0:
+                high_price = float(tick_ohlc["high"])
+            if tick_ohlc.get("low") is not None and float(tick_ohlc.get("low")) > 0:
+                low_price = float(tick_ohlc["low"])
+            if tick_ohlc.get("close") is not None and float(tick_ohlc.get("close")) > 0:
+                previous_close = float(tick_ohlc["close"])
+
+        source_type = "WEBSOCKET_STREAM" if (nifty_tick and spot > 0) else ("REST_POLL" if bs.is_connected() else "LAST_VALID_SESSION")
         if bs.is_connected():
             try:
                 nq = bs.get_quote(["NSE:NIFTY 50"])
@@ -256,9 +272,16 @@ class MarketContextBuilder:
                         bid = spot
                         ask = spot
                         last_tick_time = now_str
-                    prev_raw = (n_data.get("ohlc") or {}).get("close")
+                    ohlc_obj = n_data.get("ohlc") or {}
+                    prev_raw = ohlc_obj.get("close")
                     if prev_raw is not None and float(prev_raw) > 0:
                         previous_close = float(prev_raw)
+                    if ohlc_obj.get("open") is not None and float(ohlc_obj.get("open")) > 0:
+                        open_price = float(ohlc_obj["open"])
+                    if ohlc_obj.get("high") is not None and float(ohlc_obj.get("high")) > 0:
+                        high_price = float(ohlc_obj["high"])
+                    if ohlc_obj.get("low") is not None and float(ohlc_obj.get("low")) > 0:
+                        low_price = float(ohlc_obj["low"])
             except Exception:
                 pass
 
@@ -267,14 +290,26 @@ class MarketContextBuilder:
             if pc_val and float(pc_val) > 0:
                 previous_close = float(pc_val)
 
-        spot_change = round(spot - previous_close, 2) if (spot > 0 and previous_close and previous_close > 0) else None
-        spot_change_pct = round(spot_change / previous_close * 100.0, 4) if (spot_change is not None and previous_close and previous_close > 0) else None
-
         # ---- ATR, VWAP and Candles from intraday candle buffer ----
         try:
             _refresh_candle_buffer(bs)
         except Exception:
             pass
+
+        if _candle_buffer:
+            if open_price is None and _candle_buffer[0].get("open") is not None:
+                open_price = float(_candle_buffer[0]["open"])
+            if high_price is None:
+                cand_highs = [float(c["high"]) for c in _candle_buffer if c.get("high") is not None]
+                if cand_highs:
+                    high_price = max(cand_highs)
+            if low_price is None:
+                cand_lows = [float(c["low"]) for c in _candle_buffer if c.get("low") is not None]
+                if cand_lows:
+                    low_price = min(cand_lows)
+
+        spot_change = round(spot - previous_close, 2) if (spot > 0 and previous_close and previous_close > 0) else None
+        spot_change_pct = round(spot_change / previous_close * 100.0, 4) if (spot_change is not None and previous_close and previous_close > 0) else None
 
         vwap = _compute_vwap(_candle_buffer)
         atr = _compute_atr(_candle_buffer)
@@ -396,6 +431,10 @@ class MarketContextBuilder:
             # Spot & Tick
             "current_spot": spot,
             "ltp": ltp,
+            "open": open_price,
+            "high": high_price,
+            "low": low_price,
+            "close": ltp if ltp > 0 else spot,
             "previous_close": previous_close,
             "spot_change": spot_change,
             "spot_change_pct": spot_change_pct,
@@ -403,6 +442,8 @@ class MarketContextBuilder:
             "change_percent": spot_change_pct,
             "last_tick_time": last_tick_time,
             "session_mode": session_mode,
+            "source_type": source_type,
+            "observed_at": now_str,
             "candles": candles_payload,
             # Bid / Ask
             "bid": bid,

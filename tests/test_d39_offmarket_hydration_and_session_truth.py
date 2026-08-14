@@ -195,10 +195,13 @@ def test_workstation_state_service_session_history_fallback(tmp_path):
     payload = {"version": "1.0.0", "session_date": "2026-08-12", "snapshots": [{"timestamp": "2026-08-12T10:00:00Z", "spot": 24500.00, "session_date": "2026-08-12"}], "material_events": []}
     with open(cache_file, "w", encoding="utf-8") as f:
         json.dump(payload, f)
-    
-    WorkstationStateService._allow_disk_cache_in_test = True
-    WorkstationStateService._load_session_history("2026-08-13")
-    assert len(WorkstationStateService._snapshots_history) == 1
+    try:
+        WorkstationStateService.CACHE_DIR = tmp_path
+        WorkstationStateService._allow_disk_cache_in_test = True
+        WorkstationStateService._load_session_history("2026-08-13")
+        assert len(WorkstationStateService._snapshots_history) == 1
+    finally:
+        WorkstationStateService.reset_for_testing()
 
 
 def test_date_semantics_explicit_timestamps():
@@ -258,7 +261,7 @@ def test_kite_auth_vs_stream_independence():
     bs.is_connected.return_value = True
     orch = MagicMock()
     orch.is_connected.return_value = False
-    
+
     # Auth is connected, stream is disconnected (e.g. market closed)
     assert bs.is_connected() is True
     assert orch.is_connected() is False

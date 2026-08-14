@@ -44,7 +44,14 @@ function SpotSummary() {
   const rawSpot = marketContext?.current_spot;
   const spot = rawSpot != null ? safeNumber(rawSpot, 0) : null;
   const dq = canonicalState?.data_quality?.market_data || {};
-  const isClosed = Boolean(canonicalState?.market_session?.is_closed || marketContext?.session_mode === "LAST_SESSION" || marketContext?.session_mode === "LAST_VALID_SESSION");
+  const isClosed = Boolean(
+    canonicalState?.market_session?.is_closed ||
+    canonicalState?.market_session?.status === "CLOSED" ||
+    canonicalState?.market_session?.status === "HOLIDAY" ||
+    canonicalState?.market_session?.status === "WEEKEND" ||
+    marketContext?.session_mode === "LAST_SESSION" ||
+    marketContext?.session_mode === "LAST_VALID_SESSION"
+  );
   const mData = canonicalState?.market_data || {};
   const rawChange = marketContext?.spot_change ?? mData.change_points ?? mData.spot_change;
   const rawChangePct = marketContext?.spot_change_pct ?? mData.change_percent ?? mData.spot_change_pct;

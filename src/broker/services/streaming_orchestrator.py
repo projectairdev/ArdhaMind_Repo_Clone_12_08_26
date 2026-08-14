@@ -31,16 +31,16 @@ class StreamingOrchestrator:
     def __init__(self, broker_gateway: Any = None) -> None:
         if getattr(self, "_initialized", False):
             return
-        
+
         self.broker_gateway = broker_gateway
         self.adapter: Optional[KiteTickerAdapter] = None
         self.subscription_manager = SubscriptionManager()
         self.health_monitor = StreamHealthMonitor()
-        
+
         # Connection parameters
         self.api_key: str = ""
         self.access_token: str = ""
-        
+
         # Fallback & Reconnect states
         self.fallback_active = False
         self.reconnect_attempts = 0
@@ -48,8 +48,9 @@ class StreamingOrchestrator:
         self.base_backoff_seconds = 1.0
         self._reconnect_thread: Optional[threading.Thread] = None
         self._reconnect_lock = threading.Lock()
+        self._connect_lock = threading.Lock()
         self._running = False
-        
+
         # Active streaming cache (stores latest tick received per symbol)
         self.latest_ticks: Dict[str, Any] = {}
 
@@ -73,50 +74,51 @@ class StreamingOrchestrator:
         If credentials have changed or force_reconnect is True, safely terminates any existing adapter
         before establishing the new connection.
         """
-        credentials_changed = (
-            self.adapter is not None and
-            (getattr(self.adapter, "api_key", None) != self.api_key or getattr(self.adapter, "access_token", None) != self.access_token)
-        )
+        with self._connect_lock:
+            credentials_changed = (
+                self.adapter is not None and
+                (getattr(self.adapter, "api_key", None) != self.api_key or getattr(self.adapter, "access_token", None) != self.access_token)
+            )
 
-        if self._running and not credentials_changed and not force_reconnect and self.is_connected():
-            logger.info("Streaming layer already running with active valid adapter.")
-            return True
+            if self._running and not credentials_changed and not force_reconnect and self.is_connected():
+                logger.info("Streaming layer already running with active valid adapter.")
+                return True
 
-        # Safely terminate existing adapter if replacing
-        if self.adapter:
-            logger.info("Safely terminating existing KiteTickerAdapter before establishing new stream connection...")
-            old_adapter = self.adapter
-            old_adapter.on_status_changed = None
-            old_adapter.on_tick_received = None
-            try:
-                old_adapter.disconnect()
-            except Exception as e:
-                logger.error("Error disconnecting old adapter: %s", e)
-            self.adapter = None
+            # Safely terminate existing adapter if replacing
+            if self.adapter:
+                logger.info("Safely terminating existing KiteTickerAdapter before establishing new stream connection...")
+                old_adapter = self.adapter
+                old_adapter.on_status_changed = None
+                old_adapter.on_tick_received = None
+                try:
+                    old_adapter.disconnect()
+                except Exception as e:
+                    logger.error("Error disconnecting old adapter: %s", e)
+                self.adapter = None
 
-        self._running = True
-        self.fallback_active = False
-        self.reconnect_attempts = 0
+            self._running = True
+            self.fallback_active = False
+            self.reconnect_attempts = 0
 
-        # Build Adapter
-        self.adapter = KiteTickerAdapter(self.api_key, self.access_token)
-        self.adapter.on_tick_received = self._on_tick_received
-        self.adapter.on_status_changed = self._on_status_changed
-        self.subscription_manager.set_ticker_adapter(self.adapter)
+            # Build Adapter
+            self.adapter = KiteTickerAdapter(self.api_key, self.access_token)
+            self.adapter.on_tick_received = self._on_tick_received
+            self.adapter.on_status_changed = self._on_status_changed
+            self.subscription_manager.set_ticker_adapter(self.adapter)
 
-        # Attempt to connect
-        success = self.adapter.connect()
-        if success:
-            self.connection_started_at = time.time()
-        else:
-            if getattr(self.adapter, "auth_required", False):
-                self.health_monitor.set_auth_required(getattr(self.adapter, "auth_required_reason", "Missing/Invalid credentials"))
-                logger.error("Authentication required for Kite stream. Disabling auto reconnect.")
+            # Attempt to connect
+            success = self.adapter.connect()
+            if success:
+                self.connection_started_at = time.time()
             else:
-                logger.warning("Initial WebSocket connection failed. Activating HTTP fallback.")
-                self._activate_fallback()
-                self._start_reconnect_loop()
-        return success
+                if getattr(self.adapter, "auth_required", False):
+                    self.health_monitor.set_auth_required(getattr(self.adapter, "auth_required_reason", "Missing/Invalid credentials"))
+                    logger.error("Authentication required for Kite stream. Disabling auto reconnect.")
+                else:
+                    logger.warning("Initial WebSocket connection failed. Activating HTTP fallback.")
+                    self._activate_fallback()
+                    self._start_reconnect_loop()
+            return success
 
     def disconnect_stream(self) -> None:
         """
@@ -157,10 +159,10 @@ class StreamingOrchestrator:
         is_conn = self.is_connected()
         active_subs = self.subscription_manager.get_active_subscriptions()
         active_sub_count = len(active_subs)
-        nifty_tick = self.latest_ticks.get("NSE:NIFTY 50")
+        nifty_tick = self.latest_ticks.get("NSE:NIFTY 50") or self.latest_ticks.get("NIFTY 50")
         has_nifty = nifty_tick is not None and float(nifty_tick.get("last_price", 0.0)) > 0
         liveness = self.check_feed_liveness(market_status=market_status)
-        obs_age = float(liveness.get("observation_age_seconds", 999.0))
+        obs_age = float(liveness["observation_age_seconds"]) if liveness.get("observation_age_seconds") is not None else None
 
         bootstrap_state = self.health_monitor.get_feed_bootstrap_state(
             is_connected=True,  # Gateway authenticated
@@ -194,7 +196,7 @@ class StreamingOrchestrator:
             "last_subscription_time": _iso(self.last_subscription_time),
             "last_valid_tick_time": _iso(last_tick_time),
             "last_valid_nifty_time": last_nifty_time,
-            "tick_age_seconds": obs_age if obs_age < 900 else None,
+            "tick_age_seconds": obs_age if (obs_age is not None and obs_age < 900) else None,
             "connection_telemetry": telemetry_events
         }
 
@@ -346,7 +348,7 @@ class StreamingOrchestrator:
 
             self.reconnect_attempts += 1
             self.health_monitor.record_reconnect()
-            
+
             sleep_time = min(16.0, self.base_backoff_seconds * (2 ** (self.reconnect_attempts - 1)))
             logger.info(f"Reconnection attempt {self.reconnect_attempts}/{self.max_reconnect_attempts} in {sleep_time}s...")
             time.sleep(sleep_time)

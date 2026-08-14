@@ -9,10 +9,8 @@ from src.models import (
     RiskEngineConfig,
     DecisionEngineConfig,
 )
-from src.validation_engine import (
-    HistoricalRunner,
-    ValidationReportBuilder,
-)
+from src.validation_engine.historical_runner import HistoricalRunner
+from src.validation_engine.report_builder import ValidationReportBuilder
 
 
 class ValidationPipeline:

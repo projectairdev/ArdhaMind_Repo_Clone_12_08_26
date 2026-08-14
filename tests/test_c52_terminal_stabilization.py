@@ -13,7 +13,7 @@ def test_nifty_summary_is_compact_overview_only_and_not_generic():
     views = read("components/UnifiedIntelligencePanel.tsx")
     assert "<OverviewPanel />" in nifty
     assert 'data-intelligence-view="compact-command-center"' in views
-    assert views.count("TODAY'S NIFTY VIEW") == 1
+    assert "SESSION INTELLIGENCE" in views
 
 
 def test_premarket_is_next_session_specific_without_session_review():
@@ -85,7 +85,7 @@ def test_settings_provider_health_is_bounded_and_keyboard_scrollable():
 
 def test_sidebar_remains_clean_and_settings_is_single_primary_path():
     layout = read("layout/DashboardLayout.tsx")
-    assert '{ id: "settings", label: "Settings"' in layout
+    assert '{ id: "settings", label: "System Control"' in layout
     assert "Decision intelligence only. Execution and order management are unavailable." not in layout
 
 

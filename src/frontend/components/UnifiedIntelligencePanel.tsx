@@ -97,7 +97,7 @@ export function TodaysAnalysisSynthesis() {
           <div data-analysis-session-heading className="text-[10px] font-black uppercase tracking-[.2em] text-cyan-400">
             {analysisSessionHeading(session)}
           </div>
-          <h3 className="mt-1 text-sm font-bold text-white">TODAY'S NIFTY VIEW — WHAT DROVE THE MARKET AND WHY</h3>
+          <h3 className="mt-1 text-sm font-bold text-white">SESSION INTELLIGENCE — WHAT DROVE THE MARKET AND WHY</h3>
         </div>
         <div className="flex flex-wrap gap-2">
           <SemanticBadge value={intelligence.readiness} kind="readiness"/>

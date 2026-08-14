@@ -85,23 +85,65 @@ class TodayAnalysisEngine:
 
         # 2. Extract Canonical Metrics
         spot = m_data.get("current_spot")
-        prev_close = m_data.get("previous_close") or 24583.80
-        open_price = m_data.get("open") or spot
-        high_price = m_data.get("high") or spot
-        low_price = m_data.get("low") or spot
-
+        prev_close_raw = m_data.get("previous_close")
+        prev_close = float(prev_close_raw) if prev_close_raw is not None else None
+        open_price = float(m_data["open"]) if m_data.get("open") is not None else None
+        high_price = float(m_data["high"]) if m_data.get("high") is not None else None
+        low_price = float(m_data["low"]) if m_data.get("low") is not None else None
         breadth = m_data.get("breadth") or {}
+
+        session_snaps = [s for s in (snapshot_history or []) if s.get("session_date") == session_date and s.get("spot") is not None]
+
+        mkt_snaps = [s for s in session_snaps if s.get("market_session_phase") in ("MARKET_OPEN", "OPEN")]
+        eval_snaps = mkt_snaps if mkt_snaps else session_snaps
+
+        # Hydrate from snapshot_history if spot or OHLC is missing
+        if spot is None and session_snaps:
+            spot = float(session_snaps[-1].get("spot"))
+
+        if prev_close is None and session_snaps:
+            prev_close = next((float(s.get("previous_close")) for s in reversed(session_snaps) if s.get("previous_close") is not None), None)
+
+        if open_price is None and eval_snaps:
+            first_mkt_snap = next((s for s in eval_snaps if s.get("market_session_phase") in ("MARKET_OPEN", "OPEN")), eval_snaps[0])
+            open_price = float(first_mkt_snap.get("open") or first_mkt_snap.get("spot"))
+
+        if high_price is None and eval_snaps:
+            snap_highs = [float(s.get("high")) for s in eval_snaps if s.get("high") is not None]
+            snap_spots = [float(s.get("spot")) for s in eval_snaps if isinstance(s.get("spot"), (int, float))]
+            all_highs = snap_highs + snap_spots
+            if all_highs:
+                high_price = max(all_highs)
+
+        if low_price is None and eval_snaps:
+            snap_lows = [float(s.get("low")) for s in eval_snaps if s.get("low") is not None]
+            snap_spots = [float(s.get("spot")) for s in eval_snaps if isinstance(s.get("spot"), (int, float))]
+            all_lows = snap_lows + snap_spots
+            if all_lows:
+                low_price = min(all_lows)
+
+        if not breadth and session_snaps:
+            breadth = session_snaps[-1].get("breadth") or breadth
+
         if spot is None:
             return cls._build_insufficient_data_report(now_str, session_date, sess_status, breadth=breadth)
 
-        change = round(spot - prev_close, 2) if prev_close else 0.0
-        change_pct = round((change / prev_close) * 100, 2) if (prev_close and prev_close > 0) else 0.0
+        change = round(spot - prev_close, 2) if (prev_close is not None and prev_close > 0) else None
+        change_pct = round((change / prev_close) * 100, 2) if (prev_close is not None and prev_close > 0 and change is not None) else None
 
         # Breadth
         breadth = m_data.get("breadth") or {}
         advances = breadth.get("advances")
         declines = breadth.get("declines")
-        valid_breadth = breadth.get("coverage", {}).get("valid") or ((advances or 0) + (declines or 0))
+        cov_raw = breadth.get("coverage")
+        if isinstance(cov_raw, dict):
+            valid_breadth = cov_raw.get("valid")
+        elif isinstance(cov_raw, (int, float)):
+            valid_breadth = int(cov_raw)
+        else:
+            valid_breadth = None
+        if not valid_breadth:
+            valid_breadth = (advances + declines) if (advances is not None and declines is not None) else 0
 
         # Heavyweights
         heavyweights = m_data.get("heavyweights") or []
@@ -117,44 +159,51 @@ class TodayAnalysisEngine:
         # Volatility
         macro = state.get("macro_intelligence") or {}
         vix_info = macro.get("india_vix") or {}
-        vix_val = vix_info.get("value") or 12.66
-        vix_change = vix_info.get("change") or 0.0
+        vix_val = float(vix_info["value"]) if vix_info.get("value") is not None else None
+        vix_change = float(vix_info["change"]) if vix_info.get("change") is not None else None
 
         # 3. Factor Scoring
         factors: List[FactorScore] = []
 
         # Factor A: Price Structure (Weight 0.30)
-        p_score = 0.0
-        if change_pct > 0.8:
-            p_score = 80.0
-        elif change_pct > 0.3:
-            p_score = 50.0
-        elif change_pct > 0.05:
-            p_score = 20.0
-        elif change_pct < -0.8:
-            p_score = -80.0
-        elif change_pct < -0.3:
-            p_score = -50.0
-        elif change_pct < -0.05:
-            p_score = -20.0
-        else:
+        if change_pct is not None and change is not None:
             p_score = 0.0
+            if change_pct > 0.8:
+                p_score = 80.0
+            elif change_pct > 0.3:
+                p_score = 50.0
+            elif change_pct > 0.05:
+                p_score = 20.0
+            elif change_pct < -0.8:
+                p_score = -80.0
+            elif change_pct < -0.3:
+                p_score = -50.0
+            elif change_pct < -0.05:
+                p_score = -20.0
+            else:
+                p_score = 0.0
 
-        # Range position boost
-        if high_price and low_price and high_price > low_price:
-            pos_ratio = (spot - low_price) / (high_price - low_price)
-            if pos_ratio > 0.8:
-                p_score += 15.0
-            elif pos_ratio < 0.2:
-                p_score -= 15.0
+            # Range position boost
+            if high_price and low_price and high_price > low_price:
+                pos_ratio = (spot - low_price) / (high_price - low_price)
+                if pos_ratio > 0.8:
+                    p_score += 15.0
+                elif pos_ratio < 0.2:
+                    p_score -= 15.0
 
-        p_score = max(-100.0, min(100.0, p_score))
-        p_dir = "BULLISH" if p_score > 15 else "BEARISH" if p_score < -15 else "NEUTRAL"
-        factors.append(FactorScore(
-            name="Price Structure", direction=p_dir, score=p_score, weight=0.30, quality="READY",
-            description=f"NIFTY spot is {spot:,.2f} ({'+' if change >= 0 else ''}{change:.2f}, {'+' if change_pct >= 0 else ''}{change_pct:.2f}%).",
-            evidence_source="Canonical NIFTY Spot Feed"
-        ))
+            p_score = max(-100.0, min(100.0, p_score))
+            p_dir = "BULLISH" if p_score > 15 else "BEARISH" if p_score < -15 else "NEUTRAL"
+            factors.append(FactorScore(
+                name="Price Structure", direction=p_dir, score=p_score, weight=0.30, quality="READY",
+                description=f"NIFTY spot is {spot:,.2f} ({'+' if change >= 0 else ''}{change:.2f}, {'+' if change_pct >= 0 else ''}{change_pct:.2f}%).",
+                evidence_source="Canonical NIFTY Spot Feed"
+            ))
+        else:
+            factors.append(FactorScore(
+                name="Price Structure", direction="NEUTRAL", score=0.0, weight=0.30, quality="UNAVAILABLE",
+                description=f"NIFTY spot is {spot:,.2f} (session change unavailable).",
+                evidence_source="Canonical NIFTY Spot Feed"
+            ))
 
         # Factor B: Market Breadth (Weight 0.25)
         if advances is not None and declines is not None and valid_breadth > 0:
@@ -204,9 +253,10 @@ class TodayAnalysisEngine:
                 opt_score = -15.0
 
             opt_dir = "BULLISH" if opt_score > 15 else "BEARISH" if opt_score < -15 else "NEUTRAL"
+            atm_desc = f" with ATM strike {float(atm_strike):.0f}." if (atm_strike is not None and float(atm_strike) > 0) else "."
             factors.append(FactorScore(
                 name="Derivatives", direction=opt_dir, score=opt_score, weight=0.15, quality="READY",
-                description=f"PCR is {pcr:.2f} with ATM strike {atm_strike or 24550}.",
+                description=f"PCR is {pcr:.2f}{atm_desc}",
                 evidence_source="Zerodha Option Chain"
             ))
         else:
@@ -217,17 +267,24 @@ class TodayAnalysisEngine:
             ))
 
         # Factor E: Volatility / VIX (Weight 0.15)
-        vix_score = 0.0
-        if vix_change > 0.5:
-            vix_score = -35.0  # Volatility expansion creates drag/uncertainty
-        elif vix_change < -0.5:
-            vix_score = 25.0
-        vix_dir = "BEARISH" if vix_score < -15 else "BULLISH" if vix_score > 15 else "NEUTRAL"
-        factors.append(FactorScore(
-            name="Volatility", direction=vix_dir, score=vix_score, weight=0.15, quality="READY",
-            description=f"India VIX is {vix_val:.2f} ({'+' if vix_change >= 0 else ''}{vix_change:.2f}).",
-            evidence_source="India VIX Feed"
-        ))
+        if vix_val is not None and vix_change is not None:
+            vix_score = 0.0
+            if vix_change > 0.5:
+                vix_score = -35.0  # Volatility expansion creates drag/uncertainty
+            elif vix_change < -0.5:
+                vix_score = 25.0
+            vix_dir = "BEARISH" if vix_score < -15 else "BULLISH" if vix_score > 15 else "NEUTRAL"
+            factors.append(FactorScore(
+                name="Volatility", direction=vix_dir, score=vix_score, weight=0.15, quality="READY",
+                description=f"India VIX is {vix_val:.2f} ({'+' if vix_change >= 0 else ''}{vix_change:.2f}).",
+                evidence_source="India VIX Feed"
+            ))
+        else:
+            factors.append(FactorScore(
+                name="Volatility", direction="NEUTRAL", score=0.0, weight=0.15, quality="UNAVAILABLE",
+                description="India VIX observation unavailable.",
+                evidence_source="India VIX Feed"
+            ))
 
         # 4. Weighted Trend Score Calculation
         valid_weight = sum(f.weight for f in factors if f.quality == "READY")
@@ -254,8 +311,10 @@ class TodayAnalysisEngine:
 
         # 9. Key Levels & Invalidation
         vwap_val = m_data.get("vwap") or spot
-        sup_levels = m_data.get("support_levels") or [round(low_price - 50, 0), round(low_price - 100, 0)]
-        res_levels = m_data.get("resistance_levels") or [round(high_price + 50, 0), round(high_price + 100, 0)]
+        ref_low = low_price if low_price is not None else spot
+        ref_high = high_price if high_price is not None else spot
+        sup_levels = m_data.get("support_levels") or ([round(ref_low - 50, 0), round(ref_low - 100, 0)] if ref_low is not None else [])
+        res_levels = m_data.get("resistance_levels") or ([round(ref_high + 50, 0), round(ref_high + 100, 0)] if ref_high is not None else [])
 
         key_levels = {
             "vwap": vwap_val,
@@ -272,6 +331,7 @@ class TodayAnalysisEngine:
             "open": open_price,
             "high": high_price,
             "low": low_price,
+            "close": spot,
             "spot": spot,
             "previous_close": prev_close,
             "change": change,
@@ -373,11 +433,16 @@ class TodayAnalysisEngine:
         return primary, supporting, contradicting
 
     @classmethod
-    def _build_session_evolution(cls, history: List[Dict[str, Any]], spot: float, open_price: float, high_price: float, low_price: float) -> List[Dict[str, Any]]:
+    def _build_session_evolution(cls, history: List[Dict[str, Any]], spot: float, open_price: Optional[float], high_price: Optional[float], low_price: Optional[float]) -> List[Dict[str, Any]]:
+        open_str = f"{open_price:,.2f}" if isinstance(open_price, (int, float)) else "session open"
+        high_str = f"{high_price:,.2f}" if isinstance(high_price, (int, float)) else "session high"
+        low_str = f"{low_price:,.2f}" if isinstance(low_price, (int, float)) else "session low"
+        spot_str = f"{spot:,.2f}" if isinstance(spot, (int, float)) else "current price"
+
         phases = [
-            {"time_window": "09:15 – 09:30", "phase_label": "OPENING RANGE", "headline": f"Opened at {open_price:,.2f} with initial session discovery.", "importance": "MEDIUM"},
-            {"time_window": "09:30 – 11:30", "phase_label": "MORNING EXPANSION", "headline": f"Session range expanded between {low_price:,.2f} and {high_price:,.2f}.", "importance": "HIGH"},
-            {"time_window": "11:30 – NOW", "phase_label": "CURRENT CONSOLIDATION", "headline": f"Trading near {spot:,.2f} with active institutional rebalancing.", "importance": "HIGH"}
+            {"time_window": "09:15 – 09:30", "phase_label": "OPENING RANGE", "headline": f"Opened at {open_str} with initial session discovery.", "importance": "MEDIUM"},
+            {"time_window": "09:30 – 11:30", "phase_label": "MORNING EXPANSION", "headline": f"Session range expanded between {low_str} and {high_str}.", "importance": "HIGH"},
+            {"time_window": "11:30 – NOW", "phase_label": "CURRENT CONSOLIDATION", "headline": f"Trading near {spot_str} with active institutional rebalancing.", "importance": "HIGH"}
         ]
         return phases
 

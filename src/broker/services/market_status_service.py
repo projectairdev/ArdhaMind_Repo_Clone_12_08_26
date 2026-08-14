@@ -30,9 +30,23 @@ class MarketStatusReport:
     is_holiday: bool
     remaining_seconds: float
     next_session_start: str
+    next_session_date: str = ""
     timezone: str = "Asia/Kolkata"
     current_time_ist: str = ""
     calendar_verified: bool = True
+
+    def to_dict(self) -> dict:
+        return {
+            "status": self.status,
+            "is_trading_day": self.is_trading_day,
+            "is_holiday": self.is_holiday,
+            "remaining_seconds": self.remaining_seconds,
+            "next_session_start": self.next_session_start,
+            "next_session_date": self.next_session_date,
+            "timezone": self.timezone,
+            "current_time_ist": self.current_time_ist,
+            "calendar_verified": self.calendar_verified
+        }
 
 class MarketStatusService:
     """
@@ -143,6 +157,7 @@ class MarketStatusService:
                 break
 
         next_session_start_str = next_session_dt.strftime("%Y-%m-%d %H:%M:%S")
+        next_session_date_str = next_session_dt.strftime("%Y-%m-%d")
 
         return MarketStatusReport(
             status=status,
@@ -150,6 +165,7 @@ class MarketStatusService:
             is_holiday=is_h,
             remaining_seconds=remaining_seconds,
             next_session_start=next_session_start_str,
+            next_session_date=next_session_date_str,
             current_time_ist=current_time_ist_str,
             calendar_verified=next_session_dt.year <= 2026
         )

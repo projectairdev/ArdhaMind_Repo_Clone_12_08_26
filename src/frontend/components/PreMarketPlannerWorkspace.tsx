@@ -90,6 +90,7 @@ export function PreMarketPlannerWorkspace() {
   const confidence = preMarketReport.overall_confidence || "MODERATE";
   const setupScoreVal = preMarketReport["setup_score"] ?? 0.0;
   const isFrozen = Boolean(preMarketReport.is_frozen);
+  const isSessionClosed = Boolean(canonicalState?.market_session?.is_closed || preMarketReport.analysis_status === "SESSION_COMPLETE");
 
   const bullishEv = safeArray(preMarketReport.bullish_evidence);
   const bearishEv = safeArray(preMarketReport.bearish_evidence);
@@ -107,14 +108,14 @@ export function PreMarketPlannerWorkspace() {
           <div>
             <div className="flex items-center gap-2 text-[10px] font-bold text-cyan-400 uppercase tracking-widest">
               <Layers size={16} className="animate-spin-slow" />
-              <span>PRE-MARKET PLANNER · PRE-SESSION SETUP INTELLIGENCE</span>
+              <span>PRE-MARKET INTELLIGENCE · PRE-SESSION SETUP INTELLIGENCE</span>
               <span className={`px-2 py-0.5 rounded text-[9px] border font-bold ${
                 isFrozen ? "bg-amber-950/80 border-amber-700 text-amber-300" : "bg-emerald-950/80 border-emerald-700 text-emerald-300"
               }`}>
                 {isFrozen ? "● PRE-MARKET THESIS FROZEN" : "● ACTIVE PRE-MARKET EVALUATION"}
               </span>
             </div>
-            <h2 className="text-xl font-black text-white mt-1 uppercase tracking-tight">PRE-SESSION MARKET THESIS & SETUP</h2>
+            <h2 className="text-xl font-black text-white mt-1 uppercase tracking-tight">PRE-MARKET INTELLIGENCE — PRE-SESSION MARKET THESIS &amp; SETUP</h2>
           </div>
           <div className="text-right text-[10px] text-slate-400 font-mono space-y-0.5">
             <div>DATE: <strong className="text-white">{preMarketReport.target_trading_date || "CURRENT"}</strong></div>
@@ -136,10 +137,10 @@ export function PreMarketPlannerWorkspace() {
           <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg">
             <span className="text-[9px] uppercase font-bold text-slate-500 block mb-1">EXPECTED OPENING</span>
             <span className="text-sm font-black text-cyan-300 uppercase">
-              {preMarketReport.opening_character || "FLAT_OPEN"}
+              {preMarketReport.opening_character || "UNCERTAIN"}
             </span>
             <span className="text-[10px] text-slate-400 block font-mono">
-              ~{giftContext.implied_gap_points != null ? (giftContext.implied_gap_points >= 0 ? "+" : "") + giftContext.implied_gap_points.toFixed(2) : "0.00"} pts
+              {giftContext.implied_gap_points != null ? `~${giftContext.implied_gap_points >= 0 ? "+" : ""}${giftContext.implied_gap_points.toFixed(2)} pts` : "UNAVAILABLE"}
             </span>
           </div>
 
@@ -177,8 +178,13 @@ export function PreMarketPlannerWorkspace() {
 
       {/* ── WORKSPACE NAVIGATION TABS ── */}
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
-        {["Pre-Market Thesis", "Evening Outlook", "8:50 AM Briefing", "Opening Checklist"].map(value => (
-          <TabButton key={value} value={value} active={tab === value} onClick={() => setTab(value)} />
+        {[
+          { id: "Pre-Market Thesis", label: isFrozen || isSessionClosed ? `Pre-Market Thesis · FINALIZED SESSION (${preMarketReport.target_trading_date || "CURRENT"})` : `Pre-Market Thesis (${preMarketReport.target_trading_date || "CURRENT"})` },
+          { id: "Evening Outlook", label: `Evening Outlook · NEXT TRADING SESSION` },
+          { id: "8:50 AM Briefing", label: `8:50 AM Briefing · PENDING until generated` },
+          { id: "Opening Checklist", label: `Opening Checklist · PENDING until applicable` }
+        ].map(item => (
+          <TabButton key={item.id} value={item.label} active={tab === item.id} onClick={() => setTab(item.id)} />
         ))}
       </div>
 
@@ -235,8 +241,10 @@ export function PreMarketPlannerWorkspace() {
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1">
                   <span>IMPLIED OPENING GAP:</span>
-                  <strong className={giftContext.implied_gap_points >= 0 ? "text-emerald-400" : "text-rose-400"}>
-                    {giftContext.implied_gap_points >= 0 ? "+" : ""}{formatNumber(giftContext.implied_gap_points, 2)} pts ({giftContext.implied_gap_percent >= 0 ? "+" : ""}{formatNumber(giftContext.implied_gap_percent, 2)}%)
+                  <strong className={giftContext.implied_gap_points == null ? "text-amber-400" : giftContext.implied_gap_points >= 0 ? "text-emerald-400" : "text-rose-400"}>
+                    {giftContext.implied_gap_points != null
+                      ? `${giftContext.implied_gap_points >= 0 ? "+" : ""}${formatNumber(giftContext.implied_gap_points, 2)} pts (${giftContext.implied_gap_percent != null && giftContext.implied_gap_percent >= 0 ? "+" : ""}${formatNumber(giftContext.implied_gap_percent, 2)}%)`
+                      : "UNAVAILABLE"}
                   </strong>
                 </div>
                 <div className="flex justify-between border-b border-slate-800/80 pb-1">

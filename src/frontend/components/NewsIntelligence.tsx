@@ -291,7 +291,7 @@ export function NewsIntelligence() {
       <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 border-b border-slate-800 pb-4">
         <div className="flex items-center gap-2">
           <BookOpen size={18} className="text-emerald-400" />
-          <h3 className="font-bold text-white text-base">Market-Moving News & Updates</h3>
+          <h3 className="font-bold text-white text-base">Intelligence Feed — News &amp; Events</h3>
         </div>
 
         {/* Actions & Health Status */}

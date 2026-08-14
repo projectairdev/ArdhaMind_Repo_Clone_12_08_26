@@ -30,11 +30,11 @@ class MarketWindowAnalysis:
 
     start_spot: Optional[float]
     end_spot: Optional[float]
-    price_change_points: float
-    price_change_percent: float
+    price_change_points: Optional[float]
+    price_change_percent: Optional[float]
     window_high: Optional[float]
     window_low: Optional[float]
-    window_range: float
+    window_range: Optional[float]
     window_open: Optional[float]
     window_close: Optional[float]
     close_location_in_range: float
@@ -43,18 +43,18 @@ class MarketWindowAnalysis:
     breadth_start: str
     breadth_end: str
     breadth_change: str
-    breadth_delta: int
+    breadth_delta: Optional[int]
     breadth_trend: str  # STRENGTHENING | WEAKENING | STABLE
     breadth_divergence: str  # CONFIRMING_BULLISH | CONFIRMING_BEARISH | BULLISH_DIVERGENCE | BEARISH_DIVERGENCE | NEUTRAL
 
     vix_start: Optional[float]
     vix_end: Optional[float]
-    vix_change: float
+    vix_change: Optional[float]
     vix_trend: str  # EXPANDING | CONTRACTING | STABLE
 
     pcr_start: Optional[float]
     pcr_end: Optional[float]
-    pcr_change: float
+    pcr_change: Optional[float]
     options_available: bool
     options_narrative: str
 
@@ -201,30 +201,40 @@ class LiveAssistantEngine:
         return windows
 
     @classmethod
+    def _parse_ist_hm(cls, ts: Any) -> Optional[str]:
+        if not ts:
+            return None
+        try:
+            ts_str = str(ts)
+            if "+05:30" in ts_str or "+0530" in ts_str:
+                dt = datetime.fromisoformat(ts_str.replace("Z", ""))
+                return dt.strftime("%H:%M")
+            elif "Z" in ts_str:
+                dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                ist_dt = dt.astimezone(timezone(timedelta(hours=5, minutes=30)))
+                return ist_dt.strftime("%H:%M")
+            else:
+                dt = datetime.fromisoformat(ts_str.split("+")[0])
+                ist_dt = dt + timedelta(hours=5, minutes=30)
+                return ist_dt.strftime("%H:%M")
+        except Exception:
+            return None
+
+    @classmethod
     def _snap_in_window(cls, snap: Dict[str, Any], w_start: str, w_end: str) -> bool:
         ts = snap.get("timestamp") or snap.get("generated_at")
-        if not ts:
+        hm = cls._parse_ist_hm(ts)
+        if not hm:
             return False
-        try:
-            dt = datetime.fromisoformat(str(ts).replace("Z", "").split("+")[0])
-            ist_dt = dt + timedelta(hours=5, minutes=30)
-            hm = ist_dt.strftime("%H:%M")
-            return w_start <= hm < w_end
-        except Exception:
-            return False
+        return w_start <= hm < w_end
 
     @classmethod
     def _snap_is_after(cls, snap: Dict[str, Any], w_end: str) -> bool:
         ts = snap.get("timestamp") or snap.get("generated_at")
-        if not ts:
+        hm = cls._parse_ist_hm(ts)
+        if not hm:
             return False
-        try:
-            dt = datetime.fromisoformat(str(ts).replace("Z", "").split("+")[0])
-            ist_dt = dt + timedelta(hours=5, minutes=30)
-            hm = ist_dt.strftime("%H:%M")
-            return hm >= w_end
-        except Exception:
-            return False
+        return hm >= w_end
 
     @classmethod
     def _parse_ts_dt(cls, ts: Any) -> Optional[datetime]:
@@ -307,15 +317,15 @@ class LiveAssistantEngine:
                 window_start=w_start, window_end=w_end, generated_at=now_str,
                 analysis_status=analysis_status,
                 start_spot=prev_end_spot, end_spot=spots[-1] if spots else prev_end_spot,
-                price_change_points=0.0, price_change_percent=0.0,
+                price_change_points=None, price_change_percent=None,
                 window_high=spots[0] if spots else prev_end_spot,
                 window_low=spots[0] if spots else prev_end_spot,
-                window_range=0.0, window_open=prev_end_spot, window_close=spots[-1] if spots else prev_end_spot,
+                window_range=None, window_open=prev_end_spot, window_close=spots[-1] if spots else prev_end_spot,
                 close_location_in_range=0.5, movement_relative_to_prev=0.0,
-                breadth_start="Unavailable", breadth_end="Unavailable", breadth_change="0",
-                breadth_delta=0, breadth_trend="STABLE", breadth_divergence="NEUTRAL",
-                vix_start=None, vix_end=None, vix_change=0.0, vix_trend="STABLE",
-                pcr_start=None, pcr_end=None, pcr_change=0.0, options_available=False,
+                breadth_start="Unavailable", breadth_end="Unavailable", breadth_change="UNAVAILABLE",
+                breadth_delta=None, breadth_trend="STABLE", breadth_divergence="NEUTRAL",
+                vix_start=None, vix_end=None, vix_change=None, vix_trend="STABLE",
+                pcr_start=None, pcr_end=None, pcr_change=None, options_available=False,
                 options_narrative="Options change analysis unavailable (insufficient snapshots in window).",
                 significance_classification="INSUFFICIENT_EVIDENCE",
                 headline=f"{w_start}–{w_end} IST | INSUFFICIENT WINDOW EVIDENCE",
@@ -558,27 +568,28 @@ class LiveAssistantEngine:
 
         # 3. Window-based event detection
         for w in windows:
-            if w.analysis_status == "INSUFFICIENT_WINDOW_EVIDENCE":
+            if w.analysis_status in ("INSUFFICIENT_WINDOW_EVIDENCE", "INSUFFICIENT_DATA") or w.significance_classification == "INSUFFICIENT_EVIDENCE":
                 continue
 
-            if abs(w.price_change_points) >= 30.0 and w.window_range >= 40.0:
-                e_id = f"EVT-ACCEL-{w.window_start}"
-                if e_id not in cls._emitted_event_states:
-                    cls._emitted_event_states.add(e_id)
-                    events.append(SignificantEvent(
-                        event_id=e_id,
-                        event_type="PRICE_ACCELERATION",
-                        timestamp=f"{w.window_end} IST",
-                        significance="SIGNIFICANT",
-                        headline=f"Price Acceleration ({'+' if w.price_change_points >= 0 else ''}{w.price_change_points:.2f} pts)",
-                        what_happened=f"NIFTY spot accelerated {'upward' if w.price_change_points >= 0 else 'downward'} by {abs(w.price_change_points):.2f} pts in 15m window.",
-                        why_it_matters="Strong momentum expansion indicates aggressive directional positioning.",
-                        watch_next=f"Monitor key range boundary at {w.window_high if w.price_change_points >= 0 else w.window_low:,.2f}.",
-                        source_window=f"{w.window_start}–{w.window_end}",
-                        evidence_data={"price_change": w.price_change_points, "range": w.window_range}
-                    ))
+            if w.price_change_points is not None and w.window_range is not None:
+                if abs(w.price_change_points) >= 30.0 and w.window_range >= 40.0:
+                    e_id = f"EVT-ACCEL-{w.window_start}"
+                    if e_id not in cls._emitted_event_states:
+                        cls._emitted_event_states.add(e_id)
+                        events.append(SignificantEvent(
+                            event_id=e_id,
+                            event_type="PRICE_ACCELERATION",
+                            timestamp=f"{w.window_end} IST",
+                            significance="SIGNIFICANT",
+                            headline=f"Price Acceleration ({'+' if w.price_change_points >= 0 else ''}{w.price_change_points:.2f} pts)",
+                            what_happened=f"NIFTY spot accelerated {'upward' if w.price_change_points >= 0 else 'downward'} by {abs(w.price_change_points):.2f} pts in 15m window.",
+                            why_it_matters="Strong momentum expansion indicates aggressive directional positioning.",
+                            watch_next=f"Monitor key range boundary at {w.window_high if w.price_change_points >= 0 else w.window_low:,.2f}.",
+                            source_window=f"{w.window_start}–{w.window_end}",
+                            evidence_data={"price_change": w.price_change_points, "range": w.window_range}
+                        ))
 
-            if w.breadth_delta >= 8:
+            if w.breadth_delta is not None and w.breadth_delta >= 8:
                 e_id = f"EVT-BSURGE-{w.window_start}"
                 if e_id not in cls._emitted_event_states:
                     cls._emitted_event_states.add(e_id)

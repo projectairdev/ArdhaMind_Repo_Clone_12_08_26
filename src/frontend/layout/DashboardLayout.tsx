@@ -14,15 +14,51 @@ import { PreMarketPlannerWorkspace } from "../components/PreMarketPlannerWorkspa
 import { MarketPulseWorkspace } from "../components/MarketPulseWorkspace";
 import { WorkstationTopBar } from "../components/WorkstationTopBar";
 
+export const NAVIGATION_GROUPS = [
+  {
+    category: "MARKET",
+    items: [
+      { id: "nifty-live", label: "Market Command", icon: Radio },
+      { id: "market-pulse", label: "Market Pulse", icon: Calendar },
+    ]
+  },
+  {
+    category: "INTELLIGENCE",
+    items: [
+      { id: "live-assistant", label: "Intraday Intelligence", icon: Activity },
+      { id: "todays-analysis", label: "Session Intelligence", icon: BookOpen },
+      { id: "forward-outlook", label: "Scenario Outlook", icon: Compass },
+    ]
+  },
+  {
+    category: "PLANNING",
+    items: [
+      { id: "pre-market-planner", label: "Pre-Market Intelligence", icon: Layers },
+    ]
+  },
+  {
+    category: "INFORMATION",
+    items: [
+      { id: "news-updates", label: "Intelligence Feed", icon: Newspaper },
+    ]
+  },
+  {
+    category: "SYSTEM",
+    items: [
+      { id: "settings", label: "System Control", icon: Sliders },
+    ]
+  }
+] as const;
+
 export const PRIMARY_WORKSPACES = [
-  { id: "nifty-live", label: "NIFTY Live", icon: Radio },
-  { id: "live-assistant", label: "Live Assistant", icon: Activity },
-  { id: "todays-analysis", label: "Today’s Analysis", icon: BookOpen },
-  { id: "forward-outlook", label: "Forward Outlook", icon: Compass },
-  { id: "pre-market-planner", label: "Pre-Market Planner", icon: Layers },
+  { id: "nifty-live", label: "Market Command", icon: Radio },
   { id: "market-pulse", label: "Market Pulse", icon: Calendar },
-  { id: "news-updates", label: "NEWS & UPDATES", icon: Newspaper },
-  { id: "settings", label: "Settings", icon: Sliders },
+  { id: "live-assistant", label: "Intraday Intelligence", icon: Activity },
+  { id: "todays-analysis", label: "Session Intelligence", icon: BookOpen },
+  { id: "forward-outlook", label: "Scenario Outlook", icon: Compass },
+  { id: "pre-market-planner", label: "Pre-Market Intelligence", icon: Layers },
+  { id: "news-updates", label: "Intelligence Feed", icon: Newspaper },
+  { id: "settings", label: "System Control", icon: Sliders },
 ] as const;
 
 type WorkspaceId = typeof PRIMARY_WORKSPACES[number]["id"];
@@ -71,29 +107,35 @@ export function DashboardLayout() {
       <WorkstationTopBar mobileOpen={mobile} onToggleMobile={() => setMobile(!mobile)} />
       {workspaceContext.brokerState === "TOKEN_EXPIRED" && (
         <div className="border-b border-rose-900 bg-rose-950/30 px-4 py-3 text-xs text-rose-300">
-          <strong>KITE SESSION EXPIRED.</strong> Last successful update: {marketContext.last_tick_time || "Unavailable"}. Live analysis is paused. Open Settings to reconnect.
+          <strong>KITE SESSION EXPIRED.</strong> Last successful update: {marketContext.last_tick_time || "Unavailable"}. Live analysis is paused. Open System Control to reconnect.
         </div>
       )}
       <div className="flex min-h-0 flex-1">
-        <aside className={`${mobile ? "block" : "hidden"} absolute z-40 h-full w-60 border-r border-[var(--air-line)] bg-[var(--air-surface)] px-2.5 py-3 lg:static lg:block`}>
-          <div className="mb-2 px-2 text-[8px] font-semibold tracking-[.18em] text-slate-600">WORKSPACES</div>
-          <nav className="space-y-0.5">
-            {PRIMARY_WORKSPACES.map(item => (
-              <button
-                key={item.id}
-                onClick={() => navigate(item.id)}
-                aria-current={active === item.id ? "page" : undefined}
-                className={`group flex w-full items-center gap-2.5 rounded-md border-l-2 px-2.5 py-2 text-left text-[11px] font-semibold transition ${
-                  active === item.id
-                    ? `border-cyan-400 bg-cyan-950/20 ${accentClasses.text}`
-                    : "border-transparent text-slate-500 hover:bg-slate-900/70 hover:text-slate-200"
-                }`}
-              >
-                <item.icon size={14} className={active === item.id ? "text-cyan-400" : "text-slate-600 group-hover:text-slate-400"} />
-                {item.label}
-              </button>
+        <aside className={`${mobile ? "block" : "hidden"} absolute z-40 h-full w-60 border-r border-[var(--air-line)] bg-[var(--air-surface)] px-2.5 py-3 lg:static lg:block overflow-y-auto`}>
+          <div className="space-y-4">
+            {NAVIGATION_GROUPS.map(group => (
+              <div key={group.category}>
+                <div className="mb-1 px-2.5 text-[9px] font-bold tracking-[.18em] text-slate-500 uppercase">{group.category}</div>
+                <nav className="space-y-0.5">
+                  {group.items.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => navigate(item.id)}
+                      aria-current={active === item.id ? "page" : undefined}
+                      className={`group flex w-full items-center gap-2.5 rounded-md border-l-2 px-2.5 py-1.5 text-left text-[11px] font-semibold transition ${
+                        active === item.id
+                          ? `border-cyan-400 bg-cyan-950/20 ${accentClasses.text}`
+                          : "border-transparent text-slate-500 hover:bg-slate-900/70 hover:text-slate-200"
+                      }`}
+                    >
+                      <item.icon size={14} className={active === item.id ? "text-cyan-400" : "text-slate-600 group-hover:text-slate-400"} />
+                      {item.label}
+                    </button>
+                  ))}
+                </nav>
+              </div>
             ))}
-          </nav>
+          </div>
         </aside>
         <main className="air-grid min-w-0 flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6">
           {active === "nifty-live" ? (

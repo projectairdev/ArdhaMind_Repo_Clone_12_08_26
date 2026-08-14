@@ -23,11 +23,11 @@ class StreamHealthMonitor:
         self.stale_since_timestamp: Optional[float] = None
         self.auth_required_reason: Optional[str] = None
         self.reconnect_state: Optional[str] = None
-        
+
         # Latency tracking
         self.latency_sum_ms: float = 0.0
         self.latency_count: int = 0
-        
+
         # Sliding window tick rate tracking
         self.tick_timestamps: List[float] = []
 
@@ -58,11 +58,11 @@ class StreamHealthMonitor:
         self.total_messages_received += count
         self.last_received_timestamp = now
         self.record_source_observation(now)
-        
+
         # Record timestamps for tick rate
         for _ in range(count):
             self.tick_timestamps.append(now)
-            
+
         # Prune timestamps older than 10 seconds
         ten_secs_ago = now - 10.0
         self.tick_timestamps = [t for t in self.tick_timestamps if t >= ten_secs_ago]
@@ -117,7 +117,7 @@ class StreamHealthMonitor:
         else:
             status = "CLOSED" if market_status in ("CLOSED", "POST_CLOSE") else "HEALTHY"
 
-        obs_age = round(curr - self.last_source_observation_at, 3) if self.last_source_observation_at else 999.0
+        obs_age = round(curr - self.last_source_observation_at, 3) if self.last_source_observation_at is not None else None
         stale_dur = round(curr - self.stale_since_timestamp, 3) if self.stale_since_timestamp else 0.0
 
         return {
@@ -136,7 +136,7 @@ class StreamHealthMonitor:
         is_stream_connected: bool,
         active_sub_count: int,
         has_nifty_tick: bool,
-        obs_age: float
+        obs_age: Optional[float]
     ) -> str:
         if self.auth_required_reason:
             return "AUTH_REQUIRED"
@@ -144,7 +144,7 @@ class StreamHealthMonitor:
             return "DISCONNECTED"
         if active_sub_count == 0:
             return "SUBSCRIBING"
-        if not has_nifty_tick:
+        if not has_nifty_tick or obs_age is None:
             return "WAITING_FOR_TICKS"
         if obs_age <= 15.0:
             return "LIVE"
@@ -175,7 +175,7 @@ class StreamHealthMonitor:
     ) -> StreamHealthReport:
         """Generates an immutable health report."""
         last_hb_str = datetime.fromtimestamp(self.last_heartbeat, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        
+
         if self.last_received_timestamp:
             last_rcv_str = datetime.fromtimestamp(self.last_received_timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         else:

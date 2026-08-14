@@ -130,7 +130,11 @@ export function getGlobalSessionLabel(key: string, q: any): string {
     return "Current Asian Session";
   }
   if (upperKey.includes("GIFT")) {
-    return "Current Session";
+    const sessStr = String(q.source_session || q.session_label || q.source_session_detail || "").toUpperCase();
+    if (sessStr.includes("CLOSED")) return "Previous Session / Market Closed";
+    if (sessStr.includes("PRE_OPEN") || sessStr.includes("PRE-OPEN")) return "Current Pre-Open Session";
+    if (sessStr.includes("OPEN")) return "Current Session";
+    return q.source_session ? String(q.source_session) : "Current Session";
   }
   if (upperKey.includes("BRENT") || upperKey.includes("GOLD") || upperKey.includes("USD_INR") || upperKey.includes("DXY") || upperKey.includes("US_10Y")) {
     return "Global Telemetry";

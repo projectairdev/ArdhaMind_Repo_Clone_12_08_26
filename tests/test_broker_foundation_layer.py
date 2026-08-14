@@ -40,17 +40,17 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         self._orig_cache_path = getattr(Config, "SESSION_CACHE_PATH", ".cache/session.json")
         self._orig_trading_mode = getattr(Config, "TRADING_MODE", "PAPER_TRADING")
         self._orig_instrument_db_path = cache_manager.DB_PATH
-        
+
         # Configure temporary test credentials
         Config.KITE_API_KEY = "test_api_key"
         Config.KITE_API_SECRET = "test_api_secret"
         Config.SESSION_CACHE_PATH = ".cache/test_session.json"
         Config.TRADING_MODE = "PAPER_TRADING"
         cache_manager.DB_PATH = ".cache/test_instruments.db"
-        
+
         # Reset BrokerService singleton for isolation
         BrokerService._instance = None
-        
+
         # Ensure clean session cache state and instrument cache state
         SessionManager.delete_session()
         if os.path.exists(cache_manager.DB_PATH):
@@ -67,7 +67,7 @@ class TestBrokerFoundationLayer(unittest.TestCase):
                 os.remove(cache_manager.DB_PATH)
             except Exception:
                 pass
-        
+
         # Restore original config
         Config.KITE_API_KEY = self._orig_api_key
         Config.KITE_API_SECRET = self._orig_api_secret
@@ -96,7 +96,7 @@ class TestBrokerFoundationLayer(unittest.TestCase):
             market_status="OPEN",
             health_score=100.0,
             last_error=None,
-            
+
             # Extended fields
             authentication_status="AUTHENTICATED",
             session_age_hours=1.5,
@@ -133,20 +133,20 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         """Verifies KiteBrokerGateway authentication and session loading behaviour."""
         gateway = KiteBrokerGateway()
         self.assertFalse(gateway.is_connected())
-        
+
         # Try connect with no active session or credentials
         connected = gateway.connect()
         self.assertFalse(connected)
-        
+
         # Read-only actions should raise SessionMissingError when not connected
         from src.broker.utils.errors import SessionMissingError
         with self.assertRaises(SessionMissingError):
             gateway.get_funds()
-            
+
         # Write actions remain strictly prohibited by the product boundary.
         with self.assertRaises(PermissionError):
             gateway.place_order(symbol="NIFTY")
-            
+
         # Health report should represent disconnected state
         health = gateway.health()
         self.assertEqual(health.broker_name, "Zerodha KiteConnect")
@@ -160,7 +160,7 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         """Tests AuthenticationManager generation of login URL and session extraction."""
         # Config verification
         self.assertEqual(Config.KITE_API_KEY, "test_api_key")
-        
+
         mock_instance = mock_kite_class.return_value
         mock_instance.login_url.return_value = "https://kite.zerodha.com/connect/login?api_key=test_api_key&v=3"
 
@@ -168,14 +168,14 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         url = AuthenticationManager.generate_login_url()
         self.assertIn("api_key=test_api_key", url)
         self.assertIn("https://kite.zerodha.com/connect/login", url)
-        
+
         # Test exchanging request token
         mock_instance = mock_kite_class.return_value
         mock_instance.generate_session.return_value = {
             "access_token": "valid_mock_access_token",
             "user_id": "test_user"
         }
-        
+
         session = AuthenticationManager.generate_access_token("mock_request_token")
         self.assertEqual(session["access_token"], "valid_mock_access_token")
         mock_instance.generate_session.assert_called_with("mock_request_token", api_secret="test_api_secret")
@@ -185,38 +185,38 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         with self.assertRaises(SessionMissingError):
             SessionManager.validate_session()
 
-            
+
         # Save a valid session
         success = SessionManager.save_session("my_test_access_token")
         self.assertTrue(success)
-        
+
         # Ensure session.json exists
         self.assertTrue(os.path.exists(Config.SESSION_CACHE_PATH))
-        
+
         # Load session
         session = SessionManager.load_session()
         self.assertIsNotNone(session)
         self.assertEqual(session["access_token"], "my_test_access_token")
         self.assertFalse(session["expired"])
-        
+
         # Validate session (should return True without raising exceptions)
         valid = SessionManager.validate_session()
         self.assertTrue(valid)
-        
-        # Delete session
+
         deleted = SessionManager.delete_session()
         self.assertTrue(deleted)
-        self.assertFalse(os.path.exists(Config.SESSION_CACHE_PATH))
+        self.assertIsNone(SessionManager.load_session())
+        self.assertTrue(SessionManager.is_explicitly_logged_out())
 
     def test_error_handling_immutability(self):
         """Verifies that custom BrokerErrors are structured, frozen/immutable and have codes."""
         err = InvalidAPIKeyError("Check API key failed")
         self.assertEqual(err.error_code, "INVALID_API_KEY")
         self.assertEqual(err.message, "Check API key failed")
-        
+
         with self.assertRaises(AttributeError):
             err._message = "Mutation attempt"
-            
+
         err2 = ExpiredAccessTokenError("Expired token")
         self.assertEqual(err2.error_code, "EXPIRED_ACCESS_TOKEN")
 
@@ -227,7 +227,7 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         import src.broker.compat.connection as connection_module
         original = connection_module.KiteConnect
         connection_module.KiteConnect = FakeKiteConnect
-        
+
         # Test connection cycle
         try:
             connected = gateway.connect(api_key="TEST_API_KEY")
@@ -235,11 +235,11 @@ class TestBrokerFoundationLayer(unittest.TestCase):
             connection_module.KiteConnect = original
         self.assertTrue(connected)
         self.assertTrue(gateway.is_connected())
-        
+
         # Profile fetch
         profile = gateway.get_profile()
         self.assertEqual(profile["client_id"], "MOCK_CLIENT")
-        
+
         # Health metrics
         health = gateway.health()
         self.assertEqual(health.connection_status, "CONNECTED")
@@ -263,7 +263,7 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         service.set_mode(TradingMode.LIVE_ZERODHA)
         self.assertEqual(service.trading_mode, TradingMode.LIVE_ZERODHA)
         self.assertIsInstance(service.get_gateway(), KiteBrokerGateway)
-        
+
         # Verify delegated login URL call
         self.assertIn("https://", service.get_login_url())
 

@@ -47,7 +47,7 @@ class SessionManager:
         cache_path = cls.get_cache_path()
         now = login_time or time.time()
         expires_at = now + 86400  # 24 hours
-        
+
         session_data = {}
         if os.path.exists(cache_path):
             try:
@@ -55,6 +55,9 @@ class SessionManager:
                     session_data = json.load(f)
             except Exception:
                 pass
+
+        session_data.pop("explicit_logout", None)
+        session_data.pop("disconnected_at", None)
 
         if persist_token:
             session_data["access_token"] = access_token
@@ -90,14 +93,14 @@ class SessionManager:
         cache_path = cls.get_cache_path()
         if not os.path.exists(cache_path):
             return None
-            
+
         try:
             with open(cache_path, "r") as f:
                 data = json.load(f)
-                
-            if not data:
+
+            if not data or data.get("explicit_logout", False):
                 return None
-                
+
             # Check expiry if access_token is present
             if "access_token" in data:
                 expires_at = data.get("expires_at", 0)
@@ -110,7 +113,7 @@ class SessionManager:
                             json.dump(data, f, indent=2)
                     except Exception:
                         pass
-                
+
             return data
         except Exception as e:
             logger.error(f"Error loading session: {e}")
@@ -119,18 +122,36 @@ class SessionManager:
     @classmethod
     def delete_session(cls) -> bool:
         """
-        Deletes the locally stored session.
+        Deletes active tokens and records explicit session logout.
         """
         cache_path = cls.get_cache_path()
-        if os.path.exists(cache_path):
-            try:
-                os.remove(cache_path)
-                logger.info(f"Session deleted at {cache_path}")
-                return True
-            except Exception as e:
-                logger.error(f"Error deleting session file: {e}")
-                return False
-        return True
+        try:
+            session_data = {
+                "explicit_logout": True,
+                "disconnected_at": time.time()
+            }
+            with open(cache_path, "w") as f:
+                json.dump(session_data, f, indent=2)
+            logger.info(f"Session marked explicitly disconnected at {cache_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Error recording session deletion: {e}")
+            return False
+
+    @classmethod
+    def is_explicitly_logged_out(cls) -> bool:
+        """
+        Checks if the user has explicitly logged out/disconnected.
+        """
+        cache_path = cls.get_cache_path()
+        if not os.path.exists(cache_path):
+            return False
+        try:
+            with open(cache_path, "r") as f:
+                data = json.load(f)
+            return bool(data and data.get("explicit_logout", False))
+        except Exception:
+            return False
 
     @classmethod
     def is_session_expired(cls) -> bool:
@@ -140,7 +161,7 @@ class SessionManager:
         cache_path = cls.get_cache_path()
         if not os.path.exists(cache_path):
             return True
-            
+
         try:
             with open(cache_path, "r") as f:
                 data = json.load(f)
@@ -158,8 +179,8 @@ class SessionManager:
         session = cls.load_session()
         if not session:
             raise SessionMissingError("No active session found. Please log in.")
-            
+
         if cls.is_session_expired():
             raise ExpiredAccessTokenError("The access token has expired.")
-            
+
         return True

@@ -78,14 +78,14 @@ class KiteBrokerGateway(IBrokerGateway):
         try:
             kite = KiteConnect(api_key=api_key)
             kite.set_access_token(access_token)
-            
+
             # Optionally validate session with a simple call
             if getattr(Config, "AUTO_VALIDATE_SESSION", True):
                 start_time = time.time()
                 kite.profile()
                 self._last_latency = (time.time() - start_time) * 1000.0
                 self._last_profile_validation = datetime.now(timezone.utc).isoformat()
-            
+
             self.api_key = api_key
             self.access_token = access_token
             self._kite_client = kite
@@ -128,14 +128,14 @@ class KiteBrokerGateway(IBrokerGateway):
                 api_key=self.api_key,
                 api_secret=self.api_secret
             )
-            
+
             access_token = session_details.get("access_token")
             if not access_token:
                 raise SessionMissingError("Failed to extract access_token from Zerodha login response.")
-            
+
             # Save token to file cache
             SessionManager.save_session(access_token)
-            
+
             # Establish active connection
             return self.connect(access_token=access_token)
         except Exception as e:
@@ -155,7 +155,7 @@ class KiteBrokerGateway(IBrokerGateway):
                     AuthenticationManager.logout(self.access_token, api_key=self.api_key)
                 except Exception as e:
                     logger.warning(f"Remote logout failed (already invalidated/expired): {e}")
-            
+
             SessionManager.delete_session()
             self.disconnect()
             return True
@@ -228,27 +228,33 @@ class KiteBrokerGateway(IBrokerGateway):
     def load_session(self) -> bool:
         """
         Restores the cached session from file, with fallback to environment variables.
+        Explicit user logout takes precedence over cached session and environment variables.
         """
         try:
+            if SessionManager.is_explicitly_logged_out():
+                logger.info("Explicit user logout recorded; skipping automatic session hydration.")
+                self.disconnect()
+                return False
+
             session_data = SessionManager.load_session() or {}
-            
+
             api_key = session_data.get("api_key") or self.api_key or getattr(Config, "KITE_API_KEY", "")
             access_token = session_data.get("access_token")
             expired = session_data.get("expired", False)
-            
+
             if expired:
                 access_token = None
-                
+
             if not access_token:
-                # Fallback to the environment variable passed by the server
+                # Fallback to the environment variable passed by the server ONLY if not explicitly logged out
                 access_token = getattr(Config, "KITE_ACCESS_TOKEN", "")
-                
+
             if not api_key:
                 api_key = getattr(Config, "KITE_API_KEY", "")
-                
+
             if api_key:
                 self.api_key = api_key
-                
+
             if access_token:
                 # Attempt connection with the loaded or fallback token
                 return self.connect(api_key=api_key, access_token=access_token)
@@ -270,7 +276,7 @@ class KiteBrokerGateway(IBrokerGateway):
         """Retrieves user profile details if connected."""
         if not self._connected or not self._kite_client:
             raise SessionMissingError("Broker not connected. Access token required.")
-        
+
         import sys
         import time
         import json
@@ -282,13 +288,13 @@ class KiteBrokerGateway(IBrokerGateway):
             print("\n✓ Success", flush=True)
             print(f"\nTime: {latency} ms", flush=True)
             print("\nResponse:", flush=True)
-            
+
             normalized = dict(res) if isinstance(res, dict) else {}
             if "user_id" in normalized and "client_id" not in normalized:
                 normalized["client_id"] = normalized["user_id"]
             if "user_name" in normalized and "client_name" not in normalized:
                 normalized["client_name"] = normalized["user_name"]
-            
+
             self._last_profile_validation = datetime.now(timezone.utc).isoformat()
             normalized["profile_validated_at"] = self._last_profile_validation
             session = SessionManager.load_session() or {}
@@ -312,7 +318,7 @@ class KiteBrokerGateway(IBrokerGateway):
     def get_funds(self) -> Any:
         if not self._connected or not self._kite_client:
             raise SessionMissingError("Broker not connected. Access token required.")
-        
+
         import sys
         import time
         import json
@@ -325,15 +331,15 @@ class KiteBrokerGateway(IBrokerGateway):
             print(f"\nTime: {latency} ms", flush=True)
             print("\nResponse:", flush=True)
             print(json.dumps(res, indent=2, default=str), flush=True)
-            
+
             equity = res.get("equity", {})
             equity_avail = equity.get("available", {})
             equity_util = equity.get("utilised", {})
-            
+
             cash = float(equity_avail.get("cash", 0.0))
             net_margin = float(equity.get("net", 0.0)) or float(equity_avail.get("live_balance", 0.0))
             debits = float(equity_util.get("debits", 0.0))
-            
+
             from src.models.execution_report import BrokerFunds
             funds_obj = BrokerFunds(
                 available_cash=cash,
@@ -352,7 +358,7 @@ class KiteBrokerGateway(IBrokerGateway):
     def get_holdings(self) -> List[Any]:
         if not self._connected or not self._kite_client:
             raise SessionMissingError("Broker not connected. Access token required.")
-        
+
         import sys
         import time
         import json
@@ -376,7 +382,7 @@ class KiteBrokerGateway(IBrokerGateway):
     def get_positions(self) -> List[Any]:
         if not self._connected or not self._kite_client:
             raise SessionMissingError("Broker not connected. Access token required.")
-        
+
         import sys
         import time
         import json
@@ -400,7 +406,7 @@ class KiteBrokerGateway(IBrokerGateway):
     def get_orders(self) -> List[Any]:
         if not self._connected or not self._kite_client:
             raise SessionMissingError("Broker not connected. Access token required.")
-        
+
         import sys
         import time
         import json
@@ -424,7 +430,7 @@ class KiteBrokerGateway(IBrokerGateway):
     def get_order_history(self, order_id: str) -> List[Any]:
         if not self._connected or not self._kite_client:
             raise SessionMissingError("Broker not connected. Access token required.")
-        
+
         import sys
         import time
         import json
@@ -448,7 +454,7 @@ class KiteBrokerGateway(IBrokerGateway):
     def get_trades(self) -> List[Any]:
         if not self._connected or not self._kite_client:
             raise SessionMissingError("Broker not connected. Access token required.")
-        
+
         import sys
         import time
         import json
@@ -568,22 +574,22 @@ class KiteBrokerGateway(IBrokerGateway):
         """
         # Load local session data for age calculations
         session = SessionManager.load_session()
-        
+
         session_age_hours = 0.0
         last_login_str = "N/A"
         token_expiry_str = "N/A"
         session_valid_bool = False
-        
+
         if session:
             login_ts = session.get("login_timestamp", 0)
             expires_ts = session.get("expires_at", 0)
-            
+
             if login_ts:
                 session_age_hours = (time.time() - login_ts) / 3600.0
                 last_login_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(login_ts))
             if expires_ts:
                 token_expiry_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(expires_ts))
-            
+
             session_valid_bool = not SessionManager.is_session_expired()
 
         connection_status = "DISCONNECTED"
@@ -633,7 +639,7 @@ class KiteBrokerGateway(IBrokerGateway):
             market_status=market_status_str,
             health_score=health_score,
             last_error=self._last_error,
-            
+
             # Extended metrics (Sprint 28)
             authentication_status=auth_state,
             session_age_hours=round(session_age_hours, 2),

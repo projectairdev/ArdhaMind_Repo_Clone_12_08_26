@@ -103,7 +103,8 @@ class NiftyRelevanceEngineV2:
             channels.extend(["SPECIFIC_NIFTY_SYMBOLS", "INDEX"])
             reasons.append(f"Direct official NIFTY constituent match: {', '.join(symbols)}")
         if any(term in text for term in ("india", "indian", "nifty", "sensex", "rupee", "rbi", "sebi")):
-            score = max(score, 7.0)
+            policy_action = any(term in text for term in ("rate cut", "rate hike", "monetary policy", "repo rate", "policy rate", "gdp growth"))
+            score = max(score, 7.5 if policy_action else 7.0)
             channels.extend(["INDEX", "INR"])
             reasons.append("Direct India market or policy transmission")
 
@@ -163,9 +164,22 @@ class NiftyRelevanceEngineV2:
             score = max(score, 4.5)
             channels.append("GLOBAL_RISK")
 
+        # Evergreen / Educational / Generic commentary penalty
+        explainer_terms = (
+            "how to", "what is", "understanding ", "guide to", "explainer:", "basics of",
+            "beginner's guide", "everything you need to know", "top 10 ", "5 reasons", "why you should",
+            "opinion:", "column:", "view:", "why investors need", "demystified", "explained:"
+        )
+        is_explainer = any(term in text for term in explainer_terms)
+        if is_explainer:
+            score = min(score, 3.0)
+            reasons.append("Penalized: Educational, evergreen, or generic commentary content")
+
         score = min(10.0, round(score, 1))
         critical_terms = any(term in text for term in ("strait closure", "sovereign default", "banking crisis", "emergency rate", "market halt"))
-        if critical_terms and score >= 8.5:
+        if is_explainer:
+            impact = "LOW"
+        elif critical_terms and score >= 8.5:
             impact = "CRITICAL"
         elif score >= 7.5:
             impact = "HIGH"

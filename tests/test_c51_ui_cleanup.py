@@ -25,7 +25,7 @@ def test_top_bar_has_one_session_status_and_only_operational_controls():
 
 def test_settings_remains_in_sidebar_and_redundant_read_only_block_is_removed():
     text = read("frontend/layout/DashboardLayout.tsx")
-    assert '{ id: "settings", label: "Settings"' in text
+    assert '{ id: "settings", label: "System Control"' in text
     assert "Decision intelligence only. Execution and order management are unavailable." not in text
 
 
@@ -59,7 +59,7 @@ def test_analysis_and_assistant_are_question_specific():
 
 def test_visible_context_label_changes_without_internal_engine_rename():
     text = read("frontend/components/UnifiedIntelligencePanel.tsx")
-    assert "TODAY'S NIFTY VIEW" in text
+    assert "SESSION INTELLIGENCE" in text
     assert "Canonical NIFTY Decision Context" not in text
     assert "data-intelligence-engine={intelligence.engine}" in text
 

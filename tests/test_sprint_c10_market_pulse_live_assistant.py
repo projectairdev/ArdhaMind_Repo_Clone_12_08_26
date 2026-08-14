@@ -35,7 +35,7 @@ def test_1_navigation_contains_market_pulse():
 def test_2_premarket_planner_navigation_restored():
     layout_file = Path("src/frontend/layout/DashboardLayout.tsx")
     text = layout_file.read_text(encoding="utf-8")
-    assert 'label: "Pre-Market Planner"' in text
+    assert 'label: "Pre-Market Intelligence"' in text
 
 
 # 3. Market Pulse works PRE_OPEN

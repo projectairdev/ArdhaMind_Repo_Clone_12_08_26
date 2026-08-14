@@ -9,10 +9,15 @@ from src.pipeline.trade_planner_pipeline import TradePlannerPipeline
 from src.pipeline.confidence_pipeline import ConfidencePipeline
 from src.pipeline.risk_pipeline import RiskPipeline
 from src.pipeline.decision_pipeline import DecisionPipeline
-from src.pipeline.validation_pipeline import ValidationPipeline
 from src.pipeline.optimization_pipeline import OptimizationPipeline
 from src.pipeline.intraday_pipeline import IntradayPipeline
 from src.pipeline.news_pipeline import NewsPipeline
+
+def __getattr__(name: str):
+    if name == "ValidationPipeline":
+        from src.pipeline.validation_pipeline import ValidationPipeline
+        return ValidationPipeline
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 __all__ = [
     "MarketIntelligencePipeline",

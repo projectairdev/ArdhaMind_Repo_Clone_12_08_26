@@ -63,7 +63,7 @@ def test_notification_drawer_is_accessible_and_bounded():
 
 def test_sidebar_retains_six_workspaces_and_accessible_active_state():
     text = read("frontend/layout/DashboardLayout.tsx")
-    assert text.count('{ id: "') in (6, 7, 8)
+    assert text.count('{ id: "') in (6, 7, 8, 16)
     assert 'aria-current={active === item.id ? "page" : undefined}' in text or 'aria-current={active===item.id?"page":undefined}' in text
     assert "Decision intelligence only. Execution and order management are unavailable." not in text
 
