@@ -124,13 +124,18 @@ class LiveAssistantEngine:
             live_snaps = [s for s in snapshot_history if s.get("session_date") is None or str(s.get("session_date")) == runtime_session_date]
             return runtime_session_date, "LIVE", live_snaps
 
-        # Rule 2: In-memory snapshot history check
-        in_mem_snaps = [
+        # Rule 2: In-memory snapshot history check for active runtime session_date
+        cur_trading_snaps = [
             s for s in snapshot_history
-            if s.get("session_date") is None or str(s.get("session_date")) == runtime_session_date
+            if (s.get("session_date") is None or str(s.get("session_date")) == runtime_session_date)
+            and s.get("market_session_phase") in ("MARKET_OPEN", "OPEN", "CONTINUOUS_TRADING")
         ]
-        if in_mem_snaps:
-            return runtime_session_date, "COMPLETED_SESSION", in_mem_snaps
+        if cur_trading_snaps:
+            same_date_snaps = [
+                s for s in snapshot_history
+                if s.get("session_date") is None or str(s.get("session_date")) == runtime_session_date
+            ]
+            return runtime_session_date, "COMPLETED_SESSION", same_date_snaps
 
         # Search backward on disk / in memory for newest session_date with genuine continuous trading snapshots
         target_dir = cache_dir if cache_dir is not None else cls.CACHE_DIR
