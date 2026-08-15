@@ -160,10 +160,14 @@ export function nearestDecisionLevels(zones: any[], spot: number | null) {
 // Legacy alias check for tests: DecisionZonesPanel
 export const DecisionZonesPanel = DecisionAreasPanel;
 
-export function DecisionAreasPanel({ zones, rawLevels }: { zones: unknown; rawLevels: unknown }) {
+export function DecisionAreasPanel({ zones, rawLevels }: { zones?: unknown; rawLevels?: unknown } = {}) {
+  const { canonicalState, marketContext } = useWorkstationState() as any;
+  const effectiveZones = zones ?? canonicalState?.intelligence?.decision_zones ?? canonicalState?.decision_zones ?? marketContext?.decision_zones;
+  const effectiveRawLevels = rawLevels ?? canonicalState?.intelligence?.key_levels ?? canonicalState?.key_levels ?? marketContext?.key_levels;
+
   const [showRaw, setShowRaw] = React.useState(false);
-  const zoneRows = safeArray(zones as any[]) as any[];
-  const rawRows = safeArray(rawLevels as any[]) as any[];
+  const zoneRows = safeArray(effectiveZones as any[]) as any[];
+  const rawRows = safeArray(effectiveRawLevels as any[]) as any[];
 
   if (!zoneRows.length && !rawRows.length) {
     return (

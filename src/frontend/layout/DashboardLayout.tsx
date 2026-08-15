@@ -11,7 +11,7 @@ import { OptionsWorkspace } from "../components/OptionsWorkspace";
 import { PortfolioWorkspace } from "../components/PortfolioWorkspace";
 import { SettingsDashboard } from "../components/SettingsDashboard";
 
-// Exactly 4 primary sidebar modules as required by current sprint
+// Exactly 4 primary sidebar modules as required
 export const PRIMARY_MODULES = [
   { id: "market", label: "MARKET", icon: Radio },
   { id: "intelligence", label: "INTELLIGENCE", icon: Activity },
@@ -19,7 +19,7 @@ export const PRIMARY_MODULES = [
   { id: "journal", label: "JOURNAL", icon: Newspaper },
 ] as const;
 
-// Legacy export compatibility structures
+// Legacy export compatibility structures for tests
 export const NAVIGATION_GROUPS = [
   {
     category: "MARKET",
@@ -73,8 +73,10 @@ export type MarketSubTab = "nifty" | "metrics" | "options";
 export type NiftySessionMode = "auto" | "pre_market" | "live" | "post_market";
 
 export function DashboardLayout() {
-  const { themeClasses, accentClasses, fontClasses } = useTheme();
+  const { themeClasses, fontClasses } = useTheme();
   const { workspaceContext, marketContext, canonicalState, lastValidState } = useWorkstationState() as any;
+
+  const isStagingMode = (import.meta as any).env?.VITE_STAGING_MODE === "true";
 
   // Active module & sub-tab states
   const [activeModule, setActiveModule] = useState<PrimaryModuleId>(() => {
@@ -96,7 +98,7 @@ export function DashboardLayout() {
 
   // Compute canonical session mode for NIFTY dynamic workspace
   const computedNiftyMode = useMemo<"pre_market" | "live" | "post_market">( () => {
-    if (niftyModeOverride !== "auto") return niftyModeOverride;
+    if (niftyModeOverride !== "auto" && isStagingMode) return niftyModeOverride;
 
     const stateObj = canonicalState ?? lastValidState;
     const mStatus = stateObj?.market_session?.status || "closed";
@@ -115,7 +117,7 @@ export function DashboardLayout() {
       return "live";
     }
     return "post_market";
-  }, [niftyModeOverride, canonicalState, lastValidState]);
+  }, [niftyModeOverride, canonicalState, lastValidState, isStagingMode]);
 
   const navigateModule = (id: PrimaryModuleId) => {
     setActiveModule(id);
@@ -140,7 +142,7 @@ export function DashboardLayout() {
 
       {/* Expiry / Session Warning Banner */}
       {workspaceContext.brokerState === "TOKEN_EXPIRED" && (
-        <div className="border-b border-rose-900/80 bg-rose-950/40 px-4 py-2.5 text-xs text-rose-300 flex items-center justify-between font-mono">
+        <div className="border-b border-rose-900/80 bg-rose-950/40 px-4 py-2 text-xs text-rose-300 flex items-center justify-between font-mono">
           <div>
             <strong>KITE SESSION EXPIRED.</strong> Last update: {marketContext.last_tick_time || "Unavailable"}. Live analysis paused.
           </div>
@@ -153,7 +155,7 @@ export function DashboardLayout() {
       {/* Main Workspace Frame: Sidebar + Content */}
       <div className="flex min-h-0 flex-1">
         {/* Primary Sidebar Module Navigation (Exactly 4 items) */}
-        <aside className={`${mobileOpen ? "block" : "hidden"} absolute z-40 h-full w-56 border-r border-slate-800/80 bg-[#0f172a] px-2.5 py-4 lg:static lg:block overflow-y-auto`}>
+        <aside className={`${mobileOpen ? "block" : "hidden"} absolute z-40 h-full w-52 border-r border-slate-800/80 bg-[#0f172a] px-2.5 py-4 lg:static lg:block overflow-y-auto`}>
           <div className="mb-3 px-3 text-[9px] font-mono font-bold tracking-[0.2em] text-slate-500 uppercase">
             PRIMARY MODULES
           </div>
@@ -166,13 +168,13 @@ export function DashboardLayout() {
                   key={module.id}
                   onClick={() => navigateModule(module.id)}
                   aria-current={isActive ? "page" : undefined}
-                  className={`group flex w-full items-center gap-3 rounded-lg border-l-2 px-3 py-2.5 text-left text-xs font-bold transition ${
+                  className={`group flex w-full items-center gap-3 rounded-lg border-l-2 px-3 py-2 text-left text-xs font-bold transition ${
                     isActive
                       ? "border-cyan-400 bg-cyan-950/30 text-cyan-300 shadow-sm"
                       : "border-transparent text-slate-400 hover:bg-slate-900/80 hover:text-slate-200"
                   }`}
                 >
-                  <Icon size={16} className={isActive ? "text-cyan-400" : "text-slate-500 group-hover:text-slate-300"} />
+                  <Icon size={15} className={isActive ? "text-cyan-400" : "text-slate-500 group-hover:text-slate-300"} />
                   <span className="tracking-wide">{module.label}</span>
                 </button>
               );
@@ -218,41 +220,41 @@ export function DashboardLayout() {
                 </button>
               </div>
 
-              {/* Session Controls when on NIFTY */}
-              {marketSubTab === "nifty" && (
-                <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-mono">
-                  <span className="text-slate-500 mr-1">Session Mode:</span>
+              {/* Session Override Controls (Visible ONLY in Staging mode per Section 5) */}
+              {marketSubTab === "nifty" && isStagingMode && (
+                <div className="hidden sm:flex items-center gap-1 text-[9px] font-mono">
+                  <span className="text-amber-500/80 font-bold mr-1">STAGING PREVIEW:</span>
                   <button
                     onClick={() => setNiftyModeOverride("auto")}
-                    className={`px-2 py-0.5 rounded border transition ${
-                      niftyModeOverride === "auto" ? "bg-cyan-950 text-cyan-300 border-cyan-800 font-bold" : "bg-slate-950 text-slate-400 border-slate-800"
+                    className={`px-1.5 py-0.5 rounded border transition ${
+                      niftyModeOverride === "auto" ? "bg-amber-950/60 text-amber-300 border-amber-800 font-bold" : "bg-slate-950 text-slate-500 border-slate-800"
                     }`}
                   >
-                    Auto ({computedNiftyMode === "live" ? "Live" : computedNiftyMode === "pre_market" ? "Pre-Mkt" : "Post-Mkt"})
+                    Auto ({computedNiftyMode === "live" ? "Live" : computedNiftyMode === "pre_market" ? "Pre" : "Post"})
                   </button>
                   <button
                     onClick={() => setNiftyModeOverride("pre_market")}
-                    className={`px-2 py-0.5 rounded border transition ${
-                      niftyModeOverride === "pre_market" ? "bg-cyan-950 text-cyan-300 border-cyan-800 font-bold" : "bg-slate-950 text-slate-400 border-slate-800"
+                    className={`px-1.5 py-0.5 rounded border transition ${
+                      niftyModeOverride === "pre_market" ? "bg-amber-950/60 text-amber-300 border-amber-800 font-bold" : "bg-slate-950 text-slate-500 border-slate-800"
                     }`}
                   >
-                    Pre-Market
+                    Pre-Mkt
                   </button>
                   <button
                     onClick={() => setNiftyModeOverride("live")}
-                    className={`px-2 py-0.5 rounded border transition ${
-                      niftyModeOverride === "live" ? "bg-cyan-950 text-cyan-300 border-cyan-800 font-bold" : "bg-slate-950 text-slate-400 border-slate-800"
+                    className={`px-1.5 py-0.5 rounded border transition ${
+                      niftyModeOverride === "live" ? "bg-amber-950/60 text-amber-300 border-amber-800 font-bold" : "bg-slate-950 text-slate-500 border-slate-800"
                     }`}
                   >
                     NIFTY Live
                   </button>
                   <button
                     onClick={() => setNiftyModeOverride("post_market")}
-                    className={`px-2 py-0.5 rounded border transition ${
-                      niftyModeOverride === "post_market" ? "bg-cyan-950 text-cyan-300 border-cyan-800 font-bold" : "bg-slate-950 text-slate-400 border-slate-800"
+                    className={`px-1.5 py-0.5 rounded border transition ${
+                      niftyModeOverride === "post_market" ? "bg-amber-950/60 text-amber-300 border-amber-800 font-bold" : "bg-slate-950 text-slate-500 border-slate-800"
                     }`}
                   >
-                    Post-Market
+                    Post-Mkt
                   </button>
                 </div>
               )}
@@ -288,7 +290,7 @@ export function DashboardLayout() {
 
       {/* Settings Modal */}
       {settingsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
           <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-[#0f172a] shadow-2xl p-6">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
               <div className="flex items-center gap-2">
