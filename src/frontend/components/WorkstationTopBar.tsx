@@ -20,7 +20,12 @@ export function WorkstationTopBar({ mobileOpen, onToggleMobile }: { mobileOpen: 
   const [notifications, setNotifications] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
-  useEffect(() => { const tick = () => setClock(new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date()) + " IST"); tick(); const id = setInterval(tick, 1000); return () => clearInterval(id); }, []);
+  useEffect(() => {
+    if (import.meta.env.VITE_STAGING_MODE === "true") {
+      document.title = "[STAGING] AIR ArdhaMind";
+    }
+    const tick = () => setClock(new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(new Date()) + " IST"); tick(); const id = setInterval(tick, 1000); return () => clearInterval(id);
+  }, []);
 
   const stateObj = canonicalState ?? lastValidState;
   const mStatus = stateObj?.market_session?.status || "closed";
@@ -62,7 +67,7 @@ export function WorkstationTopBar({ mobileOpen, onToggleMobile }: { mobileOpen: 
   return <>
     <header data-testid="phase1-top-bar" className="relative z-50 flex min-h-14 items-center gap-2 border-b border-[var(--air-line)] bg-[var(--air-overlay)] px-3 backdrop-blur-md sm:px-4">
       <button aria-label="Toggle navigation" title="Toggle navigation" className="rounded p-1.5 text-slate-400 hover:bg-slate-900 lg:hidden" onClick={onToggleMobile}>{mobileOpen ? <X size={18}/> : <Menu size={18}/>}</button>
-      <div className="mr-auto min-w-0"><div className="truncate text-sm font-extrabold tracking-tight text-white">AIR <span className={accentClasses.text}>ArdhaMind</span></div><div className="hidden text-[8px] font-medium tracking-[.16em] text-slate-500 sm:block">NIFTY INTELLIGENCE · READ ONLY</div></div>
+      <div className="mr-auto min-w-0 flex items-center gap-2"><div className="truncate text-sm font-extrabold tracking-tight text-white flex items-center gap-1.5"><span>AIR <span className={accentClasses.text}>ArdhaMind</span></span>{import.meta.env.VITE_STAGING_MODE === "true" && <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-mono font-bold tracking-wider text-amber-400 border border-amber-500/40">STAGING</span>}</div><div className="hidden text-[8px] font-medium tracking-[.16em] text-slate-500 sm:block">NIFTY INTELLIGENCE · READ ONLY</div></div>
       <div data-market-session-status className="flex items-center gap-1.5 whitespace-nowrap text-[9px] text-slate-300 sm:text-[10px]">{statusDot(!isClosedSession, isClosedSession)}<span>{marketLabel(mStatus, stateObj?.market_session?.observed_at)}</span></div>
       <time className="air-data hidden whitespace-nowrap text-[10px] text-slate-400 md:block">{clock}</time>
       <div className="hidden items-center gap-1.5 whitespace-nowrap text-[10px] text-slate-400 lg:flex">{statusDot(broker?.status === "connected")}<span>{kite}</span></div>
