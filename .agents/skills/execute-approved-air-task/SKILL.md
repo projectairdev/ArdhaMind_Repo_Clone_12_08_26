@@ -29,7 +29,8 @@ This skill provides step-by-step instructions for Antigravity when executing an 
 2. Confirm target path matches authorization:
    - Staging: `/opt/ardhamind/staging`
    - Production: `/opt/ArdhaMind`
-3. If task targets production (`production`) and `production_write_allowed == false`:
+3. **Mechanical Hardening Gate**: Antigravity active `PreToolUse` lifecycle hook (`.agents/hooks.json` -> `.agents/hooks/air_guard.py`) automatically intercepts and blocks un-authorized write operations targeting `/opt/ArdhaMind`, destructive git commands, and live broker order placements before tool execution.
+4. If task targets production (`production`) and `production_write_allowed == false`:
    - **ENFORCE READ-ONLY MODE**. Deny any write/edit commands on production files.
 
 ---

@@ -49,3 +49,15 @@ This constitution establishes the non-negotiable principles governing all engine
 
 3. **OS-Level Production Isolation**:
    - OS-level isolation will rely on properly designed Unix user/group permissions, directory ownership, and least-privilege service configurations. Blanket recursive `chmod` operations (e.g. `chmod -R 555`) are forbidden as production requires writable paths for logs, runtime caches, and transactional persistence.
+
+## 4. Layer 2 Mechanical Enforcement Implementation Status
+
+The workspace now features an active, repository-local `PreToolUse` lifecycle hook configured in `.agents/hooks.json` executing `.agents/hooks/air_guard.py`:
+
+- **Production Write**: `HARD-ENFORCED` (`DENY` for file-edit tools & shell write commands targeting `/opt/ArdhaMind`).
+- **Destructive Git**: `HARD-ENFORCED` (`DENY` for `reset --hard`, `clean -fd`, `push --force`).
+- **Destructive DB**: `HARD-ENFORCED` (`DENY` for `DROP DATABASE`, `TRUNCATE`, `rm *.db`).
+- **Live Broker Execution**: `HARD-ENFORCED` (`DENY` for `place_order`, `exit_position`, Kite API orders).
+- **Service Control**: `HARD-ENFORCED` (`ASK` for `systemctl restart`, `kill`, `pkill`, `fuser -k`).
+- **Deployment / Env**: `HARD-ENFORCED` (`ASK` for `nginx` reloads, `.env.production`).
+- **Safe Read & Staging Dev**: `HARD-ENFORCED` (`ALLOW` for normal low-friction staging development).

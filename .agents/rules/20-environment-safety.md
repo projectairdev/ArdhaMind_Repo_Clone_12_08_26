@@ -33,3 +33,19 @@ Before performing any write operation on production, Antigravity MUST verify:
 - Recovery / rollback path understood
 
 If any condition is not met: **STOP** immediately and report `SCOPE_EXPANSION_REQUIRED` or `BLOCKED`.
+
+---
+
+## 4. Layer 2 Mechanical Enforcement Matrix
+
+| Category | Target Pattern | Mechanical Intercept | Status |
+| :--- | :--- | :--- | :--- |
+| **Safe Read** | `git status`, `git log`, `grep`, `cat`, `view_file` | `PreToolUse` hook -> `ALLOW` | `HARD-ENFORCED` |
+| **Staging Dev** | File edits inside `/opt/ardhamind/staging/` | `PreToolUse` hook -> `ALLOW` | `HARD-ENFORCED` |
+| **Production Read** | `git -C /opt/ArdhaMind status`, read tools | `PreToolUse` hook -> `ALLOW` | `HARD-ENFORCED` |
+| **Production Write** | File edits/shell writes targeting `/opt/ArdhaMind` | `PreToolUse` hook -> `DENY` | `HARD-ENFORCED` |
+| **Destructive Git** | `git reset --hard`, `git clean -fd`, `git push --force` | `PreToolUse` hook -> `DENY` | `HARD-ENFORCED` |
+| **Service Control** | `systemctl restart`, `kill`, `pkill`, `fuser -k` | `PreToolUse` hook -> `ASK` | `HARD-ENFORCED` |
+| **Deployment / Env** | `nginx` config edits/reload, `.env.production` | `PreToolUse` hook -> `ASK` | `HARD-ENFORCED` |
+| **Destructive DB** | `DROP DATABASE`, `DROP TABLE`, `TRUNCATE`, `rm *.db` | `PreToolUse` hook -> `DENY` | `HARD-ENFORCED` |
+| **Live Broker** | `place_order`, `modify_order`, `exit_position`, Kite API | `PreToolUse` hook -> `DENY` | `HARD-ENFORCED` |
