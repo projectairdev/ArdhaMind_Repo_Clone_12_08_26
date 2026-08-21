@@ -96,3 +96,20 @@ def test_about_read_only_invariants_guarantee():
     code_adapter = read_frontend("utils/canonicalSettingsAdapter.ts")
     assert "READ ONLY" in code_about
     assert "Order placement, paper trading, and broker mutations are strictly disabled" in code_adapter
+
+
+# ── 6. SUBTAB SWITCHING & RENDERING CONTRACTS ──
+
+def test_settings_subtab_navigation_wiring():
+    """Verify DashboardLayout passes onSelectSubTab and SettingsWorkspace handles subtab changes."""
+    dash_code = read_frontend("layout/DashboardLayout.tsx")
+    settings_code = read_frontend("components/settings/SettingsWorkspace.tsx")
+
+    assert "onSelectSubTab={setSettingsSubTab}" in dash_code, "DashboardLayout must pass onSelectSubTab"
+    assert "currentSubTab === \"overview\" ? (" in settings_code
+    assert "currentSubTab === \"connections\" ? (" in settings_code
+    assert "currentSubTab === \"preferences\" ? (" in settings_code
+    assert "currentSubTab === \"notifications\" ? (" in settings_code
+    assert "currentSubTab === \"diagnostics\" ? (" in settings_code
+    assert "<SettingsAbout" in settings_code
+

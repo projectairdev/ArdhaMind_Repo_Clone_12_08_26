@@ -83,6 +83,7 @@ export function DashboardLayout() {
     navigateTo,
     setNewsSubTab,
     setSettingsOpen,
+    setSettingsSubTab,
   } = useNavigation();
 
   const isStagingMode = (import.meta as any).env?.VITE_STAGING_MODE === "true";
@@ -259,7 +260,11 @@ export function DashboardLayout() {
             <main className="min-w-0 flex-1 overflow-y-auto bg-[#08090B] p-2.5 sm:p-3 lg:p-3.5">
               <WorkspaceErrorBoundary key={settingsOpen ? "settings" : activeModule} workspaceName={settingsOpen ? "SETTINGS" : String(activeModule).toUpperCase()}>
                 {settingsOpen ? (
-                  <SettingsWorkspace subTab={settingsSubTab} onBack={() => setSettingsOpen(false)} />
+                  <SettingsWorkspace
+                    subTab={settingsSubTab}
+                    onSelectSubTab={setSettingsSubTab}
+                    onBack={() => setSettingsOpen(false)}
+                  />
                 ) : activeModule === "trading_cheatsheet" ? (
                   <TradingCheatsheetWorkspace />
                 ) : activeModule === "news" || (activeModule as string) === "journal" ? (
@@ -267,7 +272,11 @@ export function DashboardLayout() {
                 ) : activeModule === "portfolio" ? (
                   <PortfolioWorkspace />
                 ) : (activeModule as string) === "ardha_performance" ? (
-                  <SettingsWorkspace subTab="diagnostics" onBack={() => setSettingsOpen(false)} />
+                  <SettingsWorkspace
+                    subTab="diagnostics"
+                    onSelectSubTab={setSettingsSubTab}
+                    onBack={() => setSettingsOpen(false)}
+                  />
                 ) : activeModule === "market_intelligence" ||
                    (activeModule as string) === "market_intelligence_v2" ||
                    (activeModule as string) === "intelligence" ||

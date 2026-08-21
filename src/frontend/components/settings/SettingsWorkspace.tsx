@@ -1,6 +1,7 @@
+// src/frontend/components/settings/SettingsWorkspace.tsx
 import React, { useState, useEffect } from "react";
-import { KeyRound, Database, Activity, ShieldCheck, RefreshCw, Download, Sliders, Bell, Info } from "lucide-react";
 import { useWorkstationState } from "../../context/WorkstationStateContext";
+import { useNavigation } from "../../context/NavigationContext";
 import { getCanonicalSettingsPresentation } from "../../utils/canonicalSettingsAdapter";
 import { SettingsOverview } from "./SettingsOverview";
 import { SettingsConnections } from "./SettingsConnections";
@@ -20,11 +21,14 @@ export function SettingsWorkspace({
   onSelectSubTab?: (tab: SettingsSubTab) => void;
   onBack?: () => void;
 }) {
-  const { canonicalState, lastValidState, workspaceContext, brokerStatus } = useWorkstationState() as any;
+  const { canonicalState, lastValidState, workspaceContext } = useWorkstationState() as any;
+  const { settingsSubTab: navSubTab, setSettingsSubTab: navSetSubTab } = useNavigation();
   const state = canonicalState ?? lastValidState ?? {};
   const pres = getCanonicalSettingsPresentation(state, workspaceContext);
 
-  const [internalSubTab, setInternalSubTab] = useState<SettingsSubTab>(activeSubTabProp || "overview");
+  const [internalSubTab, setInternalSubTab] = useState<SettingsSubTab>(
+    activeSubTabProp || navSubTab || "overview"
+  );
 
   useEffect(() => {
     if (activeSubTabProp) {
@@ -32,11 +36,16 @@ export function SettingsWorkspace({
     }
   }, [activeSubTabProp]);
 
-  const currentSubTab = activeSubTabProp || internalSubTab;
+  // Authoritative active subtab
+  const currentSubTab: SettingsSubTab = activeSubTabProp || internalSubTab || navSubTab || "overview";
 
   const handleSubTabChange = (tab: SettingsSubTab) => {
     setInternalSubTab(tab);
-    if (onSelectSubTab) onSelectSubTab(tab);
+    if (onSelectSubTab) {
+      onSelectSubTab(tab);
+    } else if (navSetSubTab) {
+      navSetSubTab(tab);
+    }
   };
 
   return (
