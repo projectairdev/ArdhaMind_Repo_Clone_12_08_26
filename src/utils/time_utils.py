@@ -21,8 +21,20 @@ def is_market_hours(ts: Optional[datetime] = None) -> bool:
     return market_open <= now_minutes <= market_close
 
 
+def is_trading_day(d: Optional[date] = None) -> bool:
+    target = d or date.today()
+    return target.weekday() < 5
+
+
 def next_trading_day(start: Optional[date] = None) -> date:
     next_day = (start or date.today()) + timedelta(days=1)
     while next_day.weekday() >= 5:
         next_day += timedelta(days=1)
     return next_day
+
+
+def previous_trading_day(start: Optional[date] = None) -> date:
+    prev_day = (start or date.today()) - timedelta(days=1)
+    while prev_day.weekday() >= 5:
+        prev_day -= timedelta(days=1)
+    return prev_day

@@ -156,17 +156,20 @@ class KiteIntelligenceService:
         advances = [row for row in observations if row["change"] > 0]
         declines = [row for row in observations if row["change"] < 0]
         unchanged = valid - len(advances) - len(declines)
+        unavailable = max(0, 50 - valid)
         timestamp = next((_timestamp((q or {}).get("timestamp")) for q in quotes.values() if (q or {}).get("timestamp")), None)
         return {
             **base,
             "advances": len(advances),
             "declines": len(declines),
             "unchanged": unchanged,
+            "unavailable": unavailable,
+            "total_constituents": 50,
             "advance_decline_ratio": len(advances) / len(declines) if declines else None,
             "percent_above_previous_close": len(advances) / valid * 100.0,
             "percent_below_previous_close": len(declines) / valid * 100.0,
-            "top_gainers": sorted(advances, key=lambda row: row["change_pct"], reverse=True)[:5],
-            "top_losers": sorted(declines, key=lambda row: row["change_pct"])[:5],
+            "top_gainers": sorted(advances, key=lambda row: row["change_pct"], reverse=True)[:10],
+            "top_losers": sorted(declines, key=lambda row: row["change_pct"])[:10],
             "timestamp": timestamp,
         }
 

@@ -118,6 +118,13 @@ class TestD37PreMarketEngine(unittest.TestCase):
         self.assertEqual(report2.opening_bias, report1.opening_bias)
 
     def test_14_actual_open_validation_evaluates_gap(self):
+        state_pre = {
+            "market_session": {"status": "PRE_OPEN", "is_closed": False, "session_date": "2026-08-14"},
+            "market_data": {"current_spot": 24500.0, "previous_close": 24500.0},
+            "macro_intelligence": {"quotes": {"GIFT_NIFTY": {"price": 24550.0, "freshness_status": "FRESH"}}}
+        }
+        PreMarketIntelligenceEngine.analyze_pre_market(state_pre)
+
         state_open = {
             "market_session": {"status": "OPEN", "is_closed": False, "session_date": "2026-08-14"},
             "market_data": {"current_spot": 24560.0, "previous_close": 24500.0},

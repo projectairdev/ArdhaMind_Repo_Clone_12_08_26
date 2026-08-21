@@ -1,0 +1,1972 @@
+[
+  {
+    "id": "02a433b0-644f-421e-a00f-0ef84f798d0c",
+    "trading_date": "2026-08-20",
+    "phase": "PRE_MARKET",
+    "captured_at": "2026-08-20T09:15:11.188853+05:30",
+    "prediction_at": "2026-08-20T08:50:00+05:30",
+    "metric": "Alternate Scenario",
+    "metric_id": "pre_alternate_scenario",
+    "schema_version": 2,
+    "ardha_value": "SCENARIO B: BEARISH BREAKDOWN EXPANSION (If Price breaks decisively below immediate support (24,012))",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "raw_pre_market": {
+        "report_id": "PMB-2026-08-20-085000",
+        "report_version": "2.4.0",
+        "trading_date": "2026-08-20",
+        "generated_at": "2026-08-19T10:00:01.593352Z",
+        "frozen_at": "",
+        "evidence_cutoff_at": "2026-08-19T03:20:00",
+        "status": "MARKET_OPEN",
+        "reference_session_date": "2026-08-19",
+        "reference_close": 24078.3,
+        "source_state_sequence": 342,
+        "runtime_id": "ardhamind-prod-daemon",
+        "generated_late": true,
+        "command_center": {
+          "nifty_reference_close": 24078.3,
+          "gift_nifty_price": 24109.5,
+          "implied_gap_points": 31.2,
+          "implied_gap_percent": 0.13,
+          "expected_open_low": 24109.5,
+          "expected_open_high": 24139.5,
+          "expected_open_str": "24,110 – 24,140",
+          "expected_gap_str": "+31 to +61",
+          "opening_bias": "NEUTRAL / MIXED",
+          "setup_score": 5.0,
+          "confidence_pct": 60,
+          "confidence_label": "MODERATE",
+          "risk_level": "MODERATE",
+          "india_vix": null,
+          "vix_change_pct": null,
+          "institutional_tone": "NET BUYING (DOMESTIC ABSORPTION)",
+          "global_market_tone": "NEGATIVE (GLOBAL RISK-OFF)",
+          "bank_nifty_ref": 51420.5,
+          "bank_nifty_tone": "NEUTRAL / ANCHOR (+0.01%)",
+          "finnifty_ref": 23180.2,
+          "finnifty_tone": "MILD POSITIVE (+0.08%)",
+          "sensex_ref": 79648.9,
+          "sensex_tone": "NEUTRAL (-0.28%)",
+          "overall_summary_why": [
+            "GIFT Nifty is at 24,110 (FRESH), implying +31.2 points versus the 24,078.30 reference close.",
+            "Domestic DII accumulation (+₹2,579.3 Cr) offsets FII cash market selling (-₹1,651.5 Cr).",
+            "US indices closed lower (avg -0.75%), while Asian markets trade positive (+-1.50%).",
+            "India VIX trading in low regime."
+          ],
+          "gift_freshness": "FRESH",
+          "gift_observed_at": "08:45 IST",
+          "gift_availability_status": "FRESH",
+          "gap_methodology": "GIFT_ANCHORED"
+        },
+        "traffic_lights": [
+          {
+            "category": "GLOBAL_CUES",
+            "status": "AMBER",
+            "label": "Global Markets",
+            "reason": "US indices closed lower; Asian markets trade higher",
+            "source": "Yahoo Finance Public Feed"
+          },
+          {
+            "category": "GIFT_NIFTY",
+            "status": "GREEN",
+            "label": "GIFT Nifty",
+            "reason": "Trading with mild premium at 24,110 (+31.2 pts) [FRESH]",
+            "source": "NSE International Exchange"
+          },
+          {
+            "category": "INSTITUTIONAL",
+            "status": "GREEN",
+            "label": "Institutional Cash",
+            "reason": "DII net buying (+₹2,579.3 Cr) absorbing FII selling",
+            "source": "NSE India Official EOD"
+          },
+          {
+            "category": "VOLATILITY",
+            "status": "GREEN",
+            "label": "India VIX",
+            "reason": "India VIX trading in low regime",
+            "source": "NSE / Yahoo Volatility"
+          },
+          {
+            "category": "OPTIONS",
+            "status": "GREEN",
+            "label": "Derivatives (PCR / Max Pain)",
+            "reason": "PCR at 1.22 with 24,350 Max Pain anchor support",
+            "source": "Option Intelligence Engine"
+          },
+          {
+            "category": "BREADTH_CARRY",
+            "status": "AMBER",
+            "label": "NIFTY 50 Breadth",
+            "reason": "18 ADV / 31 DEC / 1 UNCH from Monday session requires morning confirmation",
+            "source": "Market Feed Service"
+          },
+          {
+            "category": "NEWS_RISK",
+            "status": "GREEN",
+            "label": "News & Event Horizon",
+            "reason": "No high-severity overnight geopolitical or macro shocks detected",
+            "source": "News Intelligence Engine"
+          },
+          {
+            "category": "OVERALL",
+            "status": "AMBER",
+            "label": "Composite Signal",
+            "reason": "Range-bound opening expected. Await 09:15–09:45 breakout confirmation.",
+            "source": "Pre-Market Intelligence"
+          }
+        ],
+        "global_snapshot": [
+          {
+            "symbol": "S&P 500",
+            "name": "S&P 500",
+            "category": "US_EQUITIES",
+            "price": 7691.76,
+            "change": -53.3,
+            "change_pct": -0.6882,
+            "session_status": "CLOSED",
+            "observed_at": "02:12 IST",
+            "freshness": "RECENT",
+            "provider": "Yahoo Finance",
+            "directional_implication": "NEGATIVE"
+          },
+          {
+            "symbol": "NASDAQ",
+            "name": "NASDAQ Composite",
+            "category": "US_EQUITIES",
+            "price": 26289.71,
+            "change": -355.2,
+            "change_pct": -1.3331,
+            "session_status": "CLOSED",
+            "observed_at": "02:45 IST",
+            "freshness": "RECENT",
+            "provider": "Yahoo Finance",
+            "directional_implication": "NEGATIVE"
+          },
+          {
+            "symbol": "DOW_JONES",
+            "name": "Dow Jones Industrial",
+            "category": "US_EQUITIES",
+            "price": 53343.4,
+            "change": -116.4,
+            "change_pct": -0.2177,
+            "session_status": "CLOSED",
+            "observed_at": "02:12 IST",
+            "freshness": "RECENT",
+            "provider": "Yahoo Finance",
+            "directional_implication": "NEGATIVE"
+          },
+          {
+            "symbol": "NIKKEI_225",
+            "name": "Nikkei 225",
+            "category": "ASIAN_EQUITIES",
+            "price": 65326.42,
+            "change": -2134.31,
+            "change_pct": -3.1638,
+            "session_status": "OPEN",
+            "observed_at": "08:15 IST",
+            "freshness": "FRESH",
+            "provider": "Yahoo Finance",
+            "directional_implication": "POSITIVE"
+          },
+          {
+            "symbol": "HANG_SENG",
+            "name": "Hang Seng Index",
+            "category": "ASIAN_EQUITIES",
+            "price": 25495.07,
+            "change": 41.87,
+            "change_pct": 0.1645,
+            "session_status": "OPEN",
+            "observed_at": "08:38 IST",
+            "freshness": "FRESH",
+            "provider": "Yahoo Finance",
+            "directional_implication": "POSITIVE"
+          },
+          {
+            "symbol": "GIFT_NIFTY",
+            "name": "GIFT Nifty Future",
+            "category": "INDIAN_BENCHMARK",
+            "price": 24109.5,
+            "change": -78.0,
+            "change_pct": -0.3225,
+            "session_status": "MARKET_OPEN",
+            "observed_at": "08:45 IST",
+            "freshness": "FRESH",
+            "provider": "NSE International Exchange",
+            "directional_implication": "POSITIVE"
+          },
+          {
+            "symbol": "USD_INR",
+            "name": "USD / INR Forex",
+            "category": "CURRENCY",
+            "price": 95.7575,
+            "change": 0.0,
+            "change_pct": 0.0,
+            "session_status": "OPEN",
+            "observed_at": "08:28 IST",
+            "freshness": "FRESH",
+            "provider": "Yahoo Finance",
+            "directional_implication": "NEUTRAL"
+          },
+          {
+            "symbol": "DXY",
+            "name": "US Dollar Index",
+            "category": "CURRENCY",
+            "price": 99.402,
+            "change": -0.255,
+            "change_pct": -0.2559,
+            "session_status": "OPEN",
+            "observed_at": "08:22 IST",
+            "freshness": "FRESH",
+            "provider": "Yahoo Finance",
+            "directional_implication": "POSITIVE"
+          },
+          {
+            "symbol": "BRENT_CRUDE",
+            "name": "Brent Crude Front-Month",
+            "category": "COMMODITIES",
+            "price": 91.87,
+            "change": 0.85,
+            "change_pct": 0.9339,
+            "session_status": "OPEN",
+            "observed_at": "08:09 IST",
+            "freshness": "FRESH",
+            "provider": "Yahoo Finance",
+            "directional_implication": "AMBER"
+          },
+          {
+            "symbol": "GOLD",
+            "name": "Gold Futures (COMEX)",
+            "category": "COMMODITIES",
+            "price": 4413.8,
+            "change": -6.8,
+            "change_pct": -0.1538,
+            "session_status": "OPEN",
+            "observed_at": "08:22 IST",
+            "freshness": "FRESH",
+            "provider": "Yahoo Finance",
+            "directional_implication": "NEUTRAL"
+          },
+          {
+            "symbol": "US_10Y",
+            "name": "US 10Y Treasury Yield",
+            "category": "BONDS",
+            "price": 4.706,
+            "change": -0.018,
+            "change_pct": -0.381,
+            "session_status": "OPEN",
+            "observed_at": "00:29 IST",
+            "freshness": "RECENT",
+            "provider": "Yahoo Finance",
+            "directional_implication": "AMBER"
+          }
+        ],
+        "global_cue_interpretation": {
+          "us_equities_avg": -0.75,
+          "asian_equities_avg": -1.5,
+          "dollar_tone": "STABLE",
+          "crude_tone": "ELEVATED ($91.12)",
+          "gold_tone": "STABLE ($4,480.50)",
+          "inr_tone": "STEADY (95.59)",
+          "summary": "NEGATIVE (GLOBAL RISK-OFF)"
+        },
+        "gift_dashboard": {
+          "price": 24109.5,
+          "change": -78.0,
+          "change_pct": -0.3225,
+          "implied_gap_points": 31.2,
+          "implied_gap_pct": 0.13,
+          "classification": "MODERATE GAP UP",
+          "expected_open_zone": "24,110 – 24,140",
+          "expected_gap_band": "+31 to +61",
+          "observed_at": "08:45 IST",
+          "checked_at": "2026-08-19T10:00:01.593352Z",
+          "freshness": "FRESH",
+          "availability_status": "FRESH",
+          "methodology": "GIFT_ANCHORED",
+          "provider": "NSE International Exchange",
+          "session": "MARKET_OPEN",
+          "reference_close": 24078.3
+        },
+        "price_structure": {
+          "reference_close": 24078.3,
+          "previous_high": 24172.85,
+          "previous_low": 24025.65,
+          "pivot_floor": 24092.27,
+          "r1": 24158.89,
+          "r2": 24239.47,
+          "s1": 24011.69,
+          "s2": 23945.07,
+          "decision_corridor_lower": 24087.0,
+          "decision_corridor_upper": 24097.0,
+          "immediate_resistance": 24158.89,
+          "immediate_support": 24011.69,
+          "expected_open_zone": "24,110 – 24,140",
+          "max_pain": 24350.0,
+          "call_wall": 24500.0,
+          "put_wall": 24300.0,
+          "methodology": "EVIDENCE_BASED_CLUSTERING & FLOOR_PIVOTS"
+        },
+        "options_intelligence": {
+          "expiry": "2026-08-25",
+          "spot_reference": 24078.3,
+          "atm_strike": 24300.0,
+          "pcr_oi": 0.8572955387737078,
+          "pcr_volume": 1.2422845647716858,
+          "max_pain": 24350.0,
+          "call_wall": 24500.0,
+          "put_wall": 24300.0,
+          "atm_iv": 11.41,
+          "atm_ce_iv": 16.13,
+          "atm_pe_iv": 6.69,
+          "call_oi_share_pct": 45.0,
+          "put_oi_share_pct": 55.0,
+          "expected_pin_zone": "24,300 – 24,350",
+          "volatility_implication": "Compressed volatility favors mean reversion near Max Pain.",
+          "options_bias": "MILD BULLISH SUPPORT"
+        },
+        "institutional_positioning": {
+          "fii_buy": 13543.3,
+          "fii_sell": 11891.77,
+          "fii_net": 1651.53,
+          "dii_buy": 15566.07,
+          "dii_sell": 12986.76,
+          "dii_net": 2579.31,
+          "combined_net": 4230.84,
+          "reference_date": "18-Aug-2026",
+          "badge": "PROVISIONAL EOD DATA",
+          "interpretation": "NET BUYING (DOMESTIC ABSORPTION)"
+        },
+        "volatility_and_risk": {
+          "vix": null,
+          "vix_change_pct": null,
+          "regime": "ELEVATED",
+          "session_range": 133.15,
+          "overnight_risk": "LOW",
+          "gap_risk": "LOW",
+          "event_risk": "MODERATE",
+          "overall_morning_risk": "MODERATE",
+          "why": "Expected gap (+31 to +61) indicates controlled morning opening risk."
+        },
+        "breadth_carry": {
+          "advances": 18,
+          "declines": 31,
+          "unchanged": 1,
+          "coverage": "50 / 50",
+          "ad_ratio": 0.58,
+          "breadth_pct": 36.0,
+          "label": "PREVIOUS SESSION BREADTH CARRY",
+          "conclusion": "WEAK / DRAG"
+        },
+        "sector_scoreboard": [
+          {
+            "sector": "NIFTY METAL",
+            "previous_change_pct": 0.55,
+            "morning_outlook": "BULLISH",
+            "catalyst": "Global commodity stability & DII accumulation",
+            "reason": "Positive momentum continuation candidate"
+          },
+          {
+            "sector": "NIFTY AUTO",
+            "previous_change_pct": 0.45,
+            "morning_outlook": "BULLISH",
+            "catalyst": "Strong domestic delivery numbers & resilient demand",
+            "reason": "Supportive anchor for broad market stability"
+          },
+          {
+            "sector": "NIFTY PHARMA",
+            "previous_change_pct": 0.32,
+            "morning_outlook": "NEUTRAL",
+            "catalyst": "Defensive institutional buying",
+            "reason": "Low-beta defensive hedge during consolidation"
+          },
+          {
+            "sector": "NIFTY REALTY",
+            "previous_change_pct": 0.2,
+            "morning_outlook": "NEUTRAL",
+            "catalyst": "Stable residential absorption figures",
+            "reason": "Mild positive follow-through expected"
+          },
+          {
+            "sector": "NIFTY FIN SERVICE",
+            "previous_change_pct": 0.08,
+            "morning_outlook": "NEUTRAL",
+            "catalyst": "Selective private bank participation",
+            "reason": "Pivotal to banking index direction"
+          },
+          {
+            "sector": "NIFTY BANK",
+            "previous_change_pct": 0.01,
+            "morning_outlook": "NEUTRAL",
+            "catalyst": "Flat previous session holding 51,200 base",
+            "reason": "Key swing sector for NIFTY breakout above 24,291"
+          },
+          {
+            "sector": "NIFTY FMCG",
+            "previous_change_pct": -0.12,
+            "morning_outlook": "CAUTIOUS",
+            "catalyst": "Rural demand recovery monitoring",
+            "reason": "Consolidating near 50-day moving average"
+          },
+          {
+            "sector": "NIFTY OIL & GAS",
+            "previous_change_pct": -0.15,
+            "morning_outlook": "CAUTIOUS",
+            "catalyst": "Brent crude steady near $91/bbl",
+            "reason": "Refinery margins under mild margin pressure"
+          },
+          {
+            "sector": "NIFTY ENERGY",
+            "previous_change_pct": -0.4,
+            "morning_outlook": "CAUTIOUS",
+            "catalyst": "Power demand seasonal adjustments",
+            "reason": "Drag on heavy index weights"
+          },
+          {
+            "sector": "NIFTY IT",
+            "previous_change_pct": -0.66,
+            "morning_outlook": "BEARISH",
+            "catalyst": "Nasdaq tech weakness (-0.32%) & rate uncertainty",
+            "reason": "Expected laggard; watch 200 EMA support"
+          }
+        ],
+        "heavyweights": [
+          {
+            "symbol": "HDFCBANK",
+            "weight_pct": 11.2,
+            "sector": "BANKING",
+            "previous_close": 1642.5,
+            "previous_change_pct": 0.15,
+            "morning_cue": "POSITIVE",
+            "catalyst": "FII Cash Flows",
+            "reason": "Primary index weight anchor holding key 1,635 support base."
+          },
+          {
+            "symbol": "ICICIBANK",
+            "weight_pct": 7.9,
+            "sector": "BANKING",
+            "previous_close": 1184.2,
+            "previous_change_pct": -0.1,
+            "morning_cue": "NEUTRAL",
+            "catalyst": "Banking Sector Momentum",
+            "reason": "Consolidating within narrow 1,175–1,195 range."
+          },
+          {
+            "symbol": "RELIANCE",
+            "weight_pct": 9.8,
+            "sector": "ENERGY",
+            "previous_close": 2985.4,
+            "previous_change_pct": -0.35,
+            "morning_cue": "CAUTIOUS",
+            "catalyst": "Crude & Retail Outflow",
+            "reason": "Watching 2,970 floor; critical to NIFTY upside defense."
+          },
+          {
+            "symbol": "INFY",
+            "weight_pct": 5.6,
+            "sector": "IT",
+            "previous_close": 1824.1,
+            "previous_change_pct": -0.85,
+            "morning_cue": "BEARISH",
+            "catalyst": "Nasdaq Cues",
+            "reason": "Tech selling pressure dragging top-tier index participation."
+          },
+          {
+            "symbol": "TCS",
+            "weight_pct": 4.2,
+            "sector": "IT",
+            "previous_close": 4295.0,
+            "previous_change_pct": -0.6,
+            "morning_cue": "CAUTIOUS",
+            "catalyst": "Global Tech Spend",
+            "reason": "Approaching 50 EMA support boundary at 4,280."
+          },
+          {
+            "symbol": "BHARTIARTL",
+            "weight_pct": 4.1,
+            "sector": "TELECOM",
+            "previous_close": 1490.8,
+            "previous_change_pct": 0.4,
+            "morning_cue": "POSITIVE",
+            "catalyst": "ARPU Growth Expectations",
+            "reason": "Strong institutional demand continuing."
+          },
+          {
+            "symbol": "LT",
+            "weight_pct": 3.8,
+            "sector": "INFRA",
+            "previous_close": 3650.0,
+            "previous_change_pct": 0.25,
+            "morning_cue": "POSITIVE",
+            "catalyst": "Order Book Inflow",
+            "reason": "Infrastructure capital expenditure support."
+          },
+          {
+            "symbol": "SBIN",
+            "weight_pct": 3.1,
+            "sector": "PSU BANK",
+            "previous_close": 845.6,
+            "previous_change_pct": 0.1,
+            "morning_cue": "NEUTRAL",
+            "catalyst": "PSU Bank Basket",
+            "reason": "Holding solid support above 840."
+          },
+          {
+            "symbol": "ITC",
+            "weight_pct": 3.0,
+            "sector": "FMCG",
+            "previous_close": 498.2,
+            "previous_change_pct": -0.05,
+            "morning_cue": "NEUTRAL",
+            "catalyst": "Defensive Positioning",
+            "reason": "Range-bound anchor stock."
+          },
+          {
+            "symbol": "AXISBANK",
+            "weight_pct": 2.9,
+            "sector": "BANKING",
+            "previous_close": 1198.5,
+            "previous_change_pct": -0.2,
+            "morning_cue": "NEUTRAL",
+            "catalyst": "Credit Growth Metric",
+            "reason": "Trading near 20-day exponential moving average."
+          }
+        ],
+        "stocks_to_watch": [
+          {
+            "symbol": "TATASTEEL",
+            "sector": "METALS",
+            "catalyst_type": "TECHNICAL",
+            "headline_or_reason": "Top gainer (+1.85%) breaking out of multi-day consolidation.",
+            "bias": "POSITIVE",
+            "source": "Market Feed"
+          },
+          {
+            "symbol": "WIPRO",
+            "sector": "IT",
+            "catalyst_type": "EARNINGS / CUES",
+            "headline_or_reason": "Laggard (-1.82%) facing global IT spending headwinds.",
+            "bias": "NEGATIVE",
+            "source": "Reuters / Discovery"
+          },
+          {
+            "symbol": "HINDALCO",
+            "sector": "METALS",
+            "catalyst_type": "COMMODITY",
+            "headline_or_reason": "Up +1.42% tracking global base metal resilience.",
+            "bias": "POSITIVE",
+            "source": "Market Feed"
+          },
+          {
+            "symbol": "HDFCBANK",
+            "sector": "BANKING",
+            "catalyst_type": "INSTITUTIONAL",
+            "headline_or_reason": "Key index heavyweight holding 1,635 support level.",
+            "bias": "WATCH",
+            "source": "NSE Official EOD"
+          },
+          {
+            "symbol": "RELIANCE",
+            "sector": "ENERGY",
+            "catalyst_type": "CORPORATE",
+            "headline_or_reason": "Testing key 2,970 structural floor.",
+            "bias": "WATCH",
+            "source": "Market Feed"
+          }
+        ],
+        "news_highlights": [
+          {
+            "id": "2c6e56c313c9aa52e31cad4b588f0666",
+            "headline": "Christine Lagarde: Panel remarks about the European economy during a discussion on the global economic outlook at the World Economic Forum",
+            "publisher": "European Central Bank",
+            "published_at": "Wed, 19 Aug 2026 09:10:00 +0200",
+            "source_url": "https://www.ecb.europa.eu//press/key/date/2026/html/ecb.sp260819~98ddf24b7b.en.html",
+            "relevance_score": 8.5,
+            "affected_sectors": [
+              "INDEX"
+            ],
+            "impact_level": "HIGH",
+            "expected_direction": "NOT_ASSESSED"
+          },
+          {
+            "id": "af3893d189d9937793d46574ceff3ce8",
+            "headline": "China seen holding loan rates steady in August despite economic weakness",
+            "publisher": "reuters.com",
+            "published_at": "Wed, 19 Aug 2026 06:15:00 GMT",
+            "source_url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxPTndXd2tEMnYyZlpuaTIwUzYxSUc5elNtMlRTa1lLSGFBS3NZS05OdUxMbmF4bzdLQzUzYnd2LU9IaGtXWmNQNXlUU0l3dzFwRlVHR0dSZ1U4b2Qxd0pvYXBiVHBVQV85d202V2lSODgzc1labmhJOTJpUzFta0Z1ZUhzdVRfbEw2Wmh0ZDNYWXM4QjZ3N3BZdklGV3QxQ1hqQzJzOWkzR0liN3F2SDBkcGRJeFJJbEdS?oc=5",
+            "relevance_score": 8.5,
+            "affected_sectors": [
+              "INDEX"
+            ],
+            "impact_level": "HIGH",
+            "expected_direction": "NOT_ASSESSED"
+          },
+          {
+            "id": "e139fce81326ee55ec9b6813e98f8c95",
+            "headline": "Tech selloff weighs down Wall Street as bond yields climb",
+            "publisher": "reuters.com",
+            "published_at": "Tue, 18 Aug 2026 22:58:54 GMT",
+            "source_url": "https://news.google.com/rss/articles/CBMisAFBVV95cUxPUzFvaDFSek1CYmFoSHEzTG9feVA2blNkZE9LMy00ZnpQbnFmVXYwSDJkeDR5OEFNSExNcGdrWWNjdTNLQzlia0V4b0hvV2VaTTcyaXRFdldtaDJUcm9KcDAxQ3NNWV9MaDd2Q2NaVWtHVUEwS0YyU21ia3lJQVpMTjNBMGtlaXp0M0JWaTIxeExpYlpHOEN0b05NN00xRmhHSHc0bERMOG1COGVNYTEzSw?oc=5",
+            "relevance_score": 8.5,
+            "affected_sectors": [
+              "INDEX"
+            ],
+            "impact_level": "HIGH",
+            "expected_direction": "NEGATIVE"
+          },
+          {
+            "id": "6c676bf8d3d57dea71519e8bdb648b47",
+            "headline": "India stocks top Indonesia as Asia’s least-favoured in BofA poll",
+            "publisher": "The Economic Times",
+            "published_at": "Wed, 19 Aug 2026 07:32:18 GMT",
+            "source_url": "https://news.google.com/rss/articles/CBMi0wFBVV95cUxNM24tUUFXN2sxdk5oZ2ZIMTFIdXo5T1lKLXVTc2tlNUVXRFZZU0NvTUNXVW5OaDVwN0ZnS2ZzZVk2V21KM1o2c1ZCa1Q3MjhOZ3FKU19qR3FxaVpPOG50WENjb0tKNUhVTEM0ZlhWQ2tLX1RIMW85OVg1Vm9jX1M3VF9RRkVEdzRYMGN4ZHFEaXJFbG1kbk5aYXNNdERMUXlBOWpFWE5kcDhyZW5MdUY5RFFVb0ZpcUhlY0FqR3VRNG5raHk1U0JFYV9Xdmc4dDZ5aG9F0gHYAUFVX3lxTFA4c0Q0UTUtTkNSY2xwUEhEdTIyV19HWFpvaHRzZFJaNXB0aFN0bEUtcEc4ZmdfaVNJTUZrMVlJNUE1Ny02VURqUDJkcjFEVzdWUUQ2R210RjB6QTZHUGpoSTRtZGdEaW4yelFIY3dpeVhXVVhOdDJ6T2M4THBFNE5pT3U4MjV3VHRrc2dMVUw5LXEtdEhPMGFiNk53QWFQQmRVQnFYV0lqV0I1UVFjRUhpOEJaajJnNlJEcXdnZnpONTVUXzV0d3QwdTRMR21PNjdBN09vRHd1UQ?oc=5",
+            "relevance_score": 8.5,
+            "affected_sectors": [
+              "INDEX"
+            ],
+            "impact_level": "HIGH",
+            "expected_direction": "NOT_ASSESSED"
+          },
+          {
+            "id": "5c0a598c9bebd03a9653526ea63c448f",
+            "headline": "India stocks rank least favoured in Asia in BofA poll; AI gap, high valuations worry investors",
+            "publisher": "The Statesman",
+            "published_at": "Wed, 19 Aug 2026 09:16:00 GMT",
+            "source_url": "https://news.google.com/rss/articles/CBMi3wFBVV95cUxObjc3aUZxTDBTYjdqSWE3aFBZaS1BY3F5VGpCTzBEc1J2d1NFRDJEanVHdWpYcU9feDcwcW85TTRDb3BaT0ZvQmZIMk5kQUR4VlZxa2FHaVY2cnBiVkhhcjk2eW9EWkM3dVRDMVpDVHMyUWJCN0tGRkFSWl9zcGhDU2lzUWZfSHBYekdZLXRNRkdJVlJpVXY1WER1Zk5Qb1BIamhaQ1ZYUEVxWFg3VEtmaE1lZ3lsa2g3dWJ1TXh1RkNmdUZGU0VORWV4M284a19xQk5KOG9VOVRveHpCMkpB0gHkAUFVX3lxTFBXTFNFS1Y3RXRKLUEySTQzSXlLVVk5Wmc3R3IxRm1UMDZ4TnZJbDFfQ09xT0xITVRZOVJ5cVlGN094TFhxUC1xdWZpMm5oaFNsVFVmX3VJYW8tMllfSW1lUkJxQ3RNY0RSb3oxdjVMTUYyaUVnRnE3VEJFYjA4bHhGMUZ6LXlCLXhtUDJxWGVwUlp2aUhRb1lWaTE1Vnd3TUxXR3RkQ2RDakdiRU9tenhFdnFSMmVMZ2FIczM0a1RNbUVNMWtITE82SmJHbGQ5MmduTWRHX1RiVXZLUWFKMEgtWF8yMw?oc=5",
+            "relevance_score": 8.5,
+            "affected_sectors": [
+              "INDEX"
+            ],
+            "impact_level": "HIGH",
+            "expected_direction": "NOT_ASSESSED"
+          }
+        ],
+        "event_calendar": [
+          {
+            "time_ist": "11:00 IST",
+            "event_name": "India Commercial Paper Issuance Volume",
+            "country": "India",
+            "importance": "LOW",
+            "expected_impact": "Liquidity check",
+            "affected_sector": "BANKING",
+            "source": "RBI"
+          },
+          {
+            "time_ist": "17:30 IST",
+            "event_name": "RBI Liquidity Management Operation",
+            "country": "India",
+            "importance": "MEDIUM",
+            "expected_impact": "Interbank rates",
+            "affected_sector": "BANKING",
+            "source": "RBI"
+          },
+          {
+            "time_ist": "18:00 IST",
+            "event_name": "US Building Permits & Housing Starts",
+            "country": "US",
+            "importance": "MEDIUM",
+            "expected_impact": "US Macro cue",
+            "affected_sector": "GLOBAL_RISK",
+            "source": "Census Bureau"
+          },
+          {
+            "time_ist": "20:30 IST",
+            "event_name": "US Fed Governor Speech",
+            "country": "US",
+            "importance": "HIGH",
+            "expected_impact": "Interest rate trajectory",
+            "affected_sector": "CURRENCY / RATES",
+            "source": "Federal Reserve"
+          }
+        ],
+        "overnight_risk": [
+          {
+            "category": "GEOPOLITICAL",
+            "status": "STABLE",
+            "impact": "LOW",
+            "detail": "No escalations or unexpected geopolitical friction."
+          },
+          {
+            "category": "COMMODITY",
+            "status": "STEADY",
+            "impact": "MODERATE",
+            "detail": "Brent crude steady near $91.12 / bbl."
+          },
+          {
+            "category": "CURRENCY",
+            "status": "CONTROLLED",
+            "impact": "LOW",
+            "detail": "USD/INR trading calmly at 95.592."
+          }
+        ],
+        "opening_bias_analysis": {
+          "bias": "NEUTRAL / MIXED",
+          "setup_score": 5.0,
+          "confidence": "MODERATE",
+          "risk": "MODERATE",
+          "supporting_evidence": [
+            "GIFT Nifty premium (+31.2 pts) at 24,109.50.",
+            "DII net institutional accumulation (+₹2,579.3 Cr).",
+            "Asian market positive cues (Nikkei +0.74%, Hang Seng +1.34%).",
+            "Derivatives support (PCR 1.22, Max Pain 24,350)."
+          ],
+          "opposing_evidence": [
+            "US indices closed lower (S&P -0.52%, Nasdaq -0.32%, Dow -0.51%).",
+            "FII cash market selling (-₹1,651.5 Cr).",
+            "Previous session breadth weak (18 Advancers vs 31 Decliners)."
+          ]
+        },
+        "opening_scenarios": [
+          {
+            "name": "BULLISH",
+            "title": "SCENARIO A: BULLISH BREAKOUT CONTINUATION",
+            "condition_if": [
+              "NIFTY spot opens above decision corridor resistance (24,159)",
+              "NIFTY 50 constituent breadth expands (> 30 Advancers)",
+              "Bank NIFTY breaks above 51,450 with volume confirmation"
+            ],
+            "outcome_then": "Upside continuation toward Floor R1 (24,356) and Max Pain (24,350) becomes probable.",
+            "entry_condition": "Long on confirmed 5-minute candle close above 24,295 with expanding volume.",
+            "confirmation_rules": [
+              "Bank NIFTY advancing",
+              "India VIX below 11.50",
+              "Breadth A/D ratio > 1.50"
+            ],
+            "target_levels": [
+              "24,350 (Max Pain)",
+              "24,388 (Structural R1)",
+              "24,425 (Floor R2)"
+            ],
+            "invalidation_level": "Drop back below 24,284 with selling volume.",
+            "risk_note": "Watch for profit booking near the 24,350 Max Pain strike."
+          },
+          {
+            "name": "BEARISH",
+            "title": "SCENARIO B: BEARISH BREAKDOWN EXPANSION",
+            "condition_if": [
+              "Price breaks decisively below immediate support (24,012)",
+              "Breadth advances drop below 15 with heavyweight IT/Banking selling",
+              "India VIX rises above 12.00"
+            ],
+            "outcome_then": "Downside test toward yesterday's session low (24,226.95) and Floor S1 (24,223).",
+            "entry_condition": "Short on confirmed break below 24,280 with increasing volume.",
+            "confirmation_rules": [
+              "IT sector laggard expansion",
+              "FII sell pressure",
+              "Breadth A/D < 0.40"
+            ],
+            "target_levels": [
+              "24,223 (Floor S1)",
+              "24,200 (Psychological Support)",
+              "24,158 (Floor S2)"
+            ],
+            "invalidation_level": "Reclaim of 24,295.",
+            "risk_note": "DII net accumulation provides underlying support near 24,200."
+          },
+          {
+            "name": "RANGE",
+            "title": "SCENARIO C: RANGE-BOUND CONSOLIDATION (PRIMARY)",
+            "condition_if": [
+              "Price opens inside expected open zone (24,110 – 24,140)",
+              "Spot remains bounded within the 24,087 – 24,097 corridor",
+              "Breadth remains mixed (20–25 Advancers) and VIX remains compressed"
+            ],
+            "outcome_then": "Range chop dominates. No clean directional breakout edge available.",
+            "entry_condition": "NO TRADE / WAIT for breakout confirmation outside 24,284 – 24,291.",
+            "confirmation_rules": [
+              "Subdued intraday volume",
+              "Bank NIFTY oscillating near VWAP",
+              "Balanced option writing"
+            ],
+            "target_levels": [
+              "Corridor boundaries: 24,284 – 24,291"
+            ],
+            "invalidation_level": "Sustained move beyond corridor boundaries with volume.",
+            "risk_note": "Option seller theta decay environment. Avoid chasing inside the corridor."
+          }
+        ],
+        "first_30m_plan": {
+          "window": "09:15 – 09:45 IST",
+          "monitor": [
+            "Reaction inside decision corridor (24,087 – 24,097)",
+            "Constituent breadth participation (> 30 Advancers needed for upside)",
+            "Bank NIFTY trend continuation vs 51,200 support base",
+            "India VIX stability below 11.50"
+          ],
+          "bullish_confirmation": "5-minute candle close > 24,101 with Bank NIFTY confirmation",
+          "bearish_confirmation": "Breakdown below 24,083 with selling volume expansion",
+          "no_trade_wait": "Price oscillating between 24,087 and 24,097 with mixed breadth"
+        },
+        "trade_playbook": [
+          {
+            "setup_code": "SETUP_A",
+            "name": "Bullish Corridor Breakout",
+            "bias": "BULLISH",
+            "why_today": "Breakout above compression base with DII support",
+            "entry_trigger": "Sustain > 24,295",
+            "confirmation_required": "Breadth > 30 ADV & Bank Nifty > 51,450",
+            "stop_invalidation": "Close < 24,284",
+            "profit_targets": "24,350 / 24,388",
+            "risk_grade": "MODERATE"
+          },
+          {
+            "setup_code": "SETUP_B",
+            "name": "Support Breakdown Retest",
+            "bias": "BEARISH",
+            "why_today": "Failure to hold 24,284 with global cues drag",
+            "entry_trigger": "Break < 24,280",
+            "confirmation_required": "Breadth < 15 ADV & IT Weakness",
+            "stop_invalidation": "Close > 24,295",
+            "profit_targets": "24,223 / 24,200",
+            "risk_grade": "MODERATE"
+          },
+          {
+            "setup_code": "SETUP_C",
+            "name": "Corridor Mean Reversion / No Trade",
+            "bias": "NEUTRAL",
+            "why_today": "Spot compressed in 7-point decision corridor",
+            "entry_trigger": "Wait for 09:15–09:45 observation",
+            "confirmation_required": "Require 09:45 range breakout",
+            "stop_invalidation": "N/A",
+            "profit_targets": "N/A",
+            "risk_grade": "LOW"
+          }
+        ],
+        "one_page_trade_card": {
+          "morning_view": "NEUTRAL / MIXED",
+          "expected_open": "24,110 – 24,140",
+          "expected_gap": "+31 to +61",
+          "key_resistance": "24,159 / 24,500",
+          "key_support": "24,012 / 24,300",
+          "decision_corridor": "24,087 – 24,097",
+          "vix_summary": "11.33 (LOW)",
+          "pcr_summary": "0.86 (Supportive)",
+          "max_pain": "24,350",
+          "call_wall": "24,500",
+          "put_wall": "24,300",
+          "fii_net": "+1,651.5 Cr",
+          "dii_net": "+2,579.3 Cr",
+          "global_tone": "NEGATIVE (GLOBAL RISK-OFF)",
+          "primary_sector_focus": "Banking (Breakout anchor) / Metals (Leader) / IT (Laggard)",
+          "primary_risk": "Range-bound chop inside the 24,087 – 24,097 decision corridor.",
+          "first_thing_to_watch": "Reaction between 24,087 and 24,097 during first 30 minutes (09:15–09:45).",
+          "best_action_at_open": "WAIT FOR 09:15–09:45 CONFIRMATION BEFORE EXECUTING DIRECTIONAL TRADES."
+        },
+        "provenance": {
+          "nse_market_data": "Official Kite historical candle aggregation",
+          "gift_nifty_source": "NSE International Exchange Official Snapshot",
+          "fii_dii_source": "NSE India Official Provisional Daily Activity",
+          "macro_source": "Yahoo Finance Public Feed & Official Macro Feed",
+          "news_source": "Curated Multi-Provider Discovery Feed",
+          "methodology_version": "2.4.0 (Frozen 08:50 Canonical Briefing)"
+        },
+        "actual_session": {
+          "actual_open": null,
+          "actual_open_time": null,
+          "actual_gap_points": null,
+          "actual_gap_percent": null,
+          "open_inside_expected_range": null,
+          "actual_high": null,
+          "actual_low": null,
+          "actual_close": null,
+          "actual_session_change": null,
+          "actual_session_change_pct": null,
+          "actual_session_range": null,
+          "actual_breadth_adv": null,
+          "actual_breadth_dec": null,
+          "actual_breadth_unch": null,
+          "actual_vix_close": null,
+          "actual_sector_leaders": [],
+          "actual_sector_laggards": []
+        },
+        "post_market_validation": {
+          "validation_status": "PENDING",
+          "validated_at": null,
+          "overall_accuracy_score_pct": null,
+          "criteria": [],
+          "summary_verdict": ""
+        },
+        "validation_preview": null
+      }
+    },
+    "ardha_context": {
+      "pre_market": true
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": "v1.0.0",
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Activated SCENARIO B",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710127",
+    "result": "HIT",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "52a7279c-6b95-4d82-9400-69102193d51d",
+    "trading_date": "2026-08-20",
+    "phase": "EARLY_SESSION",
+    "captured_at": "2026-08-20T09:15:12.704563+05:30",
+    "prediction_at": "2026-08-20T09:15:12.704563+05:30",
+    "metric": "Actual Open vs Forecast",
+    "metric_id": "open_actual_vs_forecast",
+    "schema_version": 2,
+    "ardha_value": "24,110 – 24,140",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "early_session_state": true
+    },
+    "ardha_context": {
+      "early_session": true
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "24152.05",
+    "real_value_numeric": null,
+    "real_payload": {
+      "actual_open": 24152.05
+    },
+    "evaluated_at": "2026-08-20T10:04:21.573992",
+    "result": "NEAR",
+    "error_value": 12.049999999999272,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "49939338-4ccc-4c04-a91f-94390a8144a1",
+    "trading_date": "2026-08-20",
+    "phase": "EARLY_SESSION",
+    "captured_at": "2026-08-20T09:15:12.704563+05:30",
+    "prediction_at": "2026-08-20T09:15:12.704563+05:30",
+    "metric": "First Live Bias",
+    "metric_id": "open_first_live_bias",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "early_session_state": true
+    },
+    "ardha_context": {
+      "early_session": true
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710171",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "130ab4b0-6edc-4955-9db7-dd6430851d60",
+    "trading_date": "2026-08-20",
+    "phase": "EARLY_SESSION",
+    "captured_at": "2026-08-20T09:15:12.704563+05:30",
+    "prediction_at": "2026-08-20T09:15:12.704563+05:30",
+    "metric": "Opening Range High",
+    "metric_id": "open_range_high",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "early_session_state": true
+    },
+    "ardha_context": {
+      "early_session": true
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710182",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "53aa1502-3ac3-4c90-ad21-bad9eb5f7019",
+    "trading_date": "2026-08-20",
+    "phase": "EARLY_SESSION",
+    "captured_at": "2026-08-20T09:15:12.704563+05:30",
+    "prediction_at": "2026-08-20T09:15:12.704563+05:30",
+    "metric": "Opening Range Low",
+    "metric_id": "open_range_low",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "early_session_state": true
+    },
+    "ardha_context": {
+      "early_session": true
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710197",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "f6dbfea6-3b3f-4686-a188-e114fa3568ea",
+    "trading_date": "2026-08-20",
+    "phase": "EARLY_SESSION",
+    "captured_at": "2026-08-20T09:15:12.704563+05:30",
+    "prediction_at": "2026-08-20T09:15:12.704563+05:30",
+    "metric": "Opening Breadth",
+    "metric_id": "open_breadth",
+    "schema_version": 2,
+    "ardha_value": "NEUTRAL",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "early_session_state": true
+    },
+    "ardha_context": {
+      "early_session": true
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Breadth: BULLISH",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710210",
+    "result": "NEAR",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "e5812097-3219-45a5-96b8-5c48b97383db",
+    "trading_date": "2026-08-20",
+    "phase": "EARLY_SESSION",
+    "captured_at": "2026-08-20T09:15:12.704563+05:30",
+    "prediction_at": "2026-08-20T09:15:12.704563+05:30",
+    "metric": "Opening VIX Regime",
+    "metric_id": "open_vix_regime",
+    "schema_version": 2,
+    "ardha_value": "NORMAL",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "early_session_state": true
+    },
+    "ardha_context": {
+      "early_session": true
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "VIX Regime: NORMAL",
+    "real_value_numeric": null,
+    "real_payload": {
+      "vix": "NORMAL"
+    },
+    "evaluated_at": "2026-08-20T09:31:33.710223",
+    "result": "HIT",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "060edcfa-dcae-44a9-a3d7-eb2c259f65f1",
+    "trading_date": "2026-08-20",
+    "phase": "EARLY_SESSION",
+    "captured_at": "2026-08-20T09:15:12.704563+05:30",
+    "prediction_at": "2026-08-20T09:15:12.704563+05:30",
+    "metric": "Opening Options Bias",
+    "metric_id": "open_options_bias",
+    "schema_version": 2,
+    "ardha_value": "NEUTRAL",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "early_session_state": true
+    },
+    "ardha_context": {
+      "early_session": true
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Options Bias: NEUTRAL",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710235",
+    "result": "HIT",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "674409fc-5ced-41d8-aeae-bb227f79970a",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Current Bias",
+    "metric_id": "live_current_bias",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710248",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "33284780-6e89-4918-9def-99606785b65b",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Market Regime",
+    "metric_id": "live_market_regime",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710258",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "943f9174-d54a-46c3-a9f9-af6501ad5454",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Live Confidence",
+    "metric_id": "live_confidence",
+    "schema_version": 2,
+    "ardha_value": "72%",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Preserved for calibration (72%)",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T10:04:21.574266",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "bbc4f2ae-4000-4a64-8b23-73ff5b8a03dd",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Live Risk Level",
+    "metric_id": "live_risk_level",
+    "schema_version": 2,
+    "ardha_value": "MODERATE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Realized Risk: UNKNOWN",
+    "real_value_numeric": null,
+    "real_payload": {
+      "realized_risk": "UNKNOWN"
+    },
+    "evaluated_at": "2026-08-20T10:04:21.574325",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "69a4fcd8-9e0f-477a-941f-2696bbafc34a",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Immediate Support",
+    "metric_id": "live_immediate_support",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710289",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "25b7c176-5887-4976-9ad1-71c5f63fd544",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Immediate Resistance",
+    "metric_id": "live_immediate_resistance",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710299",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "81208422-ce93-4bba-acb1-e2f2bcb61b70",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Live Decision Zone",
+    "metric_id": "live_decision_zone",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710307",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "e45b9aa6-75af-4188-935c-3df29d613027",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Breadth Interpretation",
+    "metric_id": "live_breadth_interpretation",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710315",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "8cfedf2e-08da-4858-8c3f-5267fbd5297d",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Options Bias",
+    "metric_id": "live_options_bias",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710323",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "06f76d3c-16d3-49f6-aad8-134311605669",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "PCR Interpretation",
+    "metric_id": "live_pcr_interpretation",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710331",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "62ba818e-b98b-4382-a5c9-f939e1ff8e6f",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Call Wall State",
+    "metric_id": "live_call_wall_state",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710340",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "ccef6cbd-8cd4-4e3d-b3b1-7bcb35588d39",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Put Wall State",
+    "metric_id": "live_put_wall_state",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710348",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "e0936bc3-39da-4b68-97a9-cd6c9f9c92a6",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Opportunity Decision",
+    "metric_id": "live_opportunity_decision",
+    "schema_version": 2,
+    "ardha_value": "NO TRADE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Range persisted; no clean setup",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710366",
+    "result": "HIT",
+    "error_value": 0.0,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "fcb76db8-7932-4288-8f99-1101d40d478d",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Trade Direction",
+    "metric_id": "live_trade_direction",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710376",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "c48c040a-ed06-4d9e-8788-43ef17636eca",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Target / Expected Move",
+    "metric_id": "live_target_move",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710410",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "68a8d5ed-c288-45df-a9c5-8c6b32521f12",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T09:15:12.729271+05:30",
+    "prediction_at": "2026-08-20T09:15:12.729271+05:30",
+    "metric": "Invalidation Level",
+    "metric_id": "live_invalidation_level",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "487c46a3-b58c-4780-ae4c-811f551ca908",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T09:31:33.710425",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "cea2ed55-bea5-42da-9564-e62f8bfcba40",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T10:04:41.191485+05:30",
+    "prediction_at": "2026-08-20T10:04:41.191485+05:30",
+    "metric": "Current Bias",
+    "metric_id": "live_current_bias",
+    "schema_version": 2,
+    "ardha_value": "BULLISH",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "07b754e0-ab94-4c5f-9a85-baf044819c7b",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Declined -22.05 pts",
+    "real_value_numeric": null,
+    "real_payload": {
+      "actual_change": -22.049999999999272
+    },
+    "evaluated_at": "2026-08-20T10:04:41.292410",
+    "result": "MISS",
+    "error_value": 22.049999999999272,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "36d8f1f7-67ab-4c22-b45c-5ef61baaa5c6",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T10:04:41.191485+05:30",
+    "prediction_at": "2026-08-20T10:04:41.191485+05:30",
+    "metric": "Market Regime",
+    "metric_id": "live_market_regime",
+    "schema_version": 2,
+    "ardha_value": "UNCERTAIN",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "07b754e0-ab94-4c5f-9a85-baf044819c7b",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Realized UNKNOWN",
+    "real_value_numeric": null,
+    "real_payload": {
+      "realized_regime": "UNKNOWN"
+    },
+    "evaluated_at": "2026-08-20T10:04:41.292454",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "9144331f-6550-473b-8781-0f6537b49812",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T10:04:41.191485+05:30",
+    "prediction_at": "2026-08-20T10:04:41.191485+05:30",
+    "metric": "Live Confidence",
+    "metric_id": "live_confidence",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "07b754e0-ab94-4c5f-9a85-baf044819c7b",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T10:04:41.292473",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "4cadd504-2dec-44e3-9f96-41227d74051e",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T10:04:41.191485+05:30",
+    "prediction_at": "2026-08-20T10:04:41.191485+05:30",
+    "metric": "Live Risk Level",
+    "metric_id": "live_risk_level",
+    "schema_version": 2,
+    "ardha_value": "LOW",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "07b754e0-ab94-4c5f-9a85-baf044819c7b",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Realized Risk: UNKNOWN",
+    "real_value_numeric": null,
+    "real_payload": {
+      "realized_risk": "UNKNOWN"
+    },
+    "evaluated_at": "2026-08-20T10:04:41.292492",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "c6a3ba28-aa57-49ca-bcbe-f9117fa3f058",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T10:04:41.191485+05:30",
+    "prediction_at": "2026-08-20T10:04:41.191485+05:30",
+    "metric": "Breadth Interpretation",
+    "metric_id": "live_breadth_interpretation",
+    "schema_version": 2,
+    "ardha_value": "39 A / 11 D (BULLISH)",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "07b754e0-ab94-4c5f-9a85-baf044819c7b",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Session outcome recorded (24130.00)",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T10:04:41.292513",
+    "result": "HIT",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "a99e6b20-27b4-4040-8be9-6657cea97333",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T10:04:41.191485+05:30",
+    "prediction_at": "2026-08-20T10:04:41.191485+05:30",
+    "metric": "PCR Interpretation",
+    "metric_id": "live_pcr_interpretation",
+    "schema_version": 2,
+    "ardha_value": "PCR 1.15",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "07b754e0-ab94-4c5f-9a85-baf044819c7b",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Session outcome recorded (24130.00)",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T10:04:41.292532",
+    "result": "HIT",
+    "error_value": null,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "dcf1be9f-8983-424b-a8b7-33c7352d573b",
+    "trading_date": "2026-08-20",
+    "phase": "LIVE_INTRADAY",
+    "captured_at": "2026-08-20T10:04:41.191485+05:30",
+    "prediction_at": "2026-08-20T10:04:41.191485+05:30",
+    "metric": "Call Wall State",
+    "metric_id": "live_call_wall_state",
+    "schema_version": 2,
+    "ardha_value": "24200.0",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "spot": null
+    },
+    "ardha_context": {
+      "invalidation": null,
+      "spot": null
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "07b754e0-ab94-4c5f-9a85-baf044819c7b",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "Tested & rejected (High 24175.00)",
+    "real_value_numeric": null,
+    "real_payload": {
+      "post_capture_high": 24175.0
+    },
+    "evaluated_at": "2026-08-20T10:04:41.293071",
+    "result": "HIT",
+    "error_value": 25.0,
+    "notes": "Evaluated against canonical session truth",
+    "pending_reason": null,
+    "immutable": true
+  },
+  {
+    "id": "7fcf4291-e4e4-4f4d-a6bc-dc2115ad641c",
+    "trading_date": "2026-08-20",
+    "phase": "CLOSE",
+    "captured_at": "2026-08-20T15:31:03.557365+05:30",
+    "prediction_at": "2026-08-20T15:31:03.557365+05:30",
+    "metric": "Closing Bias / Final View",
+    "metric_id": "close_final_view",
+    "schema_version": 2,
+    "ardha_value": "UNAVAILABLE",
+    "ardha_value_numeric": null,
+    "ardha_payload": {
+      "closing_state": true
+    },
+    "ardha_context": {
+      "session_close": true
+    },
+    "spot_at_capture": null,
+    "source_state_sequence": null,
+    "runtime_id": "d48445eb-9ef6-4b12-acdd-7566ceaf8532",
+    "engine_version": null,
+    "reference_session_date": null,
+    "target_session_date": null,
+    "real_value": "No prediction recorded",
+    "real_value_numeric": null,
+    "real_payload": {},
+    "evaluated_at": "2026-08-20T15:31:09.482401",
+    "result": "NOT_EVALUABLE",
+    "error_value": null,
+    "notes": "Prediction unavailable",
+    "pending_reason": null,
+    "immutable": true
+  }
+]

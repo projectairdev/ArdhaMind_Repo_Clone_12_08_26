@@ -1,22 +1,32 @@
+// src/frontend/layout/DashboardLayout.tsx
 import React, { useEffect, useState, useMemo } from "react";
-import { Activity, Briefcase, Newspaper, Radio, Sliders, X, Sparkles, Compass, Layers, Calendar, BarChart2 } from "lucide-react";
+import { Compass, Layers, Calendar, Sliders, BookOpen, Target } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useWorkstationState } from "../context/WorkstationStateContext";
+import { useNavigation, PrimaryModuleId } from "../context/NavigationContext";
 import { WorkstationTopBar } from "../components/WorkstationTopBar";
 import { NiftyLiveWorkspace } from "../components/NiftyLiveWorkspace";
-import { PreMarketPlannerWorkspace } from "../components/PreMarketPlannerWorkspace";
-import { TodaysAnalysisWorkspace, LiveAssistantWorkspace, NewsUpdatesWorkspace, SettingsWorkspace } from "../components/PhaseOneWorkspaces";
+import { SettingsWorkspace } from "../components/PhaseOneWorkspaces";
 import { MarketPulseWorkspace } from "../components/MarketPulseWorkspace";
 import { OptionsWorkspace } from "../components/OptionsWorkspace";
 import { PortfolioWorkspace } from "../components/PortfolioWorkspace";
-import { SettingsDashboard } from "../components/SettingsDashboard";
+import { MarketIntelligenceWorkspace } from "../components/MarketIntelligenceWorkspace";
+import { TradingCheatsheetWorkspace } from "../components/TradingCheatsheetWorkspace";
+import { NewsWorkspace, NewsSubTab } from "../components/news/NewsWorkspace";
+import { ArdhaPerformanceWorkspace } from "../components/ArdhaPerformanceWorkspace";
+import { InspectionSelection, MarketDeepDive, MarketInspectionProvider } from "../context/MarketInspectionContext";
+import { MarketGlyph, IntelligenceGlyph, PortfolioGlyph, JournalGlyph } from "../components/ui/VisualAssets";
+import LiveAssistantPanel from "../components/LiveAssistantPanel";
+import { resolveBriefingPresentationMode } from "../utils/briefingTimeResolver";
+import { WorkspaceErrorBoundary } from "../components/ui/WorkspaceErrorBoundary";
 
-// Exactly 4 primary sidebar modules as required
+// Primary sidebar modules (5 Official Primary Trading Modules)
 export const PRIMARY_MODULES = [
-  { id: "market", label: "MARKET", icon: Radio },
-  { id: "intelligence", label: "INTELLIGENCE", icon: Activity },
-  { id: "portfolio", label: "PORTFOLIO", icon: Briefcase },
-  { id: "journal", label: "JOURNAL", icon: Newspaper },
+  { id: "market", label: "MARKET", glyph: MarketGlyph },
+  { id: "market_intelligence", label: "MARKET INTELLIGENCE", glyph: IntelligenceGlyph },
+  { id: "trading_cheatsheet", label: "TRADING CHEATSHEET", glyph: BookOpen },
+  { id: "news", label: "NEWS & UPDATES", glyph: JournalGlyph },
+  { id: "portfolio", label: "PORTFOLIO", glyph: PortfolioGlyph },
 ] as const;
 
 // Legacy export compatibility structures for tests
@@ -24,89 +34,80 @@ export const NAVIGATION_GROUPS = [
   {
     category: "MARKET",
     items: [
-      { id: "nifty-live", label: "Market Command", icon: Radio },
+      { id: "nifty-live", label: "Market Command", icon: MarketGlyph },
       { id: "market-pulse", label: "Market Pulse", icon: Calendar },
-    ]
+    ],
   },
   {
     category: "INTELLIGENCE",
     items: [
-      { id: "live-assistant", label: "Intraday Intelligence", icon: Activity },
-      { id: "todays-analysis", label: "Session Intelligence", icon: Activity },
-      { id: "forward-outlook", label: "Scenario Outlook", icon: Compass },
-    ]
-  },
-  {
-    category: "PLANNING",
-    items: [
-      { id: "pre-market-planner", label: "Pre-Market Intelligence", icon: Layers },
-    ]
+      { id: "market-intelligence", label: "Market Intelligence", icon: IntelligenceGlyph },
+    ],
   },
   {
     category: "INFORMATION",
     items: [
-      { id: "news-updates", label: "Intelligence Feed", icon: Newspaper },
-    ]
+      { id: "news-updates", label: "Intelligence Feed", icon: JournalGlyph },
+    ],
   },
   {
     category: "SYSTEM",
     items: [
       { id: "settings", label: "System Control", icon: Sliders },
-    ]
-  }
+    ],
+  },
 ] as const;
 
 export const PRIMARY_WORKSPACES = [
-  { id: "nifty-live", label: "Market Command", icon: Radio },
+  { id: "nifty-live", label: "Market Command", icon: MarketGlyph },
   { id: "market-pulse", label: "Market Pulse", icon: Calendar },
-  { id: "live-assistant", label: "Intraday Intelligence", icon: Activity },
-  { id: "todays-analysis", label: "Session Intelligence", icon: Activity },
-  { id: "forward-outlook", label: "Scenario Outlook", icon: Compass },
-  { id: "pre-market-planner", label: "Pre-Market Intelligence", icon: Layers },
-  { id: "news-updates", label: "Intelligence Feed", icon: Newspaper },
+  { id: "market-intelligence", label: "Market Intelligence", icon: IntelligenceGlyph },
+  { id: "news-updates", label: "Intelligence Feed", icon: JournalGlyph },
   { id: "settings", label: "System Control", icon: Sliders },
 ] as const;
 
-export type WorkspaceId = typeof PRIMARY_WORKSPACES[number]["id"];
-export type PrimaryModuleId = typeof PRIMARY_MODULES[number]["id"];
+export type WorkspaceId = (typeof PRIMARY_WORKSPACES)[number]["id"];
 export type MarketSubTab = "nifty" | "metrics" | "options";
 export type NiftySessionMode = "auto" | "pre_market" | "live" | "post_market";
 
 export function DashboardLayout() {
-  const { themeClasses, fontClasses } = useTheme();
+  const { fontClasses } = useTheme();
   const { workspaceContext, marketContext, canonicalState, lastValidState } = useWorkstationState() as any;
+  const {
+    activeModule,
+    marketSubTab,
+    newsSubTab,
+    settingsOpen,
+    settingsSubTab,
+    assistantOpen,
+    navigateTo,
+    setNewsSubTab,
+    setSettingsOpen,
+  } = useNavigation();
 
   const isStagingMode = (import.meta as any).env?.VITE_STAGING_MODE === "true";
 
-  // Active module & sub-tab states
-  const [activeModule, setActiveModule] = useState<PrimaryModuleId>(() => {
-    const saved = localStorage.getItem("active_module") || localStorage.getItem("active_tab") || "market";
-    if (["intelligence", "journal", "portfolio"].includes(saved)) return saved as PrimaryModuleId;
-    return "market";
-  });
-
-  const [marketSubTab, setMarketSubTab] = useState<MarketSubTab>(() => {
-    const savedTab = localStorage.getItem("active_market_tab") || localStorage.getItem("active_tab");
-    if (savedTab === "market-pulse" || savedTab === "metrics") return "metrics";
-    if (savedTab === "options") return "options";
-    return "nifty";
-  });
-
   const [niftyModeOverride, setNiftyModeOverride] = useState<NiftySessionMode>("auto");
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [deepDive, setDeepDive] = useState<InspectionSelection | null>(null);
 
-  // Compute canonical session mode for NIFTY dynamic workspace
-  const computedNiftyMode = useMemo<"pre_market" | "live" | "post_market">( () => {
+  // Compute canonical session mode for dynamic workspaces
+  const computedNiftyMode = useMemo<"pre_market" | "live" | "post_market">(() => {
     if (niftyModeOverride !== "auto" && isStagingMode) return niftyModeOverride;
 
     const stateObj = canonicalState ?? lastValidState;
     const mStatus = stateObj?.market_session?.status || "closed";
-    const isClosed = Boolean(stateObj?.market_session?.is_closed || mStatus === "closed" || mStatus === "holiday" || mStatus === "weekend");
+    const isClosed = Boolean(
+      stateObj?.market_session?.is_closed || mStatus === "closed" || mStatus === "holiday" || mStatus === "weekend"
+    );
 
-    // Check IST time
     const now = new Date();
-    const istTimeStr = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Kolkata", hour12: false, hour: "numeric", minute: "numeric" }).format(now);
+    const istTimeStr = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Kolkata",
+      hour12: false,
+      hour: "numeric",
+      minute: "numeric",
+    }).format(now);
     const [h, m] = istTimeStr.split(":").map(Number);
     const totalMinutes = h * 60 + m;
 
@@ -119,196 +120,179 @@ export function DashboardLayout() {
     return "post_market";
   }, [niftyModeOverride, canonicalState, lastValidState, isStagingMode]);
 
+  const [nowTick, setNowTick] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNowTick(new Date()), 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const briefingPresentationMode = useMemo(() => {
+    const stateObj = canonicalState ?? lastValidState;
+    return resolveBriefingPresentationMode({
+      customDate: nowTick,
+      marketSessionState: stateObj?.market_session,
+    });
+  }, [nowTick, canonicalState, lastValidState]);
+
+  // Unified Authoritative Navigation Handlers
   const navigateModule = (id: PrimaryModuleId) => {
-    setActiveModule(id);
-    localStorage.setItem("active_module", id);
+    setDeepDive(null);
+    navigateTo({ workspace: id });
     setMobileOpen(false);
   };
 
   const navigateMarketSubTab = (tab: MarketSubTab) => {
-    setMarketSubTab(tab);
-    localStorage.setItem("active_market_tab", tab);
+    setDeepDive(null);
+    navigateTo({ workspace: "market", tab });
+    setMobileOpen(false);
+  };
+
+  const openSettingsConsole = () => {
+    setDeepDive(null);
+    navigateTo({ workspace: "settings", tab: "overview" });
+    setMobileOpen(false);
   };
 
   return (
-    <div id="dashboard-layout" className={`${themeClasses.bg} ${themeClasses.text} ${fontClasses.base} flex h-screen flex-col overflow-hidden bg-[#0b0f19]`}>
-      {/* Global Top Bar */}
-      <WorkstationTopBar
-        mobileOpen={mobileOpen}
-        onToggleMobile={() => setMobileOpen(!mobileOpen)}
-        onOpenSettings={() => setSettingsModalOpen(true)}
-        onOpenAssistant={() => navigateModule("intelligence")}
-      />
+    <MarketInspectionProvider onViewDetails={setDeepDive}>
+      <div
+        id="dashboard-layout"
+        className={`${fontClasses.base} ardha-app flex h-screen flex-col overflow-hidden bg-[#050607] text-[#E6E8EB] font-sans`}
+      >
+        {/* Global Top Bar */}
+        <WorkstationTopBar
+          mobileOpen={mobileOpen}
+          onToggleMobile={() => setMobileOpen(!mobileOpen)}
+          onOpenSettings={openSettingsConsole}
+          settingsOpen={settingsOpen}
+        />
 
-      {/* Expiry / Session Warning Banner */}
-      {workspaceContext.brokerState === "TOKEN_EXPIRED" && (
-        <div className="border-b border-rose-900/80 bg-rose-950/40 px-4 py-2 text-xs text-rose-300 flex items-center justify-between font-mono">
-          <div>
-            <strong>KITE SESSION EXPIRED.</strong> Last update: {marketContext.last_tick_time || "Unavailable"}. Live analysis paused.
-          </div>
-          <button onClick={() => setSettingsModalOpen(true)} className="underline text-rose-200 hover:text-white">
-            Open Settings to Reconnect
-          </button>
-        </div>
-      )}
-
-      {/* Main Workspace Frame: Sidebar + Content */}
-      <div className="flex min-h-0 flex-1">
-        {/* Primary Sidebar Module Navigation (Exactly 4 items) */}
-        <aside className={`${mobileOpen ? "block" : "hidden"} absolute z-40 h-full w-52 border-r border-slate-800/80 bg-[#0f172a] px-2.5 py-4 lg:static lg:block overflow-y-auto`}>
-          <div className="mb-3 px-3 text-[9px] font-mono font-bold tracking-[0.2em] text-slate-500 uppercase">
-            PRIMARY MODULES
-          </div>
-          <nav className="space-y-1">
-            {PRIMARY_MODULES.map(module => {
-              const Icon = module.icon;
-              const isActive = activeModule === module.id;
-              return (
-                <button
-                  key={module.id}
-                  onClick={() => navigateModule(module.id)}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`group flex w-full items-center gap-3 rounded-lg border-l-2 px-3 py-2 text-left text-xs font-bold transition ${
-                    isActive
-                      ? "border-cyan-400 bg-cyan-950/30 text-cyan-300 shadow-sm"
-                      : "border-transparent text-slate-400 hover:bg-slate-900/80 hover:text-slate-200"
-                  }`}
-                >
-                  <Icon size={15} className={isActive ? "text-cyan-400" : "text-slate-500 group-hover:text-slate-300"} />
-                  <span className="tracking-wide">{module.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </aside>
-
-        {/* Workspace Content Region */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#0b0f19]">
-          {/* Secondary Navigation Sub-Bar (For MARKET module: NIFTY | METRICS | OPTIONS) */}
-          {activeModule === "market" && (
-            <div className="flex items-center justify-between border-b border-slate-800/80 bg-[#0f172a]/90 px-4 py-2 backdrop-blur">
-              <div className="flex items-center gap-1.5 font-mono text-xs">
-                <button
-                  onClick={() => navigateMarketSubTab("nifty")}
-                  className={`rounded-md px-3 py-1 font-bold transition ${
-                    marketSubTab === "nifty"
-                      ? "bg-cyan-950 text-cyan-300 border border-cyan-800/80"
-                      : "text-slate-400 hover:bg-slate-900 hover:text-white"
-                  }`}
-                >
-                  NIFTY
-                </button>
-                <button
-                  onClick={() => navigateMarketSubTab("metrics")}
-                  className={`rounded-md px-3 py-1 font-bold transition ${
-                    marketSubTab === "metrics"
-                      ? "bg-cyan-950 text-cyan-300 border border-cyan-800/80"
-                      : "text-slate-400 hover:bg-slate-900 hover:text-white"
-                  }`}
-                >
-                  METRICS
-                </button>
-                <button
-                  onClick={() => navigateMarketSubTab("options")}
-                  className={`rounded-md px-3 py-1 font-bold transition ${
-                    marketSubTab === "options"
-                      ? "bg-cyan-950 text-cyan-300 border border-cyan-800/80"
-                      : "text-slate-400 hover:bg-slate-900 hover:text-white"
-                  }`}
-                >
-                  OPTIONS
-                </button>
-              </div>
-
-              {/* Session Override Controls (Visible ONLY in Staging mode per Section 5) */}
-              {marketSubTab === "nifty" && isStagingMode && (
-                <div className="hidden sm:flex items-center gap-1 text-[9px] font-mono">
-                  <span className="text-amber-500/80 font-bold mr-1">STAGING PREVIEW:</span>
-                  <button
-                    onClick={() => setNiftyModeOverride("auto")}
-                    className={`px-1.5 py-0.5 rounded border transition ${
-                      niftyModeOverride === "auto" ? "bg-amber-950/60 text-amber-300 border-amber-800 font-bold" : "bg-slate-950 text-slate-500 border-slate-800"
-                    }`}
-                  >
-                    Auto ({computedNiftyMode === "live" ? "Live" : computedNiftyMode === "pre_market" ? "Pre" : "Post"})
-                  </button>
-                  <button
-                    onClick={() => setNiftyModeOverride("pre_market")}
-                    className={`px-1.5 py-0.5 rounded border transition ${
-                      niftyModeOverride === "pre_market" ? "bg-amber-950/60 text-amber-300 border-amber-800 font-bold" : "bg-slate-950 text-slate-500 border-slate-800"
-                    }`}
-                  >
-                    Pre-Mkt
-                  </button>
-                  <button
-                    onClick={() => setNiftyModeOverride("live")}
-                    className={`px-1.5 py-0.5 rounded border transition ${
-                      niftyModeOverride === "live" ? "bg-amber-950/60 text-amber-300 border-amber-800 font-bold" : "bg-slate-950 text-slate-500 border-slate-800"
-                    }`}
-                  >
-                    NIFTY Live
-                  </button>
-                  <button
-                    onClick={() => setNiftyModeOverride("post_market")}
-                    className={`px-1.5 py-0.5 rounded border transition ${
-                      niftyModeOverride === "post_market" ? "bg-amber-950/60 text-amber-300 border-amber-800 font-bold" : "bg-slate-950 text-slate-500 border-slate-800"
-                    }`}
-                  >
-                    Post-Mkt
-                  </button>
-                </div>
-              )}
+        {/* Expiry / Session Warning Banner */}
+        {workspaceContext.brokerState === "TOKEN_EXPIRED" && (
+          <div className="border-b border-[#E5484D]/40 bg-[#E5484D]/10 px-3 py-1.5 text-[11px] text-[#E5484D] flex items-center justify-between font-mono shrink-0">
+            <div>
+              <strong>KITE SESSION EXPIRED.</strong> Last update: {marketContext.last_tick_time || "Unavailable"}. Live
+              analysis paused.
             </div>
-          )}
+            <button onClick={openSettingsConsole} className="underline text-red-200 hover:text-white font-bold">
+              Open Settings Console
+            </button>
+          </div>
+        )}
 
-          {/* Main Scrollable Content View */}
-          <main className="air-grid min-w-0 flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6">
-            {activeModule === "market" ? (
-              marketSubTab === "nifty" ? (
-                computedNiftyMode === "pre_market" ? (
-                  <PreMarketPlannerWorkspace />
-                ) : computedNiftyMode === "live" ? (
-                  <NiftyLiveWorkspace />
-                ) : (
-                  <TodaysAnalysisWorkspace />
-                )
-              ) : marketSubTab === "metrics" ? (
-                <MarketPulseWorkspace />
-              ) : (
-                <OptionsWorkspace />
-              )
-            ) : activeModule === "intelligence" ? (
-              <LiveAssistantWorkspace />
-            ) : activeModule === "portfolio" ? (
-              <PortfolioWorkspace />
-            ) : (
-              <NewsUpdatesWorkspace />
+        {/* Main Workspace Frame: Sidebar + Content */}
+        <div className="flex min-h-0 flex-1 bg-[#050607]">
+          {/* Primary Sidebar Module Navigation */}
+          <aside
+            className={`${mobileOpen ? "block" : "hidden"
+              } absolute z-40 h-full w-[180px] sm:w-[190px] lg:w-[200px] border-r border-[#242830] bg-[#050607] px-2 py-3 lg:static lg:block overflow-y-auto shrink-0`}
+          >
+            <nav className="space-y-1 font-mono">
+              {PRIMARY_MODULES.map((module) => {
+                const Glyph = module.glyph;
+                const isActive = !settingsOpen && activeModule === module.id;
+                const labelText = module.label;
+
+                return (
+                  <button
+                    key={module.id}
+                    onClick={() => navigateModule(module.id)}
+                    aria-current={isActive ? "page" : undefined}
+                    className={`group flex w-full items-center gap-2.5 rounded-[2px] border-l-2 px-2.5 py-2 text-left text-[11px] font-bold tracking-wide transition-colors ${isActive
+                        ? "border-[#38BDF8] bg-[#13161A] text-[#E6E8EB]"
+                        : "border-transparent text-[#707987] hover:bg-[#0E1013] hover:text-[#A5ABB4]"
+                      }`}
+                  >
+                    <Glyph
+                      size={15}
+                      className={isActive ? "text-[#38BDF8]" : "text-[#707987] group-hover:text-[#A5ABB4]"}
+                    />
+                    <span className="truncate">{labelText}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </aside>
+
+          {/* Workspace Content Region */}
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#08090B]">
+            {/* Secondary Navigation Sub-Bar */}
+            {(!settingsOpen && activeModule === "market") && (
+              <div className="relative flex h-8 shrink-0 items-center justify-between border-b border-[#242830] bg-[#0B0D10] px-4 text-[11px] font-mono">
+                {/* MARKET Sub-Tabs */}
+                {activeModule === "market" && (
+                  <div className="flex h-full items-center gap-6 font-semibold">
+                    <button
+                      onClick={() => navigateMarketSubTab("nifty")}
+                      className={`relative h-full px-1 transition ${marketSubTab === "nifty"
+                          ? "text-[#E6E8EB] font-bold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#00C896]"
+                          : "text-[#707987] hover:text-[#A5ABB4]"
+                        }`}
+                    >
+                      NIFTY
+                    </button>
+                    <button
+                      onClick={() => navigateMarketSubTab("metrics")}
+                      className={`relative h-full px-1 transition ${marketSubTab === "metrics"
+                          ? "text-[#E6E8EB] font-bold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#38BDF8]"
+                          : "text-[#707987] hover:text-[#A5ABB4]"
+                        }`}
+                    >
+                      METRICS
+                    </button>
+                    <button
+                      onClick={() => navigateMarketSubTab("options")}
+                      className={`relative h-full px-1 transition ${marketSubTab === "options"
+                          ? "text-[#E6E8EB] font-bold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#8B5CF6]"
+                          : "text-[#707987] hover:text-[#A5ABB4]"
+                        }`}
+                    >
+                      OPTIONS
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
-          </main>
-        </div>
-      </div>
 
-      {/* Settings Modal */}
-      {settingsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-slate-800 bg-[#0f172a] shadow-2xl p-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
-              <div className="flex items-center gap-2">
-                <Sliders size={18} className="text-cyan-400" />
-                <h2 className="text-base font-bold text-white tracking-tight">System Control & Settings</h2>
-              </div>
-              <button
-                onClick={() => setSettingsModalOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-900 hover:text-white"
-              >
-                <X size={18} />
-              </button>
-            </div>
-            <SettingsDashboard />
+            {/* MAIN WORKSPACE COMPONENT RENDERER */}
+            <main className="min-w-0 flex-1 overflow-y-auto bg-[#08090B] p-2.5 sm:p-3 lg:p-3.5">
+              <WorkspaceErrorBoundary key={settingsOpen ? "settings" : activeModule} workspaceName={settingsOpen ? "SETTINGS" : String(activeModule).toUpperCase()}>
+                {settingsOpen ? (
+                  <SettingsWorkspace subTab={settingsSubTab} onBack={() => setSettingsOpen(false)} />
+                ) : activeModule === "trading_cheatsheet" ? (
+                  <TradingCheatsheetWorkspace />
+                ) : activeModule === "news" || (activeModule as string) === "journal" ? (
+                  <NewsWorkspace subTab={newsSubTab} onSelectSubTab={setNewsSubTab} />
+                ) : activeModule === "portfolio" ? (
+                  <PortfolioWorkspace />
+                ) : (activeModule as string) === "ardha_performance" ? (
+                  <SettingsWorkspace subTab="diagnostics" onBack={() => setSettingsOpen(false)} />
+                ) : activeModule === "market_intelligence" ||
+                   (activeModule as string) === "market_intelligence_v2" ||
+                   (activeModule as string) === "intelligence" ||
+                   (activeModule as string) === "pre_market_briefing" ||
+                   (activeModule as string) === "market_insights" ? (
+                  <MarketIntelligenceWorkspace />
+                ) : marketSubTab === "metrics" ? (
+                  <MarketPulseWorkspace />
+                ) : marketSubTab === "options" ? (
+                  <OptionsWorkspace />
+                ) : (
+                  <NiftyLiveWorkspace />
+                )}
+              </WorkspaceErrorBoundary>
+            </main>
           </div>
         </div>
-      )}
-    </div>
+
+        {/* Global Contextual Live Assistant Right-Side Panel */}
+        {assistantOpen && <LiveAssistantPanel />}
+
+        {/* Deep Dive Inspection Modal */}
+        {deepDive && <MarketDeepDive selection={deepDive} onBack={() => setDeepDive(null)} />}
+      </div>
+    </MarketInspectionProvider>
   );
 }
 

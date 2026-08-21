@@ -1598,6 +1598,129 @@ export interface LiveAssistantSnapshot {
   india_vix: number | null;
 }
 
+export interface CanonicalOpportunity {
+  opportunity_id: string;
+  runtime_id: string;
+  state_sequence: number;
+  created_at: string;
+  updated_at: string;
+  first_detected_at: string;
+  last_detected_at: string;
+  setup_type: string;
+  direction: "BULLISH" | "BEARISH";
+  underlying: string;
+  instrument_family: string;
+  market_session: string;
+  market_state: string;
+  freshness_state: string;
+  status: "RAW" | "WATCHING" | "QUALIFIED" | "TRADE_READY" | "BLOCKED" | "REJECTED" | "INVALIDATED" | "EXPIRED";
+  status_reason: string;
+  entry_reference: number;
+  entry_zone_low: number;
+  entry_zone_high: number;
+  invalidation_level: number;
+  target_reference: number;
+  target_zone_1: number;
+  target_zone_2: number;
+  estimated_reward: number;
+  estimated_risk: number;
+  reward_risk_ratio: number;
+  confidence_score: number;
+  quality_score: number;
+  priority_score: number;
+  detector_scores: Record<string, number>;
+  confirmation_signals: string[];
+  conflicting_signals: string[];
+  market_context_snapshot: Record<string, any>;
+  options_context_snapshot: Record<string, any>;
+  news_context_snapshot?: Record<string, any>;
+  macro_context_snapshot?: Record<string, any>;
+  expiry_at: string;
+  invalidated_at?: string | null;
+  source_detector: string;
+  detector_version: string;
+  scoring_version?: string;
+  qualification_version?: string;
+  config_version?: string;
+  explanation_tokens: string[];
+  explanation_fields: Record<string, any>;
+  data_quality: Record<string, any>;
+  blocking_reasons: string[];
+  transition_history: Array<{
+    timestamp: string;
+    previous_status: string;
+    new_status: string;
+    reason: string;
+    state_sequence: number;
+  }>;
+}
+
+export interface DetectorHealthInfo {
+  detector_id: string;
+  status: "HEALTHY" | "DEGRADED" | "BLOCKED" | "ERROR";
+  version: string;
+  last_evaluated?: string | null;
+  detections_today: number;
+  qualified_today: number;
+  blocked_today: number;
+  rejected_today: number;
+  errors: string[];
+  data_blockers: string[];
+}
+
+export interface ScanMetrics {
+  scan_duration_ms: number;
+  detector_duration_ms: number;
+  candidates_evaluated: number;
+  active_candidates: number;
+  last_scan_at: string;
+}
+
+export interface BestOpportunityPayload {
+  has_trade: boolean;
+  reason: string;
+  message: string;
+  opportunity: CanonicalOpportunity | null;
+}
+
+export interface OpportunityIntelligence {
+  best_opportunity: BestOpportunityPayload;
+  trade_ready: CanonicalOpportunity[];
+  watching: CanonicalOpportunity[];
+  blocked_recent: CanonicalOpportunity[];
+  rejected_recent: CanonicalOpportunity[];
+  invalidated_recent: CanonicalOpportunity[];
+  expired_recent: CanonicalOpportunity[];
+  detector_health: Record<string, DetectorHealthInfo>;
+  scan_metrics: ScanMetrics;
+  acceptance_status: string;
+  staging_mode_only: boolean;
+}
+
+export type NormalizedBrokerStatus =
+  | "CONNECTED_VERIFIED"
+  | "CONNECTED_AUTH_REQUIRED"
+  | "RECONNECTING"
+  | "DISCONNECTED"
+  | "BROKER_STATE_UNVERIFIED";
+
+export interface AuthoritativeBrokerHealth {
+  status: NormalizedBrokerStatus | string;
+  transport_connected: boolean;
+  authenticated: boolean;
+  session_valid: boolean;
+  execution_verified: boolean;
+  reconciliation_complete: boolean;
+  last_verified_at: string | null;
+  blocker_code: string | null;
+  connection_status?: string;
+  reconnect_required?: boolean;
+  last_successful_update?: string | null;
+  normalized_status?: NormalizedBrokerStatus | string;
+  last_authenticated_at?: string | null;
+  last_profile_validation?: string | null;
+}
+
 export interface CanonicalWorkstationState {
   schema_version: string;
   state_sequence: number;
@@ -1605,7 +1728,7 @@ export interface CanonicalWorkstationState {
   runtime_id: string;
   market_session: { status: string; is_closed: boolean };
   application_status: { status: string; read_only: boolean };
-  broker_status: { status: string; reconnect_required: boolean; last_successful_update: string | null };
+  broker_status: AuthoritativeBrokerHealth;
   market_feed_status: { status: string; source: string };
   market_data: any;
   technical_analysis: any;
@@ -1634,6 +1757,7 @@ export interface CanonicalWorkstationState {
   macro_intelligence?: any;
   unified_intelligence?: any;
   live_assistant_temporal_state?: LiveAssistantTemporalState | null;
+  opportunity_intelligence?: OpportunityIntelligence;
   warnings: string[];
   errors: string[];
 }

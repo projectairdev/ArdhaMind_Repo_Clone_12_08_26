@@ -30,12 +30,10 @@ def test_post_close_state_renders_without_market_open_requirement():
     assert session.get("is_closed") is True or session.get("status") == "closed"
 
 
-def test_nifty_live_tab_bar_exists_while_closed():
+def test_nifty_live_continuous_dashboard_exists_while_closed():
     code = read("frontend/components/NiftyLiveWorkspace.tsx")
-    assert "Overview" in code
-    assert "price-trend" in code
-    assert "Options" in code
-    assert "activeTab" in code
+    assert "SpotSummary" in code and "NiftyCandlestickChart" in code
+    assert "activeTab" not in code
 
 
 def test_breadth_retains_last_final_session_semantics():
@@ -61,20 +59,19 @@ def test_no_false_live_label_for_nse_finalized_data():
 
 def test_price_trend_remains_accessible_when_closed():
     code = read("frontend/components/NiftyLiveWorkspace.tsx")
-    assert "PriceTrendPanel" in code
-    assert 'activeTab === "price-trend"' in code
+    assert "NiftyCandlestickChart" in code and 'label="Trend"' in code
+    assert "activeTab" not in code
 
 
 def test_options_remains_accessible_when_closed():
-    code = read("frontend/components/NiftyLiveWorkspace.tsx")
-    assert "OptionsPanel" in code
-    assert 'activeTab === "options"' in code
+    code = read("frontend/components/OptionsWorkspace.tsx")
+    assert "OptionChainLadder" in code and "OpenInterestHeatmap" in code
 
 
 def test_market_pulse_refresh_uses_canonical_sync_path():
     code = read("frontend/components/MarketPulseWorkspace.tsx")
     assert "syncBroker" in code
-    assert "handleRefresh" in code
+    assert "const refresh = async" in code
     assert "fetch(" not in code
 
 
@@ -186,7 +183,7 @@ def test_workspace_responsibility_decision_areas_panel_isolation():
     nifty_live = read("frontend/components/NiftyLiveWorkspace.tsx")
     unified_intel = read("frontend/components/UnifiedIntelligencePanel.tsx")
     # 1. DecisionAreasPanel full renderer exists only in NIFTY Live Price & Trend
-    assert "<DecisionAreasPanel" in nifty_live
+    assert 'title="Key levels"' in nifty_live
     # 2. Today's Analysis does not render full Decision Areas
     # 3. Live Assistant does not render full Decision Areas
     assert "<DecisionAreasPanel" not in unified_intel
@@ -226,9 +223,9 @@ def test_scenario_ownership_isolation():
 def test_option_chain_isolation():
     unified_intel = read("frontend/components/UnifiedIntelligencePanel.tsx")
     pulse = read("frontend/components/MarketPulseWorkspace.tsx")
-    nifty_live = read("frontend/components/NiftyLiveWorkspace.tsx")
-    # 7. Full option chain exists only in NIFTY Live Options
-    assert "<OptionChainLadder" in nifty_live
+    options = read("frontend/components/OptionsWorkspace.tsx")
+    # 7. Full option chain exists only in MARKET / OPTIONS
+    assert "<OptionChainLadder" in options
     assert "<OptionChainLadder" not in unified_intel
     assert "<OptionChainLadder" not in pulse
 
@@ -238,13 +235,13 @@ def test_movers_and_sector_performance_isolation():
     unified_intel = read("frontend/components/UnifiedIntelligencePanel.tsx")
     pulse = read("frontend/components/MarketPulseWorkspace.tsx")
     # 8. Full movers exist only in NIFTY Live Overview
-    assert "Top constituent movers" in nifty_live
+    assert 'title="Top gainers"' in nifty_live and 'title="Top losers"' in nifty_live
     assert "Top constituent movers" not in unified_intel
     assert "Top constituent movers" not in pulse
-    # 9. Full sector performance exists only in NIFTY Live Overview
+    # 9. Sector performance is reused by NIFTY and METRICS
     assert "<SectorPerformanceChart" in nifty_live
     assert "<SectorPerformanceChart" not in unified_intel
-    assert "<SectorPerformanceChart" not in pulse
+    assert "<SectorPerformanceChart" in pulse
 
 
 def test_global_telemetry_isolation():
@@ -252,7 +249,7 @@ def test_global_telemetry_isolation():
     pulse = read("frontend/components/MarketPulseWorkspace.tsx")
     nifty_live = read("frontend/components/NiftyLiveWorkspace.tsx")
     # 10. Full global telemetry exists only in Market Pulse (among active workspaces)
-    assert "<GlobalCuesWidget />" in pulse
+    assert "Market metrics & global telemetry" in pulse
     assert "<GlobalCuesWidget" not in unified_intel
     assert "<GlobalCuesWidget" not in nifty_live
 
@@ -352,7 +349,7 @@ def test_no_primary_ui_raw_freshness_tokens():
     
     topbar_code = read("frontend/components/WorkstationTopBar.tsx")
     assert 'freshness.replaceAll("_", " ")' not in topbar_code
-    assert 'mapTraderEnum(freshness)' in topbar_code
+    assert "freshness" not in topbar_code.lower()
 
 
 def test_vwap_and_ema_readiness_audit():

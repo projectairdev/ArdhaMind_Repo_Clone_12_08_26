@@ -241,7 +241,7 @@ def test_global_markets_flat_layout():
 
 def test_sectors_sorting():
     code = read("frontend/components/visualizations/SectorPerformanceChart.tsx")
-    assert "sortBy" in code
+    assert "safeNumber(b.change_pct, 0) - safeNumber(a.change_pct, 0)" in code
     assert "change" in code
     assert "name" in code
 
@@ -273,10 +273,12 @@ def test_no_direct_fetch_in_react():
     # Only manual news refresh calls can hit fetch, but visual widgets should read read-only hooks
     pass
 
-def test_top_bar_timestamp_IST():
-    code = read("frontend/components/WorkstationTopBar.tsx")
-    assert "formatTimestampIST" in code
-    assert "notificationTime" in code
+def test_market_subnav_timestamp_IST_without_welcome_copy():
+    code = read("frontend/layout/DashboardLayout.tsx")
+    top_bar = read("frontend/components/WorkstationTopBar.tsx")
+    assert 'timeZone: "Asia/Kolkata"' in code and "hour12: true" in code
+    assert "marketClock.date" in code and "marketClock.time" in code
+    assert "Welcome back," not in top_bar and "Arjun" not in top_bar
 
 
 # 8. D.0.2 RENDER PATH, SORT OWNERSHIP, AND CONTRACT

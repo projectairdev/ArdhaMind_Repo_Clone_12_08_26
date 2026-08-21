@@ -60,6 +60,11 @@ class IBrokerGateway(ABC):
         pass
 
     @abstractmethod
+    def calculate_order_margins(self, orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Calculates margin requirements for order parameters via Kite Connect order_margins API."""
+        pass
+
+    @abstractmethod
     def get_quote(self, symbols: List[str]) -> Dict[str, Any]:
         """Retrieves quotes for a list of instruments."""
         pass

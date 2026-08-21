@@ -79,8 +79,8 @@ function syncConfig(data: any) {
 
 function mapBackendContext(data: any): WorkspaceContext {
   syncConfig(data);
-  const bStatus = data.broker_status?.status || data.brokerState || data.broker_state || "DISCONNECTED";
-  const brokerState = bStatus === "connected" ? "CONNECTED" : bStatus === "session_expired" ? "TOKEN_EXPIRED" : bStatus;
+  const rawStatus = data.broker_status?.normalized_status || data.broker_status?.status || data.brokerState || data.broker_state || "DISCONNECTED";
+  const brokerState = rawStatus === "CONNECTED_VERIFIED" || rawStatus === "connected" ? "CONNECTED_VERIFIED" : rawStatus === "CONNECTED_AUTH_REQUIRED" || rawStatus === "session_expired" ? "CONNECTED_AUTH_REQUIRED" : rawStatus === "BROKER_STATE_UNVERIFIED" || rawStatus === "unverified" ? "BROKER_STATE_UNVERIFIED" : rawStatus;
   const mStatus = data.market_session?.status || data.marketState || data.market_state || "CLOSED";
   const marketState = mStatus === "open" ? "OPEN" : mStatus === "holiday" ? "HOLIDAY" : mStatus;
   return {

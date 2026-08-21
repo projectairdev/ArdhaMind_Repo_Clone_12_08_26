@@ -430,11 +430,90 @@ class MarketFeedService:
             session_status = "UNKNOWN"
         market_closed = any(value in session_status for value in ("CLOSED", "HOLIDAY", "POST_MARKET"))
 
+        # Total OI and Volumes
+        total_oi = total_call_oi + total_put_oi
+        total_volume = total_call_volume + total_put_volume
+        total_call_oi_cr = round(total_call_oi / 10000000.0, 2) if total_call_oi else 0.0
+        total_put_oi_cr = round(total_put_oi / 10000000.0, 2) if total_put_oi else 0.0
+        total_oi_cr = round(total_oi / 10000000.0, 2) if total_oi else 0.0
+        total_vol_lakh = round(total_volume / 100000.0, 2) if total_volume else 0.0
+
+        # Highest OI strikes (Walls & Concentrations)
+        highest_call_oi_strike = max(calls, key=lambda x: x["oi"])["strike"] if calls else None
+        highest_put_oi_strike = max(puts, key=lambda x: x["oi"])["strike"] if puts else None
+
+        sorted_calls_by_oi = sorted(calls, key=lambda x: x["oi"], reverse=True)
+        sorted_puts_by_oi = sorted(puts, key=lambda x: x["oi"], reverse=True)
+        oi_concentration = [
+            {"strike": c["strike"], "type": "CE", "oi_cr": round(c["oi"] / 10000000.0, 2), "oi": c["oi"]}
+            for c in sorted_calls_by_oi[:3]
+        ] + [
+            {"strike": p["strike"], "type": "PE", "oi_cr": round(p["oi"] / 10000000.0, 2), "oi": p["oi"]}
+            for p in sorted_puts_by_oi[:3]
+        ]
+
+        # Options Bias Synthesis
+        if pcr is not None:
+            if pcr >= 1.15:
+                options_bias = "BULLISH"
+            elif pcr <= 0.85:
+                options_bias = "BEARISH"
+            else:
+                options_bias = "NEUTRAL"
+        else:
+            options_bias = "NEUTRAL"
+
+        # Calendar DTE
+        try:
+            exp_date_obj = date.fromisoformat(str(resolution["expiry"])[:10])
+            today_date_obj = date.today()
+            calendar_dte = max(0, (exp_date_obj - today_date_obj).days)
+        except Exception:
+            calendar_dte = 1
+
+        # Black-Scholes Greeks for ATM Contract
+        atm_iv_pct = iv_summary.get("atm_average_iv")
+        rate_val = (iv_summary.get("rate") or {}).get("rate", 0.065)
+        t_years = iv_summary.get("time_to_expiry_years", 1.0 / 365.0)
+        atm_greeks = None
+        if atm_iv_pct and spot > 0 and t_years and t_years > 0:
+            try:
+                sigma = atm_iv_pct / 100.0
+                r = float(rate_val) if rate_val else 0.065
+                K = float(resolution["atm_strike"])
+                T = max(t_years, 0.0001)
+                d1 = (math.log(spot / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+                d2 = d1 - sigma * math.sqrt(T)
+                pdf_d1 = (1.0 / math.sqrt(2.0 * math.pi)) * math.exp(-0.5 * d1 * d1)
+
+                delta_ce = 0.5 * (1.0 + math.erf(d1 / math.sqrt(2.0)))
+                delta_pe = delta_ce - 1.0
+                gamma = pdf_d1 / (spot * sigma * math.sqrt(T))
+                vega = (spot * math.sqrt(T) * pdf_d1) / 100.0
+                theta_annual_ce = -(spot * pdf_d1 * sigma) / (2.0 * math.sqrt(T)) - r * K * math.exp(-r * T) * (0.5 * (1.0 + math.erf(d2 / math.sqrt(2.0))))
+                theta_ce = theta_annual_ce / 365.0
+
+                atm_greeks = {
+                    "delta_ce": round(delta_ce, 3),
+                    "delta_pe": round(delta_pe, 3),
+                    "delta": round(delta_ce, 3),
+                    "gamma": round(gamma, 5),
+                    "theta": round(theta_ce, 2),
+                    "vega": round(vega, 2),
+                    "status": "CALCULATED",
+                }
+            except Exception as e:
+                logger.warning("Failed to calculate ATM greeks: %s", e)
+                atm_greeks = {"delta": 0, "gamma": 0, "theta": 0, "vega": 0, "status": "UNAVAILABLE"}
+        else:
+            atm_greeks = {"delta": 0, "gamma": 0, "theta": 0, "vega": 0, "status": "UNAVAILABLE"}
+
         snapshot = {
             "status": "READY",
             "underlying_spot": spot,
             "expiry": resolution["expiry"],
             "current_weekly_expiry": resolution["expiry"],
+            "calendar_dte": calendar_dte,
             "all_expiries": resolution["all_expiries"],
             "snapshot_timestamp": snapshot_timestamp,
             "provider_timestamp": snapshot_timestamp,
@@ -457,6 +536,22 @@ class MarketFeedService:
             "max_pain": max_pain,
             "max_pain_provenance": {"expiry": resolution["expiry"], "strike_coverage": len(strike_rows),
                                     "timestamp": snapshot_timestamp},
+            "total_call_oi": total_call_oi,
+            "total_put_oi": total_put_oi,
+            "total_oi": total_oi,
+            "total_call_oi_cr": total_call_oi_cr,
+            "total_put_oi_cr": total_put_oi_cr,
+            "total_oi_cr": total_oi_cr,
+            "total_call_volume": total_call_volume,
+            "total_put_volume": total_put_volume,
+            "total_volume": total_volume,
+            "total_vol_lakh": total_vol_lakh,
+            "highest_call_oi_strike": highest_call_oi_strike,
+            "highest_put_oi_strike": highest_put_oi_strike,
+            "oi_concentration": oi_concentration,
+            "options_bias": options_bias,
+            "atm_greeks": atm_greeks,
+            "greeks": atm_greeks,
             "oi_change": oi_change,
             "atm_context": atm_context,
             "atm_iv": iv_summary.get("atm_average_iv"),

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, Union
+from src.models.opportunity_intelligence import OpportunityIntelligence
 
 
 FORBIDDEN_CANONICAL_KEYS = {
@@ -56,6 +57,7 @@ class CanonicalWorkstationState:
     unified_intelligence: Optional[dict[str, Any]] = None
     live_assistant_temporal_state: Optional[dict[str, Any]] = None
     session_story: Optional[dict[str, Any]] = None
+    opportunity_intelligence: Optional[Union[OpportunityIntelligence, dict[str, Any]]] = None
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -77,6 +79,11 @@ class CanonicalWorkstationState:
 
     def to_dict(self) -> dict[str, Any]:
         result = sanitize_read_only(asdict(self))
+        result["snapshot_id"] = f"snap_{self.state_sequence}_{self.generated_at}"
+        if "options" not in result and "option_intelligence" in result:
+            result["options"] = result["option_intelligence"]
+        if "marketContext" not in result and "market_data" in result:
+            result["marketContext"] = result["market_data"]
         self._assert_read_only(result)
         return result
 

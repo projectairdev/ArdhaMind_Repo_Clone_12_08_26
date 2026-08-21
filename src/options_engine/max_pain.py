@@ -21,7 +21,7 @@ class MaxPainResult:
     expected_pin_zone: List[float]
 
 
-def calculate_max_pain(chain: List[OptionChainContract]) -> MaxPainResult:
+def calculate_max_pain(chain: List[Any]) -> MaxPainResult:
     """
     Computes the Option Max Pain Strike, the distribution of pain across strikes,
     and identifies the expected pin zone where writer pain is minimized.
@@ -34,7 +34,16 @@ def calculate_max_pain(chain: List[OptionChainContract]) -> MaxPainResult:
         )
 
     # Get unique strike prices
-    strikes = sorted(list({c.strike for c in chain}))
+    def _strike(c: Any) -> float:
+        return float(getattr(c, "strike", None) if hasattr(c, "strike") else c.get("strike", 0))
+
+    def _itype(c: Any) -> str:
+        return str(getattr(c, "instrument_type", None) if hasattr(c, "instrument_type") else (c.get("instrument_type") or c.get("option_type", ""))).upper()
+
+    def _oi(c: Any) -> float:
+        return float(getattr(c, "oi", None) if hasattr(c, "oi") else c.get("oi", 0))
+
+    strikes = sorted(list({_strike(c) for c in chain if _strike(c) > 0}))
     if not strikes:
         return MaxPainResult(
             max_pain_strike=0.0,
@@ -52,13 +61,16 @@ def calculate_max_pain(chain: List[OptionChainContract]) -> MaxPainResult:
         put_pain = 0.0
         
         for c in chain:
+            c_strike = _strike(c)
+            c_type = _itype(c)
+            c_oi = _oi(c)
             # Pain is only experienced by writers when the contract is ITM at expiry S
-            if c.instrument_type == "CE":
-                if s > c.strike:
-                    call_pain += (s - c.strike) * c.oi
+            if c_type == "CE":
+                if s > c_strike:
+                    call_pain += (s - c_strike) * c_oi
             else:
-                if s < c.strike:
-                    put_pain += (c.strike - s) * c.oi
+                if s < c_strike:
+                    put_pain += (c_strike - s) * c_oi
 
         total_pain = call_pain + put_pain
         pain_distribution.append(

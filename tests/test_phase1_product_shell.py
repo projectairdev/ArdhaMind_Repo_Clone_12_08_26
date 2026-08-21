@@ -11,10 +11,11 @@ BRIDGE = (ROOT / "src/server_bridge.py").read_text(encoding="utf-8")
 
 
 def test_exact_primary_navigation_order():
-    labels = ["Market Command", "Market Pulse", "Intraday Intelligence", "Session Intelligence", "Scenario Outlook", "Pre-Market Intelligence", "Intelligence Feed", "System Control"]
+    labels = ["MARKET", "INTELLIGENCE", "PORTFOLIO", "JOURNAL"]
     positions = [LAYOUT.index(f'label: "{label}"') for label in labels]
     assert positions == sorted(positions)
-    assert LAYOUT.count("label:") >= 8
+    primary = LAYOUT.split("export const PRIMARY_MODULES", 1)[1].split("] as const", 1)[0]
+    assert primary.count("label:") == 4
 
 
 def test_removed_surfaces_are_not_in_active_import_graph():
@@ -25,9 +26,11 @@ def test_removed_surfaces_are_not_in_active_import_graph():
 
 
 def test_top_bar_has_only_product_status_categories():
-    for required in ["AIR", "ArdhaMind", "Feed", "Notifications", "Kite"]:
+    for required in ["Market:", "Broker:", "Live Assistant", "Settings"]:
         assert required in TOP_BAR
-    assert 'aria-label="Settings"' not in TOP_BAR
+    assert "Welcome back," not in TOP_BAR and "Arjun" not in TOP_BAR
+    assert "Refresh canonical workstation" not in TOP_BAR and "Notifications" not in TOP_BAR
+    assert "disabled title=\"Live Assistant — Phase 3, coming soon\"" in TOP_BAR
     for forbidden in ["Portfolio Value", "Today’s P&L", "Practice Mode", "workspace rotation", "user email"]:
         assert forbidden not in TOP_BAR
 

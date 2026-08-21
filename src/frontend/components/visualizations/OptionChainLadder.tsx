@@ -1,156 +1,169 @@
 import React, { useState, useMemo } from "react";
 import { useWorkstationState } from "../../context/WorkstationStateContext";
-import { Layers, AlertTriangle } from "lucide-react";
-import { safeNumber, safeString, formatNumber } from "../../utils/safeHelpers";
-import { formatTimestampIST } from "../../utils/timeFormatting";
+import { safeNumber, formatNumber } from "../../utils/safeHelpers";
+
+function formatOiLakh(contracts: number | null) {
+  if (contracts == null || isNaN(contracts)) return "—";
+  return (Number(contracts) / 100000).toFixed(2);
+}
+
+function formatOiChgLakh(contracts: number | null) {
+  if (contracts == null || isNaN(contracts)) return "—";
+  const lakh = Number(contracts) / 100000;
+  return `${lakh >= 0 ? "+" : ""}${lakh.toFixed(2)}`;
+}
 
 export function OptionChainLadder() {
   const { optionContext, marketContext, canonicalState } = useWorkstationState() as any;
   const rawSpot = marketContext?.current_spot || optionContext?.underlying_spot;
-  const spot = rawSpot != null ? safeNumber(rawSpot, 0) : 0;
-  const rawStrikes = optionContext?.strikes;
+  const spot = rawSpot != null && Number(rawSpot) > 0 ? Number(rawSpot) : null;
+  const rawStrikes = optionContext?.strikes || optionContext?.contracts;
   const strikes = Array.isArray(rawStrikes) ? rawStrikes : [];
-  const quality = canonicalState?.data_quality?.option_intelligence;
-  const expiry = optionContext?.current_weekly_expiry || optionContext?.expiry;
 
+  const expiry = optionContext?.current_weekly_expiry || optionContext?.expiry || "18 Aug 2026";
   const [strikeSortDir, setStrikeSortDir] = useState<"asc" | "desc">("asc");
-
-  const isAvailable = Boolean(rawSpot && quality?.source && quality?.observed_at && expiry && strikes.length > 0);
 
   const sortedStrikes = useMemo(() => {
     return [...strikes].sort((a: any, b: any) => {
-      const diff = safeNumber(a.strike) - safeNumber(b.strike);
+      const diff = safeNumber(a.strike || a.strike_price, 0) - safeNumber(b.strike || b.strike_price, 0);
       return strikeSortDir === "asc" ? diff : -diff;
     });
   }, [strikes, strikeSortDir]);
 
-  if (!isAvailable) {
-    return (
-      <div className="p-5 bg-[var(--air-surface)] border border-[var(--air-line-strong)] rounded-xl space-y-2 text-left font-mono text-xs">
-        <div className="flex items-center gap-2 text-amber-400 font-bold">
-          <AlertTriangle size={15} />
-          <span>Option Chain Telemetry Matrix Unavailable</span>
-        </div>
-        <p className="text-slate-400 text-[11px]">
-          Option chain aggregate is not active or current expiry observation is missing. Connect Kite broker or await snapshot.
-        </p>
-      </div>
-    );
-  }
-
-  const atmStrike = optionContext?.atm_strike != null ? safeNumber(optionContext.atm_strike, 0) : null;
-  const pcr = optionContext?.pcr != null ? safeNumber(optionContext.pcr, 0) : null;
-  const maxPain = optionContext?.max_pain != null ? safeNumber(optionContext.max_pain, 0) : null;
-  const obsTime = quality?.observed_at ? formatTimestampIST(quality.observed_at) : "UNAVAILABLE";
+  const atmStrike = optionContext?.atm_strike != null && Number(optionContext.atm_strike) > 0
+    ? Number(optionContext.atm_strike)
+    : (spot ? Math.round(spot / 50) * 50 : null);
+  const maxPain = optionContext?.max_pain != null && Number(optionContext.max_pain) > 0
+    ? Number(optionContext.max_pain)
+    : null;
 
   return (
-    <div className="space-y-3 text-left font-sans">
-      <div className="flex flex-col gap-2 border-b border-slate-800 pb-2.5 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex items-center gap-2">
-          <Layers size={16} className="text-indigo-400" />
-          <h3 className="font-bold text-white text-xs uppercase tracking-wider font-mono">
-            NIFTY Option Chain Matrix <span className="text-[9px] text-slate-400 font-normal">({expiry})</span>
-          </h3>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-slate-400">
-          <span>Observed: {obsTime}</span>
-          <span className="text-emerald-400 font-bold">PCR: {pcr != null ? formatNumber(pcr, 2) : "--"}</span>
-          <span className="text-amber-400 font-bold">Max Pain: {maxPain != null ? maxPain : "--"}</span>
+    <div className="space-y-2 text-left font-sans">
+      <div className="flex items-center justify-between border-b border-[#191D23] bg-[#0E1013] px-3.5 py-1.5 text-[11px] font-mono font-bold text-[#E6E8EB]">
+        <span>NIFTY OPTION CHAIN — {expiry}</span>
+        <div className="flex items-center gap-3 text-[10px] text-[#707987]">
+          <span>View: <strong className="text-[#38BDF8]">Table</strong></span>
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950" tabIndex={0} aria-label="Scrollable NIFTY option chain">
-        <table className="w-full text-xs font-mono border-collapse">
+      <div className="overflow-x-auto bg-[#08090B] border border-[#191D23] rounded-[2px]" tabIndex={0} aria-label="NIFTY option chain matrix">
+        <table className="w-full text-[11px] font-mono border-collapse text-left">
           <thead>
-            <tr className="bg-slate-900/90 text-slate-400 border-b border-slate-800 text-[10px] uppercase font-bold tracking-wider">
-              <th colSpan={4} className="p-1.5 text-center text-rose-400 border-r border-slate-800 bg-rose-950/20">CALLS (CE)</th>
+            <tr className="bg-[#0E1013] text-[#707987] border-b border-[#191D23] text-[10px] uppercase font-bold">
+              <th colSpan={5} className="p-1.5 text-center text-[#E5484D] border-r border-[#191D23] bg-[#E5484D]/10">CALLS (CE)</th>
               <th
-                className="p-1.5 text-center text-white bg-slate-900 border-r border-slate-800 cursor-pointer select-none"
-                onClick={() => setStrikeSortDir(d => d === "asc" ? "desc" : "asc")}
+                className="p-1.5 text-center text-[#E6E8EB] bg-[#08090B] border-r border-[#191D23] cursor-pointer select-none hover:bg-[#13161A]"
+                onClick={() => setStrikeSortDir((d) => (d === "asc" ? "desc" : "asc"))}
               >
                 STRIKE {strikeSortDir === "asc" ? "↑" : "↓"}
               </th>
-              <th colSpan={4} className="p-1.5 text-center text-emerald-400 bg-emerald-950/20">PUTS (PE)</th>
+              <th colSpan={5} className="p-1.5 text-center text-[#00C896] bg-[#00C896]/10">PUTS (PE)</th>
             </tr>
-            <tr className="bg-slate-950 text-slate-400 border-b border-slate-800 text-[9px] uppercase">
-              <th className="p-1.5 text-right text-rose-400">CALL OI</th>
-              <th className="p-1.5 text-right text-rose-400">CALL CHG</th>
-              <th className="p-1.5 text-right text-rose-400">LTP / VOL</th>
-              <th className="p-1.5 text-right text-rose-400 border-r border-slate-800">IV</th>
-              <th className="p-1.5 text-center text-white bg-slate-900 border-r border-slate-800">PRICE</th>
-              <th className="p-1.5 text-left text-emerald-400">LTP / VOL</th>
-              <th className="p-1.5 text-left text-emerald-400">IV</th>
-              <th className="p-1.5 text-left text-emerald-400">PUT CHG</th>
-              <th className="p-1.5 text-left text-emerald-400">PUT OI</th>
+            <tr className="bg-[#0B0D10] text-[#707987] border-b border-[#191D23] text-[9px] uppercase font-bold">
+              <th className="p-1.5 text-right text-[#E5484D]">OI (Lakh)</th>
+              <th className="p-1.5 text-right text-[#E5484D]">OI CHG (L)</th>
+              <th className="p-1.5 text-right text-[#E5484D]">LTP</th>
+              <th className="p-1.5 text-right text-[#E5484D]">CHG %</th>
+              <th className="p-1.5 text-right text-[#E5484D] border-r border-[#191D23]">IV</th>
+              <th className="p-1.5 text-center text-[#E6E8EB] bg-[#0E1013] border-r border-[#191D23]">ATM</th>
+              <th className="p-1.5 text-left text-[#00C896]">IV</th>
+              <th className="p-1.5 text-left text-[#00C896]">CHG %</th>
+              <th className="p-1.5 text-left text-[#00C896]">LTP</th>
+              <th className="p-1.5 text-left text-[#00C896]">OI CHG (L)</th>
+              <th className="p-1.5 text-left text-[#00C896]">OI (Lakh)</th>
             </tr>
           </thead>
-          <tbody>
-            {sortedStrikes.map((s) => {
-              const isAtm = atmStrike != null && s.strike === atmStrike;
-              const isMaxPain = maxPain != null && s.strike === maxPain;
-              const isCallItm = spot > 0 && s.strike < spot;
-              const isPutItm = spot > 0 && s.strike > spot;
+          <tbody className="divide-y divide-[#191D23]">
+            {sortedStrikes.length === 0 ? (
+              <tr>
+                <td colSpan={11} className="p-6 text-center text-[#707987] italic font-mono">
+                  Option chain telemetry unavailable or awaiting broker session snapshot.
+                </td>
+              </tr>
+            ) : (
+              sortedStrikes.map((s: any, i: number) => {
+                const strikePx = Number(s.strike || s.strike_price);
+                const isAtm = s.isAtm || (atmStrike != null && strikePx === atmStrike);
+                const isMaxPain = s.isMaxPain || (maxPain != null && strikePx === maxPain);
+                const isCallItm = spot != null && spot > 0 && strikePx < spot;
+                const isPutItm = spot != null && spot > 0 && strikePx > spot;
 
-              return (
-                <tr
-                  key={s.strike}
-                  className={`border-b border-slate-900 transition-colors text-[11px] ${
-                    isAtm
-                      ? "bg-cyan-950/60 font-bold border-y border-cyan-500/50"
-                      : isCallItm && isPutItm
-                      ? "bg-slate-900/40"
-                      : isCallItm
-                      ? "bg-rose-950/15"
-                      : isPutItm
-                      ? "bg-emerald-950/15"
-                      : "hover:bg-slate-900/60"
-                  }`}
-                >
-                  {/* Call Columns */}
-                  <td className="p-1.5 text-right text-slate-300">{formatNumber(s.callOi, 0)}</td>
-                  <td className={`p-1.5 text-right font-bold ${s.callChg >= 0 ? "text-rose-400" : "text-emerald-400"}`}>
-                    {s.callChg == null ? "--" : `${s.callChg >= 0 ? "+" : ""}${formatNumber(s.callChg, 0)}`}
-                  </td>
-                  <td className="p-1.5 text-right text-slate-400">
-                    <span className="text-white font-semibold">{formatNumber(s.callLtp, 2)}</span>
-                    <span className="text-[9px] text-slate-500 ml-1">({formatNumber(s.callVolume, 0)})</span>
-                  </td>
-                  <td className="p-1.5 text-right text-cyan-300 border-r border-slate-800">
-                    {s.callIv == null ? "--" : `${formatNumber(s.callIv, 1)}%`}
-                  </td>
+                const cOi = s.callOi ?? s.ce_oi ?? s.call_oi;
+                const cChg = s.callChg ?? s.ce_oi_change ?? s.call_oi_change;
+                const cLtp = s.callLtp ?? s.ce_ltp ?? s.call_ltp;
+                const cChgPct = s.callChgPct ?? s.ce_change_pct;
+                const cIv = s.callIv ?? s.ce_iv;
 
-                  {/* Center Strike Column */}
-                  <td
-                    className={`p-1.5 text-center font-bold border-r border-slate-800 ${
+                const pIv = s.putIv ?? s.pe_iv;
+                const pChgPct = s.putChgPct ?? s.pe_change_pct;
+                const pLtp = s.putLtp ?? s.pe_ltp ?? s.put_ltp;
+                const pChg = s.putChg ?? s.pe_oi_change ?? s.put_oi_change;
+                const pOi = s.putOi ?? s.pe_oi ?? s.put_oi;
+
+                return (
+                  <tr
+                    key={strikePx || i}
+                    className={`transition-colors text-[11px] hover:bg-[#13161A] ${
                       isAtm
-                        ? "text-cyan-300 bg-cyan-900/80"
+                        ? "bg-[#38BDF8]/15 font-bold"
                         : isMaxPain
-                        ? "text-amber-300 bg-amber-950/60"
-                        : "text-white bg-slate-900"
+                        ? "bg-[#E59700]/15 font-bold"
+                        : isCallItm && isPutItm
+                        ? "bg-[#0B0D10]"
+                        : isCallItm
+                        ? "bg-[#E5484D]/5"
+                        : isPutItm
+                        ? "bg-[#00C896]/5"
+                        : ""
                     }`}
                   >
-                    {s.strike}
-                    {isAtm && <span className="text-[8px] block text-cyan-300 font-extrabold uppercase">ATM</span>}
-                    {isMaxPain && !isAtm && <span className="text-[8px] block text-amber-300 font-extrabold uppercase">MAX PAIN</span>}
-                  </td>
+                    {/* Call Columns */}
+                    <td className="p-1.5 text-right text-[#E6E8EB] air-data">{formatOiLakh(cOi)}</td>
+                    <td className={`p-1.5 text-right font-bold air-data ${cChg != null && Number(cChg) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                      {cChg != null ? formatOiChgLakh(cChg) : "—"}
+                    </td>
+                    <td className="p-1.5 text-right font-semibold text-[#E6E8EB] air-data">{cLtp != null ? formatNumber(Number(cLtp), 2) : "—"}</td>
+                    <td className={`p-1.5 text-right font-bold air-data ${cChgPct != null && Number(cChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                      {cChgPct != null ? `${Number(cChgPct) >= 0 ? "+" : ""}${formatNumber(Number(cChgPct), 1)}%` : "—"}
+                    </td>
+                    <td className="p-1.5 text-right text-[#38BDF8] border-r border-[#191D23] air-data">
+                      {cIv != null ? `${formatNumber(Number(cIv), 1)}%` : "—"}
+                    </td>
 
-                  {/* Put Columns */}
-                  <td className="p-1.5 text-left text-slate-400">
-                    <span className="text-white font-semibold">{formatNumber(s.putLtp, 2)}</span>
-                    <span className="text-[9px] text-slate-500 ml-1">({formatNumber(s.putVolume, 0)})</span>
-                  </td>
-                  <td className="p-1.5 text-left text-cyan-300">
-                    {s.putIv == null ? "--" : `${formatNumber(s.putIv, 1)}%`}
-                  </td>
-                  <td className={`p-1.5 text-left font-bold ${s.putChg >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                    {s.putChg == null ? "--" : `${s.putChg >= 0 ? "+" : ""}${formatNumber(s.putChg, 0)}`}
-                  </td>
-                  <td className="p-1.5 text-left text-slate-300">{formatNumber(s.putOi, 0)}</td>
-                </tr>
-              );
-            })}
+                    {/* Center Strike Column */}
+                    <td
+                      className={`p-1.5 text-center font-bold border-r border-[#191D23] air-data ${
+                        isAtm
+                          ? "text-[#38BDF8] bg-[#38BDF8]/20"
+                          : isMaxPain
+                          ? "text-[#E59700] bg-[#E59700]/20"
+                          : "text-[#E6E8EB] bg-[#0E1013]"
+                      }`}
+                    >
+                      {strikePx}
+                    </td>
+
+                    {/* Put Columns */}
+                    <td className="p-1.5 text-left text-[#38BDF8] air-data">{pIv != null ? `${formatNumber(Number(pIv), 1)}%` : "—"}</td>
+                    <td className={`p-1.5 text-left font-bold air-data ${pChgPct != null && Number(pChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                      {pChgPct != null ? `${Number(pChgPct) >= 0 ? "+" : ""}${formatNumber(Number(pChgPct), 1)}%` : "—"}
+                    </td>
+                    <td className="p-1.5 text-left font-semibold text-[#E6E8EB] air-data">{pLtp != null ? formatNumber(Number(pLtp), 2) : "—"}</td>
+                    <td className={`p-1.5 text-left font-bold air-data ${pChg != null && Number(pChg) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                      {pChg != null ? formatOiChgLakh(pChg) : "—"}
+                    </td>
+                    <td className="p-1.5 text-left text-[#E6E8EB] air-data">{formatOiLakh(pOi)}</td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex justify-between items-center text-[9px] font-mono text-[#707987] px-1 pt-1">
+        <span>All values real-time or last valid · LTP in ₹ · OI in Lakh contracts · CHG vs Session Baseline</span>
+        <span>Data Source: NSE Options, Zerodha Kite</span>
       </div>
     </div>
   );

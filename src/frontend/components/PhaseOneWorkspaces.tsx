@@ -13,6 +13,7 @@ import { NewsIntelligence } from "./NewsIntelligence";
 import { IntradayAssistant } from "./IntradayAssistant";
 import { NiftyLiveWorkspace as NiftyLiveView } from "./NiftyLiveWorkspace";
 import { SettingsDashboard } from "./SettingsDashboard";
+import { SettingsWorkspace as SettingsWorkspaceNew } from "./settings/SettingsWorkspace";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TodaysAnalysisSynthesis } from "./UnifiedIntelligencePanel";
 import { DataDetailsDrawer } from "./intelligence/CanonicalPresentation";
@@ -156,28 +157,28 @@ export function TodaysAnalysisWorkspace() {
   );
 }
 
+import { NewsWorkspace } from "./news/NewsWorkspace";
+
 export function NewsUpdatesWorkspace() {
   return (
     <div className="space-y-5">
-      <NewsIntelligence />
+      <NewsWorkspace />
     </div>
   );
 }
+
+import { MarketIntelligenceWorkspace } from "./MarketIntelligenceWorkspace";
 
 export function LiveAssistantWorkspace() {
   return (
     <div className="space-y-5">
-      <IntradayAssistant />
+      <MarketIntelligenceWorkspace />
     </div>
   );
 }
 
-export function SettingsWorkspace() {
-  return (
-    <div className="space-y-5">
-      <SettingsDashboard />
-    </div>
-  );
+export function SettingsWorkspace(props: any) {
+  return <SettingsWorkspaceNew {...props} />;
 }
 
 export function ForwardOutlookWorkspace() {

@@ -99,6 +99,19 @@ export interface WorkstationStateContextProps {
   setError: (err: string | null) => void;
   stateHistory: LiveAssistantSnapshot[];
   liveEventStream: LiveAssistantMaterialEvent[];
+  liveLatencyMetrics: {
+    p50: number;
+    p95: number;
+    lastTotalMs: number;
+    sampleCount: number;
+  };
+  streamDiagnostics: {
+    ticksReceived: number;
+    ticksProcessed: number;
+    duplicatesRejected: number;
+    outOfOrderRejected: number;
+    staleRejected: number;
+  };
 }
 
 const defaultWorkspaceContext: WorkspaceContext = {
@@ -752,6 +765,42 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
   const [diagnosticsDetails, setDiagnosticsDetails] = useState<string>("");
   const [liveTickPrice, setLiveTickPrice] = useState<number | null>(null);
+  const [liveNiftyTick, setLiveNiftyTick] = useState<{
+    price: number;
+    open?: number;
+    high?: number;
+    low?: number;
+    previous_close?: number;
+    change_points?: number;
+    change_pct?: number;
+    observed_at?: string;
+    sequence?: number;
+  } | null>(null);
+  const [liveOptionLTPs, setLiveOptionLTPs] = useState<Record<string, {
+    ltp: number;
+    volume?: number;
+    oi?: number;
+    bid?: number;
+    ask?: number;
+    observed_at?: string;
+  }>>({});
+  const [liveVix, setLiveVix] = useState<{
+    value: number;
+    change?: number;
+    change_pct?: number;
+    observed_at?: string;
+  } | null>(null);
+
+  const [latencyRingBuffer, setLatencyRingBuffer] = useState<number[]>([]);
+  const [lastLatencyTotal, setLastLatencyTotal] = useState<number>(0);
+  const [diagCounters, setDiagCounters] = useState({
+    ticksReceived: 0,
+    ticksProcessed: 0,
+    duplicatesRejected: 0,
+    outOfOrderRejected: 0,
+    staleRejected: 0
+  });
+
   // Bounded snapshot history: max 300 lightweight snapshots (set by backend tick)
   // Backend keys: market_regime → "Regime shifted", alignment → "Market Alignment shifted",
   //               advances → "Breadth changed", pcr (threshold 0.02), india_vix (threshold 0.1)
@@ -783,11 +832,18 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
   const workspaceContext = useMemo<WorkspaceContext>(() => {
     const state = canonicalState ?? lastValidState;
     if (!state) return defaultWorkspaceContext;
-    const bStatus = state.broker_status?.status;
+    const rawBroker = state.broker_status;
+    const normStatus = rawBroker?.normalized_status || (
+      rawBroker?.status === "CONNECTED_VERIFIED" || rawBroker?.execution_verified === true ? "CONNECTED_VERIFIED" :
+      rawBroker?.status === "session_expired" || rawBroker?.status === "token_expired" || rawBroker?.status === "CONNECTED_AUTH_REQUIRED" || rawBroker?.blocker_code === "AUTH_REQUIRED" || rawBroker?.authenticated === false ? "CONNECTED_AUTH_REQUIRED" :
+      rawBroker?.status === "reconnecting" || rawBroker?.status === "RECONNECTING" ? "RECONNECTING" :
+      rawBroker?.status === "unverified" || rawBroker?.status === "BROKER_STATE_UNVERIFIED" || rawBroker?.status === "connected" ? "BROKER_STATE_UNVERIFIED" :
+      "DISCONNECTED"
+    );
     const mStatus = state.market_session?.status;
     return {
       ...defaultWorkspaceContext,
-      brokerState: bStatus === "connected" ? "CONNECTED" : bStatus === "session_expired" ? "TOKEN_EXPIRED" : "DISCONNECTED",
+      brokerState: normStatus,
       marketState: mStatus === "open" ? "OPEN" : mStatus === "holiday" ? "HOLIDAY" : "CLOSED",
       timestamp: state.generated_at
     };
@@ -813,31 +869,60 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
     if (!raw) return defaultMarketContext;
     const feedHealth = state?.market_feed_status?.status?.toUpperCase() ?? "OFFLINE";
     const feedLatency = state?.data_quality?.market_data?.age_seconds ? state.data_quality.market_data.age_seconds * 1000 : 0;
-    const lastTickTime = state?.data_quality?.market_data?.observed_at ?? "";
-    const currentSpot = liveTickPrice ?? raw.current_spot ?? 0;
+    const lastTickTime = liveNiftyTick?.observed_at ?? state?.data_quality?.market_data?.observed_at ?? "";
+    const currentSpot = liveNiftyTick?.price ?? liveTickPrice ?? raw.current_spot ?? 0;
+    const spotChange = liveNiftyTick?.change_points ?? raw.spot_change ?? 0;
+    const spotChangePct = liveNiftyTick?.change_pct ?? raw.spot_change_pct ?? 0;
+    const sessionHigh = liveNiftyTick?.high != null && liveNiftyTick.high > 0 ? liveNiftyTick.high : raw.high;
+    const sessionLow = liveNiftyTick?.low != null && liveNiftyTick.low > 0 ? liveNiftyTick.low : raw.low;
+
     return {
       ...defaultMarketContext,
       ...raw,
       current_spot: currentSpot,
       ltp: currentSpot,
+      spot_change: spotChange,
+      spot_change_pct: spotChangePct,
+      high: sessionHigh,
+      low: sessionLow,
       feed_health: feedHealth as any,
       feed_latency_ms: feedLatency,
       last_tick_time: lastTickTime
     };
-  }, [canonicalState, lastValidState, liveTickPrice]);
+  }, [canonicalState, lastValidState, liveTickPrice, liveNiftyTick]);
 
   const optionContext = useMemo<OptionContext>(() => {
     const state = canonicalState ?? lastValidState;
     const raw = state?.option_intelligence;
     if (!raw) return defaultOptionContext;
-    const currentSpot = liveTickPrice ?? state?.market_data?.current_spot ?? 0;
+    const currentSpot = liveNiftyTick?.price ?? liveTickPrice ?? state?.market_data?.current_spot ?? 0;
+    const contracts = raw.chain_contracts || raw.contracts || [];
+
+    // Overlay live LTPs onto option chain contracts
+    const updatedContracts = contracts.map((c: any) => {
+      const sym = c.tradingsymbol || c.symbol;
+      const live = sym ? liveOptionLTPs[sym] : null;
+      if (!live) return c;
+      return {
+        ...c,
+        ltp: live.ltp > 0 ? live.ltp : c.ltp,
+        bid: live.bid != null && live.bid > 0 ? live.bid : c.bid,
+        ask: live.ask != null && live.ask > 0 ? live.ask : c.ask,
+        volume: live.volume != null && live.volume > 0 ? live.volume : c.volume,
+        oi: live.oi != null && live.oi > 0 ? live.oi : c.oi,
+        last_trade_time: live.observed_at || c.last_trade_time
+      };
+    });
+
     return {
       ...defaultOptionContext,
       ...raw,
       underlying_spot: currentSpot,
-      atm_strike: raw.atm_strike ?? 0
+      atm_strike: raw.atm_strike ?? (currentSpot > 0 ? Math.round(currentSpot / 50) * 50 : 0),
+      chain_contracts: updatedContracts,
+      contracts: updatedContracts
     };
-  }, [canonicalState, lastValidState, liveTickPrice]);
+  }, [canonicalState, lastValidState, liveTickPrice, liveNiftyTick, liveOptionLTPs]);
 
   const eveningReport = useMemo<EveningReport>(() => {
     const state = canonicalState ?? lastValidState;
@@ -1144,25 +1229,86 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
               console.log("[BOOT-FE] first WS snapshot received");
             }
             acceptCanonicalState(msg.data);
-          } else if (msg.type === "auth_event") {
-            const bState = msg.brokerState;
-            const bStatus = bState === "CONNECTED" ? "connected" : bState === "TOKEN_EXPIRED" ? "session_expired" : "disconnected";
+          } else if (msg.type === "auth_event" || msg.type === "phase3_broker_health_updated") {
+            const raw = msg.data || {};
+            const normStatus = raw.status || raw.normalized_status || msg.brokerState || "DISCONNECTED";
             const updateBroker = (prev: any) => {
               if (!prev) return null;
               return {
                 ...prev,
                 broker_status: {
                   ...prev.broker_status,
-                  status: bStatus,
-                  reconnect_required: bStatus === "session_expired",
-                  last_successful_update: msg.timestamp || prev.broker_status.last_successful_update
+                  ...raw,
+                  status: normStatus,
+                  normalized_status: normStatus,
+                  execution_verified: normStatus === "CONNECTED_VERIFIED",
+                  authenticated: normStatus === "CONNECTED_VERIFIED" || normStatus === "BROKER_STATE_UNVERIFIED",
+                  session_valid: normStatus === "CONNECTED_VERIFIED" || normStatus === "BROKER_STATE_UNVERIFIED",
+                  reconciliation_complete: normStatus === "CONNECTED_VERIFIED",
+                  reconnect_required: normStatus !== "CONNECTED_VERIFIED",
+                  last_successful_update: msg.timestamp || prev.broker_status?.last_successful_update
                 }
               };
             };
             setCanonicalState(prev => updateBroker(prev));
             setLastValidState(prev => updateBroker(prev));
             setLastSyncTime(new Date().toLocaleTimeString());
-            console.log("[AUTH_EVENT] brokerState updated to:", msg.brokerState);
+            console.log("[AUTH_EVENT] brokerState updated to:", normStatus);
+          } else if (msg.type === "live_event") {
+            const eventData = msg.data;
+            const t_now = Date.now();
+            if (eventData.transport_sent_at || eventData.backend_received_at) {
+              try {
+                const t_ref = new Date(eventData.transport_sent_at || eventData.backend_received_at).getTime();
+                const latency = Math.max(0, t_now - t_ref);
+                setApiLatency(latency);
+                setLastLatencyTotal(latency);
+                setLatencyRingBuffer(prev => [...prev.slice(-99), latency]);
+              } catch (e) {
+                console.warn("Latency calculation error:", e);
+              }
+            }
+
+            const sym = eventData.symbol;
+            if (sym === "NSE:NIFTY 50" || sym === "NIFTY 50" || sym === "NIFTY") {
+              setLiveNiftyTick({
+                price: eventData.price,
+                open: eventData.open,
+                high: eventData.high,
+                low: eventData.low,
+                previous_close: eventData.previous_close,
+                change_points: eventData.change_points,
+                change_pct: eventData.change_pct,
+                observed_at: eventData.provider_observed_at,
+                sequence: eventData.state_sequence
+              });
+              setLiveTickPrice(eventData.price);
+            } else if (sym === "INDIA VIX" || sym === "NSE:INDIA VIX") {
+              setLiveVix({
+                value: eventData.price,
+                change: eventData.change_points,
+                change_pct: eventData.change_pct,
+                observed_at: eventData.provider_observed_at
+              });
+            } else if (sym) {
+              setLiveOptionLTPs(prev => ({
+                ...prev,
+                [sym]: {
+                  ltp: eventData.price,
+                  volume: eventData.volume,
+                  oi: eventData.oi,
+                  bid: eventData.bid,
+                  ask: eventData.ask,
+                  observed_at: eventData.provider_observed_at
+                }
+              }));
+            }
+
+            setDiagCounters(prev => ({
+              ...prev,
+              ticksReceived: prev.ticksReceived + 1,
+              ticksProcessed: prev.ticksProcessed + 1
+            }));
           } else if (msg.type === "tick") {
             const symbol = msg.symbol;
             const tick = msg.data;
@@ -1173,14 +1319,54 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
                 const t_recv = new Date(tick.backend_forward_timestamp).getTime();
                 const latency = t_now - t_recv;
                 setApiLatency(Math.max(0, latency));
+                setLastLatencyTotal(latency);
+                setLatencyRingBuffer(prev => [...prev.slice(-99), latency]);
               } catch (e) {
                 console.warn("Failed to calculate latency:", e);
               }
             }
 
-            if (symbol === "NSE:NIFTY 50") {
-              setLiveTickPrice(tick.last_price);
+            if (symbol === "NSE:NIFTY 50" || symbol === "NIFTY 50" || symbol === "NIFTY") {
+              if (tick.last_price > 0) {
+                setLiveTickPrice(tick.last_price);
+                setLiveNiftyTick(prev => ({
+                  price: tick.last_price,
+                  open: tick.ohlc?.open ?? prev?.open,
+                  high: tick.ohlc?.high ?? prev?.high,
+                  low: tick.ohlc?.low ?? prev?.low,
+                  previous_close: tick.ohlc?.close ?? prev?.previous_close,
+                  change_points: prev?.previous_close ? tick.last_price - prev.previous_close : prev?.change_points,
+                  change_pct: prev?.previous_close ? ((tick.last_price - prev.previous_close) / prev.previous_close) * 100 : prev?.change_pct,
+                  observed_at: tick.exchange_timestamp,
+                  sequence: tick.state_sequence
+                }));
+              }
+            } else if (symbol === "INDIA VIX" || symbol === "NSE:INDIA VIX") {
+              if (tick.last_price > 0) {
+                setLiveVix({
+                  value: tick.last_price,
+                  observed_at: tick.exchange_timestamp
+                });
+              }
+            } else if (symbol) {
+              if (tick.last_price > 0) {
+                setLiveOptionLTPs(prev => ({
+                  ...prev,
+                  [symbol]: {
+                    ltp: tick.last_price,
+                    volume: tick.volume,
+                    oi: tick.oi,
+                    observed_at: tick.exchange_timestamp
+                  }
+                }));
+              }
             }
+
+            setDiagCounters(prev => ({
+              ...prev,
+              ticksReceived: prev.ticksReceived + 1,
+              ticksProcessed: prev.ticksProcessed + 1
+            }));
           }
         } catch (err) {
           console.warn("WebSocket message parsing error:", err);
@@ -1218,6 +1404,21 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
       }
     };
   }, [acceptCanonicalState]);
+
+  const liveLatencyMetrics = useMemo(() => {
+    if (latencyRingBuffer.length === 0) {
+      return { p50: 0, p95: 0, lastTotalMs: lastLatencyTotal, sampleCount: 0 };
+    }
+    const sorted = [...latencyRingBuffer].sort((a, b) => a - b);
+    const p50 = sorted[Math.floor(sorted.length * 0.5)] || 0;
+    const p95 = sorted[Math.floor(sorted.length * 0.95)] || 0;
+    return {
+      p50: Math.round(p50),
+      p95: Math.round(p95),
+      lastTotalMs: Math.round(lastLatencyTotal),
+      sampleCount: latencyRingBuffer.length
+    };
+  }, [latencyRingBuffer, lastLatencyTotal]);
 
   return (
     <WorkstationStateContext.Provider
@@ -1266,6 +1467,8 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
         setError,
         stateHistory,
         liveEventStream,
+        liveLatencyMetrics,
+        streamDiagnostics: diagCounters,
       }}
     >
       {children}

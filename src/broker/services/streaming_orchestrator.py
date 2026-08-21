@@ -53,6 +53,15 @@ class StreamingOrchestrator:
 
         # Active streaming cache (stores latest tick received per symbol)
         self.latest_ticks: Dict[str, Any] = {}
+        self._last_tick_timestamps: Dict[int, float] = {}
+
+        # Telemetry & Diagnostics Counters
+        self.ticks_received: int = 0
+        self.ticks_processed: int = 0
+        self.duplicates_rejected: int = 0
+        self.out_of_order_rejected: int = 0
+        self.stale_response_rejected: int = 0
+        self.last_atm_strike: Optional[int] = None
 
         # Stream Telemetry
         self.connection_started_at: Optional[float] = None
@@ -197,6 +206,11 @@ class StreamingOrchestrator:
             "last_valid_tick_time": _iso(last_tick_time),
             "last_valid_nifty_time": last_nifty_time,
             "tick_age_seconds": obs_age if (obs_age is not None and obs_age < 900) else None,
+            "ticks_received": self.ticks_received,
+            "ticks_processed": self.ticks_processed,
+            "duplicates_rejected": self.duplicates_rejected,
+            "out_of_order_rejected": self.out_of_order_rejected,
+            "stale_response_rejected": self.stale_response_rejected,
             "connection_telemetry": telemetry_events
         }
 
@@ -257,26 +271,66 @@ class StreamingOrchestrator:
 
     def _on_tick_received(self, raw_ticks: List[Dict[str, Any]]) -> None:
         """
-        Ingests and routes ticks.
+        Ingests, validates, orders, and routes ticks.
+        Guarantees:
+        - Out-of-order rejection
+        - Zero is not fallback (does not overwrite positive price with 0.0)
+        - Latency tracking & counter increments
         """
+        if not raw_ticks:
+            return
+
+        self.ticks_received += len(raw_ticks)
         tick_models = StreamingService.ingest_ticks(raw_ticks)
         self.health_monitor.record_ticks(tick_models)
 
-        # Map raw ticks by instrument token for easy depth retrieval
+        # Map raw ticks by instrument token for depth retrieval
         raw_map = {r.get("instrument_token"): r for r in raw_ticks if r.get("instrument_token")}
 
         # Update in-memory cache
         for tick in tick_models:
-            raw = raw_map.get(tick.instrument_token, {})
+            token = tick.instrument_token
+            # Timestamp ordering check
+            try:
+                from datetime import datetime as dt
+                if isinstance(tick.timestamp, str):
+                    ts_val = dt.fromisoformat(tick.timestamp.replace("Z", "+00:00")).timestamp()
+                elif isinstance(tick.timestamp, (int, float)):
+                    ts_val = float(tick.timestamp)
+                else:
+                    ts_val = time.time()
+            except Exception:
+                ts_val = time.time()
+
+            last_ts = self._last_tick_timestamps.get(token)
+            if last_ts is not None and ts_val < last_ts:
+                self.out_of_order_rejected += 1
+                logger.debug(f"Rejected out-of-order tick for token {token} ({ts_val} < {last_ts})")
+                continue
+
+            existing = self.latest_ticks.get(tick.symbol)
+            # Duplicate check
+            if existing and existing.get("last_price") == tick.last_price and existing.get("timestamp") == tick.timestamp and existing.get("volume") == tick.volume:
+                self.duplicates_rejected += 1
+                continue
+
+            # Zero-value guard: 0.0 price must not erase an existing valid price
+            final_price = tick.last_price
+            if final_price <= 0.0 and existing and float(existing.get("last_price", 0.0)) > 0.0:
+                final_price = existing["last_price"]
+
+            self._last_tick_timestamps[token] = ts_val
+
+            raw = raw_map.get(token, {})
             depth = raw.get("depth", {})
             buy_depth = depth.get("buy") or []
             sell_depth = depth.get("sell") or []
-            bid = float(buy_depth[0].get("price", 0.0)) if buy_depth else tick.last_price
-            ask = float(sell_depth[0].get("price", 0.0)) if sell_depth else tick.last_price
+            bid = float(buy_depth[0].get("price", 0.0)) if buy_depth else final_price
+            ask = float(sell_depth[0].get("price", 0.0)) if sell_depth else final_price
 
-            self.latest_ticks[tick.symbol] = {
-                "instrument_token": tick.instrument_token,
-                "last_price": tick.last_price,
+            tick_dict = {
+                "instrument_token": token,
+                "last_price": final_price,
                 "volume": tick.volume,
                 "oi": tick.oi,
                 "ohlc": {
@@ -289,6 +343,46 @@ class StreamingOrchestrator:
                 "bid": bid,
                 "ask": ask
             }
+            self.latest_ticks[tick.symbol] = tick_dict
+            if tick.symbol == "NIFTY 50":
+                self.latest_ticks["NSE:NIFTY 50"] = tick_dict
+                self.latest_ticks["NIFTY"] = tick_dict
+            elif tick.symbol == "INDIA VIX":
+                self.latest_ticks["NSE:INDIA VIX"] = tick_dict
+
+            self.ticks_processed += 1
+
+            # Dynamic ATM subscription check when NIFTY moves
+            if tick.symbol in ("NSE:NIFTY 50", "NIFTY 50", "NIFTY") and final_price > 0:
+                current_atm = int(round(final_price / 50.0) * 50)
+                if self.last_atm_strike is None or abs(current_atm - self.last_atm_strike) >= 50:
+                    self.last_atm_strike = current_atm
+                    self._adjust_option_subscriptions_around_atm(current_atm)
+
+    def _adjust_option_subscriptions_around_atm(self, atm_strike: int) -> None:
+        """
+        Dynamically adjusts active option subscriptions around the new ATM strike (+- 3 strikes).
+        Preserves active contracts without dropping ticks.
+        """
+        try:
+            from src.broker.services.instrument_service import InstrumentService
+            inst_service = InstrumentService.get_instance()
+            # Subscribe to strikes [atm-150, atm-100, atm-50, atm, atm+50, atm+100, atm+150]
+            strike_range = [atm_strike + (i * 50) for i in range(-3, 4)]
+            new_symbols = []
+            for st in strike_range:
+                # Find matching CE and PE
+                ce_inst = inst_service.get_option_contract("NIFTY", st, "CE")
+                pe_inst = inst_service.get_option_contract("NIFTY", st, "PE")
+                if ce_inst and ce_inst.get("tradingsymbol"):
+                    new_symbols.append(ce_inst["tradingsymbol"])
+                if pe_inst and pe_inst.get("tradingsymbol"):
+                    new_symbols.append(pe_inst["tradingsymbol"])
+
+            if new_symbols:
+                self.subscribe(new_symbols)
+        except Exception as e:
+            logger.debug(f"ATM option subscription adjustment skipped/failed: {e}")
 
     def _on_status_changed(self, status: str) -> None:
         logger.info(f"Stream Status changed: {status}")

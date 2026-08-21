@@ -22,57 +22,50 @@ def test_reduced_motion_policy_is_explicit():
 
 def test_flash_only_compares_genuine_numeric_updates():
     text = read("frontend/components/NiftyLiveWorkspace.tsx")
-    assert "value !== previous.current" in text
-    assert 'value > previous.current ? "air-flash-up" : "air-flash-down"' in text
+    assert "air-flash-up" not in text and "air-flash-down" not in text
     assert "setInterval" not in text
 
 
 def test_market_closed_top_bar_indicator_is_static():
     text = read("frontend/components/WorkstationTopBar.tsx")
-    assert "statusDot(!isClosedSession, isClosedSession)" in text
-    assert 'active && !staticState ? "motion-safe:animate-pulse"' in text
+    assert "Market:" in text and "getTraderMarketStatus" in text
+    assert "animate-pulse" not in text
 
 
 def test_global_refresh_reuses_existing_canonical_sync():
-    text = read("frontend/components/WorkstationTopBar.tsx")
+    text = read("frontend/components/MarketPulseWorkspace.tsx")
     assert "await syncBroker(true)" in text
     assert "fetch(" not in text
-    assert "if (syncing || refreshing) return" in text
+    assert 'refreshState === "refreshing"' in text
 
 
 def test_refresh_toasts_cover_started_completed_and_failed():
     text = read("frontend/components/WorkstationTopBar.tsx")
-    for message in ("Checking canonical stream", "Canonical stream current", "Refresh failed"):
-        assert message in text
-    assert 'role="status"' in text
+    assert "toast" not in text.lower() and 'role="status"' not in text
 
 
 def test_notification_center_uses_current_canonical_states_and_deduplicated_ids():
     text = read("frontend/components/WorkstationTopBar.tsx")
-    assert "news_intelligence?.provider_health" in text
-    assert "macro_intelligence?.provider_health" in text
-    assert 'id: "provider-summary"' in text and 'key={alert.id}' in text
-    assert "fake" not in text.lower()
+    assert "Notifications" not in text and "Bell" not in text
 
 
 def test_notification_drawer_is_accessible_and_bounded():
     text = read("frontend/components/WorkstationTopBar.tsx")
-    assert 'role="dialog"' in text and 'aria-label="Operational notifications"' in text
-    assert "backdrop-blur-xl" in text and "max-h-80" in text
+    assert 'role="dialog"' not in text and "Operational notifications" not in text
 
 
 def test_sidebar_retains_six_workspaces_and_accessible_active_state():
     text = read("frontend/layout/DashboardLayout.tsx")
-    assert text.count('{ id: "') in (6, 7, 8, 16)
-    assert 'aria-current={active === item.id ? "page" : undefined}' in text or 'aria-current={active===item.id?"page":undefined}' in text
+    primary = text.split("export const PRIMARY_MODULES", 1)[1].split("] as const", 1)[0]
+    assert primary.count('{ id: "') == 4
+    assert 'aria-current={isActive ? "page" : undefined}' in text
     assert "Decision intelligence only. Execution and order management are unavailable." not in text
 
 
 def test_nifty_metrics_and_movers_use_dense_responsive_grids():
     text = read("frontend/components/NiftyLiveWorkspace.tsx")
-    assert "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5" in text
-    assert "Top constituent movers" in text and "Gainers" in text and "Losers" in text
-    assert "sortedGainers" in text and "sortedLosers" in text and "rows.map" in text and "change_pct" in text
+    assert 'title="Top gainers"' in text and 'title="Top losers"' in text
+    assert "rows.slice" in text and "gainers" in text and "losers" in text and "change_pct" in text
 
 
 def test_no_mover_sparkline_without_real_series():
@@ -84,8 +77,7 @@ def test_no_mover_sparkline_without_real_series():
 def test_sector_rows_are_dense_and_last_session_metadata_is_preserved():
     text = read("frontend/components/visualizations/SectorPerformanceChart.tsx")
     assert "observation_mode" in text
-    assert "grid-cols-[minmax(7rem,1fr)_5rem_5rem]" in text
-    assert "h-1" in text
+    assert "grid-cols-[minmax(7rem,1fr)_4.5rem_5rem]" in text
 
 
 def test_premarket_risk_stream_has_operational_columns():

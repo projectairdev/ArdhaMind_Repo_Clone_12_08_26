@@ -128,7 +128,7 @@ class LiveAssistantEngine:
         cur_trading_snaps = [
             s for s in snapshot_history
             if (s.get("session_date") is None or str(s.get("session_date")) == runtime_session_date)
-            and s.get("market_session_phase") in ("MARKET_OPEN", "OPEN", "CONTINUOUS_TRADING")
+            and (s.get("market_session_phase") is None or s.get("market_session_phase") in ("MARKET_OPEN", "OPEN", "CONTINUOUS_TRADING") or s.get("spot") is not None)
         ]
         if cur_trading_snaps:
             same_date_snaps = [
@@ -138,8 +138,8 @@ class LiveAssistantEngine:
             return runtime_session_date, "COMPLETED_SESSION", same_date_snaps
 
         # Search backward on disk / in memory for newest session_date with genuine continuous trading snapshots
-        target_dir = cache_dir if cache_dir is not None else cls.CACHE_DIR
-        if target_dir.exists():
+        target_dir = cache_dir
+        if target_dir is not None and target_dir.exists():
             history_files = sorted(target_dir.glob("session_history_*.json"), key=lambda p: p.name, reverse=True)
             for f_path in history_files:
                 try:
@@ -162,6 +162,22 @@ class LiveAssistantEngine:
         return runtime_session_date, "COMPLETED_SESSION", [s for s in snapshot_history if s.get("session_date") == runtime_session_date]
 
     @classmethod
+    def fallback_unavailable_intel(cls, session_date: str = "") -> Dict[str, Any]:
+        now_str = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        return {
+            "generated_at": now_str,
+            "runtime_session_date": session_date,
+            "session_date": session_date,
+            "intelligence_session_date": session_date,
+            "intelligence_mode": "COMPLETED_SESSION",
+            "session_status": "UNAVAILABLE",
+            "windows": [],
+            "significant_events": [],
+            "active_monitoring": False,
+            "error": "LiveAssistant calculation experienced telemetry degradation."
+        }
+
+    @classmethod
     def analyze_live_session(
         cls,
         state: Dict[str, Any],
@@ -175,42 +191,47 @@ class LiveAssistantEngine:
 
         m_session = state.get("market_session") or {}
         sess_status = str(m_session.get("status") or "OPEN").upper()
-        is_closed = bool(m_session.get("is_closed") or sess_status in ("CLOSED", "HOLIDAY", "POST_CLOSE"))
         session_date = str(m_session.get("session_date") or now_ist.strftime("%Y-%m-%d"))
 
-        # Pre-market state
-        if sess_status in ("PRE_OPEN", "PRE_MARKET", "NOT_STARTED"):
+        try:
+            is_closed = bool(m_session.get("is_closed") or sess_status in ("CLOSED", "HOLIDAY", "POST_CLOSE"))
+
+            # Pre-market state
+            if sess_status in ("PRE_OPEN", "PRE_MARKET", "NOT_STARTED"):
+                return {
+                    "generated_at": now_str,
+                    "runtime_session_date": session_date,
+                    "session_date": session_date,
+                    "intelligence_session_date": session_date,
+                    "intelligence_mode": "LIVE" if sess_status == "OPEN" else "COMPLETED_SESSION",
+                    "session_status": "MARKET_NOT_STARTED",
+                    "windows": [],
+                    "significant_events": [],
+                    "active_monitoring": False
+                }
+
+            cache_dir_param = None if snapshot_history is not None else cls.CACHE_DIR
+            intel_date, intel_mode, session_snaps = cls.resolve_intraday_session(m_session, now_ist, snapshot_history or [], cache_dir=cache_dir_param)
+
+            # 1. Evaluate Session-Anchored 15-Minute Windows
+            windows = cls._evaluate_15m_windows(now_ist, intel_date, session_snaps, is_closed)
+
+            # 2. Detect Event-Driven Significant Changes
+            events = cls._detect_significant_events(state, session_snaps, today_analysis_report, windows)
+
             return {
                 "generated_at": now_str,
                 "runtime_session_date": session_date,
                 "session_date": session_date,
-                "intelligence_session_date": session_date,
-                "intelligence_mode": "LIVE" if sess_status == "OPEN" else "COMPLETED_SESSION",
-                "session_status": "MARKET_NOT_STARTED",
-                "windows": [],
-                "significant_events": [],
-                "active_monitoring": False
+                "intelligence_session_date": intel_date,
+                "intelligence_mode": intel_mode,
+                "session_status": "SESSION_COMPLETE" if is_closed else "LIVE_MONITORING",
+                "windows": [w.to_dict() for w in windows],
+                "significant_events": [e.to_dict() for e in events],
+                "active_monitoring": not is_closed and intel_mode == "LIVE"
             }
-
-        intel_date, intel_mode, session_snaps = cls.resolve_intraday_session(m_session, now_ist, snapshot_history or [], cache_dir=cls.CACHE_DIR)
-
-        # 1. Evaluate Session-Anchored 15-Minute Windows
-        windows = cls._evaluate_15m_windows(now_ist, intel_date, session_snaps, is_closed)
-
-        # 2. Detect Event-Driven Significant Changes
-        events = cls._detect_significant_events(state, session_snaps, today_analysis_report, windows)
-
-        return {
-            "generated_at": now_str,
-            "runtime_session_date": session_date,
-            "session_date": session_date,
-            "intelligence_session_date": intel_date,
-            "intelligence_mode": intel_mode,
-            "session_status": "SESSION_COMPLETE" if is_closed else "LIVE_MONITORING",
-            "windows": [w.to_dict() for w in windows],
-            "significant_events": [e.to_dict() for e in events],
-            "active_monitoring": not is_closed and intel_mode == "LIVE"
-        }
+        except Exception:
+            return cls.fallback_unavailable_intel(session_date)
 
     @classmethod
     def _evaluate_15m_windows(
@@ -406,7 +427,7 @@ class LiveAssistantEngine:
                     "Telemetric observation density was too sparse to classify window movement or market character truthfully."
                 ],
                 watch_next=[
-                    "Session complete; final session state preserved." if is_session_closed else "Awaiting telemetry density in subsequent window."
+                    "Session complete; final window closing spot unavailable. Session telemetry preserved where available." if is_session_closed else "Awaiting telemetry density in subsequent window."
                 ],
                 contains_telemetry_gap=has_gap_flag or (obs_count < 2),
                 data_quality=data_quality
@@ -419,19 +440,19 @@ class LiveAssistantEngine:
         start_spot = prev_end_spot if (prev_end_spot is not None) else win_open
         end_spot = win_close if win_close is not None else start_spot
 
-        all_spots = (spots + ([prev_end_spot] if prev_end_spot else [])) if spots else ([start_spot] if start_spot else [])
-        win_high = max(all_spots) if all_spots else 0.0
-        win_low = min(all_spots) if all_spots else 0.0
-        win_range = round((win_high - win_low), 2) if (win_high and win_low) else 0.0
+        all_spots = (spots + ([prev_end_spot] if prev_end_spot is not None else [])) if spots else ([start_spot] if start_spot is not None else [])
+        win_high = max(all_spots) if all_spots else None
+        win_low = min(all_spots) if all_spots else None
+        win_range = round((win_high - win_low), 2) if (win_high is not None and win_low is not None) else None
 
-        p_change = round((end_spot - start_spot), 2) if (end_spot and start_spot) else 0.0
-        p_pct = round((p_change / start_spot) * 100, 2) if (start_spot and start_spot > 0) else 0.0
+        p_change = round((end_spot - start_spot), 2) if (end_spot is not None and start_spot is not None) else None
+        p_pct = round((p_change / start_spot) * 100, 2) if (p_change is not None and start_spot is not None and start_spot > 0) else None
 
         close_loc = 0.5
-        if win_range > 0 and win_close and win_low:
+        if win_range is not None and win_range > 0 and win_close is not None and win_low is not None:
             close_loc = round((win_close - win_low) / win_range, 2)
 
-        mov_rel_prev = round(p_change - (prev_change_pts or 0.0), 2)
+        mov_rel_prev = round(p_change - (prev_change_pts or 0.0), 2) if p_change is not None else 0.0
 
         # Breadth Calculations
         b_start_obj = b_snaps[0] if b_snaps else {}
@@ -459,17 +480,17 @@ class LiveAssistantEngine:
         else:
             b_trend = "STABLE"
 
-        if p_change > 5.0 and b_delta < -3:
+        if p_change is not None and p_change > 5.0 and b_delta < -3:
             b_divergence = "BEARISH_DIVERGENCE"
-        elif p_change < -5.0 and b_delta > 3:
+        elif p_change is not None and p_change < -5.0 and b_delta > 3:
             b_divergence = "BULLISH_DIVERGENCE"
-        elif p_change > 5.0 and b_delta > 3:
+        elif p_change is not None and p_change > 5.0 and b_delta > 3:
             b_divergence = "CONFIRMING_BULLISH"
-        elif p_change < -5.0 and b_delta < -3:
+        elif p_change is not None and p_change < -5.0 and b_delta < -3:
             b_divergence = "CONFIRMING_BEARISH"
-        elif abs(p_change) <= 5.0 and b_delta >= 5:
+        elif p_change is not None and abs(p_change) <= 5.0 and b_delta >= 5:
             b_divergence = "BULLISH_DIVERGENCE"
-        elif abs(p_change) <= 5.0 and b_delta <= -5:
+        elif p_change is not None and abs(p_change) <= 5.0 and b_delta <= -5:
             b_divergence = "BEARISH_DIVERGENCE"
         else:
             b_divergence = "NEUTRAL"
@@ -505,25 +526,37 @@ class LiveAssistantEngine:
                 pcr_change = round(pcr_end - pcr_start, 2)
                 options_narrative = f"Option PCR moved from {pcr_start:.2f} to {pcr_end:.2f} ({'+' if pcr_change >= 0 else ''}{pcr_change:.2f})."
 
-        abs_p = abs(p_change)
-        if abs_p >= 40.0 or win_range >= 50.0 or abs(b_delta) >= 12:
+        abs_p = abs(p_change) if p_change is not None else 0.0
+        w_rng = win_range if win_range is not None else 0.0
+        if abs_p >= 40.0 or w_rng >= 50.0 or abs(b_delta) >= 12:
             sig_class = "MAJOR"
-        elif abs_p >= 25.0 or win_range >= 35.0 or abs(b_delta) >= 8:
+        elif abs_p >= 25.0 or w_rng >= 35.0 or abs(b_delta) >= 8:
             sig_class = "SIGNIFICANT"
-        elif abs_p >= 15.0 or win_range >= 20.0 or abs(b_delta) >= 5:
+        elif abs_p >= 15.0 or w_rng >= 20.0 or abs(b_delta) >= 5:
             sig_class = "NOTABLE"
-        elif win_range < 15.0 and abs_p < 10.0 and abs(b_delta) < 4:
+        elif w_rng < 15.0 and abs_p < 10.0 and abs(b_delta) < 4:
             sig_class = "QUIET"
         else:
             sig_class = "NORMAL"
 
         headline = f"{w_start}–{w_end} IST | {sig_class} WINDOW"
 
-        what_happened = [
-            f"NIFTY spot moved {'+' if p_change >= 0 else ''}{p_change:.2f} pts ({'+' if p_pct >= 0 else ''}{p_pct:.2f}%) from {start_spot:,.2f} to {end_spot:,.2f}." if (start_spot and end_spot) else "NIFTY spot maintained current level.",
-            f"Intraday window range spanned {win_range:.2f} pts (High: {win_high:,.2f}, Low: {win_low:,.2f}).",
-            f"Constituent breadth changed from {b_start_str} to {b_end_str} ({b_change_str})."
-        ]
+        what_happened = []
+        if start_spot is not None and end_spot is not None and p_change is not None and p_pct is not None:
+            what_happened.append(
+                f"NIFTY spot moved {'+' if p_change >= 0 else ''}{p_change:.2f} pts ({'+' if p_pct >= 0 else ''}{p_pct:.2f}%) from {start_spot:,.2f} to {end_spot:,.2f}."
+            )
+        elif end_spot is not None:
+            what_happened.append(f"NIFTY spot observed at {end_spot:,.2f}.")
+        else:
+            what_happened.append("NIFTY spot telemetry unavailable in window.")
+
+        if win_range is not None and win_high is not None and win_low is not None:
+            what_happened.append(f"Intraday window range spanned {win_range:.2f} pts (High: {win_high:,.2f}, Low: {win_low:,.2f}).")
+        else:
+            what_happened.append("Intraday window range telemetry building.")
+
+        what_happened.append(f"Constituent breadth changed from {b_start_str} to {b_end_str} ({b_change_str}).")
 
         why_it_matters = []
         if b_divergence == "CONFIRMING_BULLISH":
@@ -541,13 +574,25 @@ class LiveAssistantEngine:
 
         watch_next = []
         if is_session_closed:
-            watch_next.append(f"SESSION COMPLETE. Final window closed at {end_spot:,.2f} IST. Intraday session telemetry complete.")
-        elif p_change > 0:
-            watch_next.append(f"Continuation is supported if breadth remains above {adv_end} advances and price holds above {win_low:,.2f}.")
-        elif p_change < 0:
-            watch_next.append(f"Further downside risk if advances stay below {adv_end} and price remains below {win_high:,.2f}.")
+            if end_spot is not None:
+                watch_next.append(f"SESSION COMPLETE. Final window closed at {end_spot:,.2f} IST. Intraday session telemetry complete.")
+            else:
+                watch_next.append("SESSION COMPLETE. Final window closing spot unavailable. Intraday session telemetry complete.")
+        elif p_change is not None and p_change > 0:
+            if win_low is not None:
+                watch_next.append(f"Continuation is supported if breadth remains above {adv_end} advances and price holds above {win_low:,.2f}.")
+            else:
+                watch_next.append(f"Continuation is supported if breadth remains above {adv_end} advances.")
+        elif p_change is not None and p_change < 0:
+            if win_high is not None:
+                watch_next.append(f"Further downside risk if advances stay below {adv_end} and price remains below {win_high:,.2f}.")
+            else:
+                watch_next.append(f"Further downside risk if advances stay below {adv_end}.")
         else:
-            watch_next.append(f"Watch for range breakout beyond {win_high:,.2f} or breakdown below {win_low:,.2f}.")
+            if win_high is not None and win_low is not None:
+                watch_next.append(f"Watch for range breakout beyond {win_high:,.2f} or breakdown below {win_low:,.2f}.")
+            else:
+                watch_next.append("Watch for price range breakout or breakdown once observations populate.")
 
         return MarketWindowAnalysis(
             window_start=w_start, window_end=w_end, generated_at=now_str,

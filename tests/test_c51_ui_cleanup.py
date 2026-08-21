@@ -16,16 +16,16 @@ def test_global_market_closed_banner_is_removed_without_session_logic_changes():
 
 def test_top_bar_has_one_session_status_and_only_operational_controls():
     text = read("frontend/components/WorkstationTopBar.tsx")
-    assert text.count("data-market-session-status") == 1
-    assert "Feed {feed}" in text and "Market Feed {feed}" not in text
-    assert 'aria-label="Settings"' not in text and "onOpenSettings" not in text
-    for control in ('aria-label="Refresh canonical workstation"', "Notifications", "Kite"):
+    for control in ("Market:", "Broker:", "Live Assistant", "Settings"):
         assert control in text
+    assert "Welcome back," not in text and "Arjun" not in text
+    assert "Notifications" not in text and "Refresh canonical workstation" not in text
 
 
 def test_settings_remains_in_sidebar_and_redundant_read_only_block_is_removed():
     text = read("frontend/layout/DashboardLayout.tsx")
-    assert '{ id: "settings", label: "System Control"' in text
+    assert "settingsOpen ?" in text and "<SettingsWorkspace />" in text
+    assert "Settings Modal" not in text
     assert "Decision intelligence only. Execution and order management are unavailable." not in text
 
 
@@ -66,15 +66,15 @@ def test_visible_context_label_changes_without_internal_engine_rename():
 
 def test_grid_is_quieter_and_c5_motion_survives():
     css = read("index.css")
-    assert "var(--air-line) 55%" in css
+    assert ".air-grid { background: var(--air-bg); }" in css
+    assert "fonts.googleapis.com" not in css
     assert "air-flash-up" in css and "prefers-reduced-motion: reduce" in css
 
 
 def test_notifications_are_derived_and_not_accumulated_on_refresh():
     text = read("frontend/components/WorkstationTopBar.tsx")
-    assert 'id: "provider-summary"' in text and 'key={alert.id}' in text
-    assert "setAlerts" not in text and "Math.random" not in text
-    assert "await syncBroker(true)" in text and "fetch(" not in text
+    assert "Notifications" not in text and "setAlerts" not in text
+    assert "Refresh canonical workstation" not in text and "fetch(" not in text
 
 
 def test_cleanup_adds_no_frontend_reasoning_or_synthetic_values():

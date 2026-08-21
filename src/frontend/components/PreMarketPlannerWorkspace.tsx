@@ -7,6 +7,10 @@ import { ParticipantPositioningWidget, VolatilityContextWidget } from "./Special
 import { PreMarketIntelligenceView } from "./UnifiedIntelligencePanel";
 import { TomorrowsOutlookCard } from "./intelligence/TomorrowsOutlookCard";
 import { Layers, ShieldCheck, Compass, AlertTriangle, TrendingUp, TrendingDown, Clock, Activity, Target } from "lucide-react";
+import { InstrumentVisual } from "./ui/AuthenticMarketLogo";
+import { GlobalSessionStrip } from "./visualizations/DataVisualizations";
+import { Surface, SectionHeader, MetricCell, CompactRows } from "./ui/WorkspacePrimitives";
+
 
 function TabButton({ value, active, onClick }: { key?: string; value: string; active: boolean; onClick: () => void }) {
   return (
@@ -38,7 +42,92 @@ function Card({ title, children, tone = "default" }: { key?: string; title: stri
   );
 }
 
+// ─── GLOBAL CUE CARDS ────────────────────────────────────────────────────────
+
+/**
+ * Displays global market cue observations as compact visual cards.
+ *
+ * Data truth rules:
+ * - Shows "NOT OBSERVED" when value is genuinely unavailable
+ * - Zero IS data — never shown as "unavailable"
+ * - Never fabricates values
+ */
+function GlobalCueCards({ quotes }: { quotes: any[] }) {
+  if (!quotes || quotes.length === 0) {
+    return (
+      <div className="rounded border border-[#1a1a24] bg-[#050507] p-3 text-center text-[11px] text-slate-500 font-mono">
+        No global market observations available for this session.
+      </div>
+    );
+  }
+
+  const PRIORITY_KEYS = ["S&P 500", "NASDAQ", "DOW_JONES", "NIKKEI_225", "HANG_SENG", "GIFT_NIFTY", "BRENT_CRUDE", "GOLD", "USD_INR", "DXY"];
+
+  const sorted = [...quotes].sort((a, b) => {
+    const ai = PRIORITY_KEYS.indexOf(a.canonical_key || a.name || "");
+    const bi = PRIORITY_KEYS.indexOf(b.canonical_key || b.name || "");
+    if (ai === -1 && bi === -1) return 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+
+  return (
+    <div className="rounded border border-[#1a1a24] bg-[#050507] overflow-x-auto">
+      <table className="w-full text-left font-mono text-[11px]">
+        <thead>
+          <tr className="border-b border-[#181820] bg-[#07070a] text-[9px] uppercase tracking-wider text-slate-400">
+            <th className="py-2 px-3 font-semibold">Asset / Instrument</th>
+            <th className="py-2 px-3 font-semibold text-right">Value</th>
+            <th className="py-2 px-3 font-semibold text-right">Change</th>
+            <th className="py-2 px-3 font-semibold text-right">Session / Freshness</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[#14141c]">
+          {sorted.slice(0, 12).map((q, i) => {
+            const key = q.canonical_key || q.name || `q${i}`;
+            const displayName = q.display_name || q.name || key;
+            const value = q.value ?? q.price ?? q.close;
+            const changePct = q.change_pct ?? q.change_percent;
+            const positive = changePct != null && Number(changePct) >= 0;
+            const isUnavailable = value == null;
+
+            return (
+              <tr key={key} className="hover:bg-[#09090d] transition-colors">
+                <td className="py-2 px-3">
+                  <div className="flex items-center gap-2">
+                    <InstrumentVisual symbol={key} size={20} />
+                    <span className="font-semibold text-slate-200">{displayName}</span>
+                  </div>
+                </td>
+                <td className="py-2 px-3 text-right air-data font-bold text-slate-100">
+                  {isUnavailable ? <span className="text-slate-500">Unavailable</span> : formatNumber(Number(value), 2)}
+                </td>
+                <td className="py-2 px-3 text-right air-data font-bold">
+                  {changePct != null ? (
+                    <span className={positive ? "text-[#00E5A8]" : "text-[#FF5C77]"}>
+                      {positive ? "+" : ""}{formatNumber(Number(changePct), 2)}%
+                    </span>
+                  ) : (
+                    <span className="text-slate-500">—</span>
+                  )}
+                </td>
+                <td className="py-2 px-3 text-right text-[10px] text-slate-400">
+                  {q.freshness_status || q.session_context || "Observed"}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ─── MAIN WORKSPACE ────────────────────────────────────────────────────────────
+
 export function PreMarketPlannerWorkspace() {
+
   const [tab, setTab] = useState("Pre-Market Thesis");
   const { canonicalState } = useWorkstationState() as any;
 
@@ -113,78 +202,70 @@ export function PreMarketPlannerWorkspace() {
   return (
     <div id="pre-market-planner-workspace" className="space-y-6 text-left font-sans">
       {/* ── HEADER & PRE-MARKET THESIS HERO BANNER ── */}
-      <header className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-900 pb-3">
-          <div>
-            <div className="flex items-center gap-2 text-[10px] font-bold text-cyan-400 uppercase tracking-widest">
-              <Layers size={16} className="animate-spin-slow" />
-              <span>PRE-MARKET INTELLIGENCE · PRE-SESSION SETUP INTELLIGENCE</span>
-              <span className={`px-2 py-0.5 rounded text-[9px] border font-bold ${
-                isFrozen ? "bg-amber-950/80 border-amber-700 text-amber-300" : "bg-emerald-950/80 border-emerald-700 text-emerald-300"
-              }`}>
-                {isFrozen ? "● PRE-MARKET THESIS FROZEN" : "● ACTIVE PRE-MARKET EVALUATION"}
-              </span>
-            </div>
-            <h2 className="text-xl font-black text-white mt-1 uppercase tracking-tight">PRE-MARKET INTELLIGENCE — PRE-SESSION MARKET THESIS &amp; SETUP</h2>
+      <Surface className="overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#191D23] bg-[#0E1013] px-3.5 py-2">
+          <div className="flex items-center gap-2 text-[11px] font-bold text-[#E6E8EB] font-mono uppercase tracking-wider">
+            <Layers size={14} className="text-[#38BDF8]" />
+            <span>PRE-MARKET BRIEF · {preMarketReport.target_trading_date || "LATEST SESSION"}</span>
+            <span className={`px-1.5 py-0.2 rounded-[2px] text-[9px] font-bold border ${
+              isFrozen ? "bg-[#E59700]/10 border-[#E59700]/40 text-[#E59700]" : "bg-[#00C896]/10 border-[#00C896]/40 text-[#00C896]"
+            }`}>
+              {isFrozen ? "FROZEN SESSION THESIS" : "ACTIVE EVALUATION"}
+            </span>
           </div>
-          <div className="text-right text-[10px] text-slate-400 font-mono space-y-0.5">
-            <div>DATE: <strong className="text-white">{preMarketReport.target_trading_date || "CURRENT"}</strong></div>
-            <div>GENERATED: <strong className="text-cyan-300">{preMarketReport.generated_at ? preMarketReport.generated_at.slice(11, 19) + " UTC" : "Live"}</strong></div>
+          <div className="text-right text-[10px] text-[#A5ABB4] font-mono">
+            GENERATED: <strong className="text-[#38BDF8]">{preMarketReport.generated_at ? preMarketReport.generated_at.slice(11, 19) + " UTC" : "Canonical"}</strong>
           </div>
         </div>
 
-        {/* HERO METRICS GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-1">
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg">
-            <span className="text-[9px] uppercase font-bold text-slate-500 block mb-1">PRE-MARKET BIAS</span>
-            <span className={`text-sm font-black uppercase ${
-              setupScoreVal > 15 ? "text-emerald-400" : setupScoreVal < -15 ? "text-rose-400" : "text-amber-400"
+        {/* HERO METRICS STRIP */}
+        <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-[#191D23] bg-[#0B0D10]">
+          <MetricCell label="Pre-Market Bias">
+            <span className={`text-[12px] font-bold uppercase ${
+              setupScoreVal > 15 ? "text-[#00C896]" : setupScoreVal < -15 ? "text-[#E5484D]" : "text-[#E59700]"
             }`}>
               {bias}
             </span>
-          </div>
+          </MetricCell>
 
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg">
-            <span className="text-[9px] uppercase font-bold text-slate-500 block mb-1">EXPECTED OPENING</span>
-            <span className="text-sm font-black text-cyan-300 uppercase">
-              {preMarketReport.opening_character || "UNCERTAIN"}
-            </span>
-            <span className="text-[10px] text-slate-400 block font-mono">
-              {giftContext.implied_gap_points != null ? `~${giftContext.implied_gap_points >= 0 ? "+" : ""}${giftContext.implied_gap_points.toFixed(2)} pts` : "UNAVAILABLE"}
-            </span>
-          </div>
-
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg">
-            <span className="text-[9px] uppercase font-bold text-slate-500 block mb-1">POTENTIAL SETUP</span>
-            <span className="text-sm font-black text-indigo-300 uppercase">
-              {setup.replace("_", " ")}
-            </span>
-          </div>
-
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-lg">
-            <span className="text-[9px] uppercase font-bold text-slate-500 block mb-1">SETUP SCORE / CONFIDENCE</span>
-            <div className="flex items-center gap-2">
-              <span className="text-base font-black text-white font-mono">{setupScoreVal > 0 ? "+" : ""}{setupScoreVal.toFixed(1)}</span>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                confidence === "HIGH" ? "border-emerald-700 bg-emerald-950/60 text-emerald-300" : "border-amber-700 bg-amber-950/60 text-amber-300"
-              }`}>
-                {confidence} CONFIDENCE
+          <MetricCell label="Expected Opening">
+            <div className="flex items-center justify-between">
+              <span className="text-[12px] font-bold text-[#38BDF8] uppercase">
+                {preMarketReport.opening_character || "UNCERTAIN"}
+              </span>
+              <span className="text-[10px] text-[#A5ABB4] font-mono">
+                {giftContext.implied_gap_points != null ? `${giftContext.implied_gap_points >= 0 ? "+" : ""}${giftContext.implied_gap_points.toFixed(1)} pts` : ""}
               </span>
             </div>
-          </div>
+          </MetricCell>
+
+          <MetricCell label="Session Setup">
+            <span className="text-[12px] font-semibold text-[#E6E8EB] uppercase">
+              {setup.replace("_", " ")}
+            </span>
+          </MetricCell>
+
+          <MetricCell label="Setup Score / Confidence">
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-bold text-[#E6E8EB] font-mono">{setupScoreVal > 0 ? "+" : ""}{setupScoreVal.toFixed(1)}</span>
+              <span className="text-[9px] font-semibold text-[#A5ABB4]">
+                ({confidence} CONFIDENCE)
+              </span>
+            </div>
+          </MetricCell>
         </div>
 
-        {/* OPENING VALIDATION BANNER IF FROZEN */}
+        {/* OPENING VALIDATION BANNER */}
         {validation.summary && (
-          <div className="p-2.5 bg-slate-900/90 border border-cyan-800/60 rounded-lg text-xs font-mono flex items-center justify-between text-cyan-200">
-            <span className="flex items-center gap-2">
-              <ShieldCheck size={14} className="text-cyan-400" />
-              <strong>OPENING VALIDATION:</strong> {validation.summary}
+          <div className="px-3 py-1.5 bg-[#0E1013] border-t border-[#191D23] text-[10px] font-mono flex items-center justify-between text-[#A5ABB4]">
+            <span className="flex items-center gap-1.5">
+              <ShieldCheck size={13} className="text-[#38BDF8]" />
+              <strong className="text-[#E6E8EB]">OPENING VALIDATION:</strong> {validation.summary}
             </span>
-            <span className="text-[10px] text-slate-400 uppercase font-bold">{validation.status}</span>
+            <span className="text-[9px] text-[#707987] uppercase font-bold">{validation.status}</span>
           </div>
         )}
-      </header>
+      </Surface>
 
       {/* ── WORKSPACE NAVIGATION TABS ── */}
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
@@ -386,9 +467,20 @@ export function PreMarketPlannerWorkspace() {
             <Card title="Developments Since Close">{sinceClose.length ? `${sinceClose.length} verified developments since the last market observation.` : "No verified developments since close."}</Card>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <Card title="Global Cues Since Close">{sinceCloseQuotes.length ? sinceCloseQuotes.slice(0, 6).map(q => `${safeString(q.name)} ${Number(q.change_pct) >= 0 ? "+" : ""}${formatNumber(q.change_pct, 2)}% vs source previous close (${safeString(q.freshness_status)})`).join(" · ") : "No global-market observations newer than the last Indian market observation are available."}</Card>
+            <div className="col-span-full">
+              <Card title="Global Cues Since Close">
+                <GlobalCueCards quotes={sinceCloseQuotes} />
+              </Card>
+            </div>
             <Card title="Latest News Since Close">{sinceClose.length ? sinceClose.slice(0, 5).map(item => safeString(item.headline)).join(" · ") : "No verified news since close."}</Card>
           </div>
+
+          {/* Global Market Session Strip */}
+          <div className="rounded-xl border border-[#1c1c24] bg-[#050507] p-4">
+            <div className="text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-3">Global Market Sessions</div>
+            <GlobalSessionStrip />
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <Card title="Overnight Risk Factors">{sinceClose.filter(item => ["Geopolitics", "Crude", "Currency/Yields", "Global Markets"].includes(safeString(item.category))).slice(0, 4).map(item => safeString(item.headline)).join(" · ") || "No verified overnight risk story is available."}</Card>
             <Card title="Key Factors to Watch" tone="warning">{missing.length ? missing.join(", ") : "No setup gaps reported."} · Opening gap remains unknown until a genuine pre-open observation exists.</Card>

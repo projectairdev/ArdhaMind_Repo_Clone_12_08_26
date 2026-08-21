@@ -1,0 +1,260 @@
+{
+  "report_id": "PMB-2026-08-20",
+  "trading_session_date": "2026-08-20",
+  "generated_at": "2026-08-20T10:23:26.105057+05:30",
+  "schema_version": 1,
+  "snapshot_time_ist": "15:20 IST",
+  "snapshot_type": "POST_CLOSE_FINAL",
+  "lifecycle_status": "FINAL_RECONCILED",
+  "nifty_snapshot": {
+    "price_at_snapshot": 24152.05,
+    "open": 24152.05,
+    "high_so_far": 24152.05,
+    "low_so_far": 24152.05,
+    "previous_close": 24078.3,
+    "change_points": 73.75,
+    "change_pct": 0.31,
+    "session_range_so_far": 0.0,
+    "official_close_value": 24155.1,
+    "official_close_available": true,
+    "reconciled_at": "2026-08-20T15:35:00+05:30"
+  },
+  "session_character": {
+    "directional_bias": "BULLISH",
+    "market_regime": "RANGE_DAY",
+    "volatility_regime": "COMPRESSED",
+    "trend_quality": "STABLE",
+    "breadth_state": "POSITIVE",
+    "participation_quality": "INSTITUTIONAL_SUPPORTED",
+    "intraday_structure": "HIGHER_LOWS"
+  },
+  "key_levels": {
+    "immediate_support": "24152",
+    "immediate_resistance": "24152",
+    "major_support": "24102",
+    "major_resistance": "24202",
+    "decision_zone": "24132 \u2013 24172",
+    "day_high": 24152.05,
+    "day_low": 24152.05,
+    "opening_range_high": 24152.05,
+    "opening_range_low": 24152.05
+  },
+  "options_context": {
+    "atm_strike": 24150,
+    "expiry": "WEEKLY",
+    "pcr_oi": 1.2576584033617975,
+    "pcr_volume": 1.2576584033617975,
+    "max_pain": 24200.0,
+    "call_wall": 24300.0,
+    "put_wall": 24000.0,
+    "atm_iv": 8.8571,
+    "options_bias": "BULLISH_SUPPORT",
+    "call_oi_shift": "CALL_BUILDUP_ABOVE",
+    "put_oi_shift": "PUT_WRITING_SUPPORT",
+    "late_session_positioning": "LATE_PREMIUM_DECAY"
+  },
+  "breadth_context": {
+    "advances": 35,
+    "declines": 15,
+    "unchanged": 0,
+    "breadth_bias": "BULLISH",
+    "breadth_strength": "STRONG",
+    "heavyweight_participation": "POSITIVE_ALIGNMENT"
+  },
+  "sector_context": {
+    "strongest_sectors": [
+      "NIFTY METAL",
+      "NIFTY REALTY"
+    ],
+    "weakest_sectors": [
+      "NIFTY IT",
+      "NIFTY PHARMA"
+    ],
+    "sectors_improving_into_close": [
+      "NIFTY BANK",
+      "NIFTY FINANCIAL SERVICES"
+    ],
+    "sectors_weakening_into_close": [
+      "NIFTY FMCG"
+    ]
+  },
+  "institutional_context": {
+    "fii_net_crores": 1500.0,
+    "dii_net_crores": -200.0,
+    "net_crores": 1300.0,
+    "source_date": "2026-08-19",
+    "freshness": "PREVIOUS_TRADING_SESSION",
+    "provenance": "Published EOD Data"
+  },
+  "macro_context": {
+    "gift_nifty": 24177.05,
+    "usd_inr": 83.95,
+    "dxy": 102.4,
+    "brent": 76.5,
+    "gold": 2480.0,
+    "india_vix": 10.81,
+    "global_index_tone": "MILD_POSITIVE",
+    "overnight_risk_flags": [
+      "US CPI Data Release Tomorrow",
+      "OPEC Oil Meeting"
+    ]
+  },
+  "news_context": {
+    "major_session_drivers": [
+      {
+        "headline": "Domestic institutional inflows offset global cautious tone",
+        "relevance": "HIGH"
+      },
+      {
+        "headline": "Banking stocks lead afternoon recovery",
+        "relevance": "HIGH"
+      }
+    ],
+    "late_session_news": [
+      {
+        "headline": "Nifty holds above 24,100 decision zone into pre-close",
+        "relevance": "MEDIUM"
+      }
+    ],
+    "tomorrow_known_events": [
+      {
+        "event": "Weekly Options Expiry",
+        "impact": "HIGH"
+      }
+    ],
+    "event_risk_level": "MODERATE"
+  },
+  "pre_market_vs_actual": {
+    "expected_open": "24,110 \u2013 24,140",
+    "actual_open": "24152.05",
+    "open_result": "NEAR",
+    "opening_bias": "NEUTRAL / MIXED",
+    "observed_opening_bias": "BULLISH",
+    "bias_result": "HIT",
+    "expected_range": "120 pts",
+    "actual_range": "0 pts",
+    "range_result": "HIT",
+    "expected_high_zone": "24,200",
+    "actual_high": "24152.05",
+    "high_result": "NEAR",
+    "expected_low_zone": "24,080",
+    "actual_low": "24152.05",
+    "low_result": "HIT",
+    "primary_scenario": "SCENARIO A: RANGE BREAKOUT",
+    "observed_outcome": "SCENARIO A CONFIRMED",
+    "scenario_result": "HIT",
+    "hits_count": 7,
+    "near_count": 2,
+    "misses_count": 1,
+    "pending_count": 0
+  },
+  "session_story": {
+    "timeline": [
+      {
+        "time_hhmm": "09:15",
+        "title": "Market Open",
+        "observation": "Nifty trading near 24152.05 with active institutional support.",
+        "price_level": 24152.05
+      },
+      {
+        "time_hhmm": "10:30",
+        "title": "Morning Balance",
+        "observation": "Nifty trading near 24167.05 with active institutional support.",
+        "price_level": 24167.05
+      },
+      {
+        "time_hhmm": "12:30",
+        "title": "Midday Balance",
+        "observation": "Nifty trading near 24142.05 with active institutional support.",
+        "price_level": 24142.05
+      },
+      {
+        "time_hhmm": "14:30",
+        "title": "Afternoon Push",
+        "observation": "Nifty trading near 24152.05 with active institutional support.",
+        "price_level": 24152.05
+      },
+      {
+        "time_hhmm": "15:20",
+        "title": "Pre-Close Snapshot",
+        "observation": "Nifty trading near 24152.05 with active institutional support.",
+        "price_level": 24152.05
+      }
+    ],
+    "narrative_summary": "Session structure established cleanly across key timeframes.",
+    "coverage_status": "COMPLETE"
+  },
+  "phase3_execution": {
+    "proposals_generated": 0,
+    "proposals_rejected": 0,
+    "proposals_approved": 0,
+    "orders_submitted": 0,
+    "orders_filled": 0,
+    "trades_closed": 0,
+    "open_positions_at_15_20": 0,
+    "realized_trade_pnl_analytics": 0.0,
+    "unresolved_operations": 0,
+    "status_label": "NO EXECUTED TRADES"
+  },
+  "next_session_outlook": {
+    "target_trading_date": "2026-08-21",
+    "baseline_bias": "NEUTRAL",
+    "confidence": "74%",
+    "expected_regime": "RANGE",
+    "overnight_risk": "LOW",
+    "carry_forward_levels": {
+      "support_1": "24152",
+      "support_2": "24102",
+      "resistance_1": "24152",
+      "resistance_2": "24202",
+      "decision_zone": "24132 \u2013 24172"
+    },
+    "scenario_base": {
+      "title": "BASE CASE: Range Consolidation with Upward Drift",
+      "trigger": "Hold above immediate support (24152)",
+      "confirmation": "Sustained trade above decision zone (24132 \u2013 24172)",
+      "expected_behavior": "Targeting gradual retest of upper resistance band.",
+      "invalidation": "Break below 24132"
+    },
+    "scenario_bullish": {
+      "title": "BULLISH CASE: High-Volume Breakout Continuation",
+      "trigger": "Opening gap or early momentum push above 24152",
+      "confirmation": "Breadth > 35 advances with call unwinding above max pain",
+      "expected_behavior": "Expansion toward 24252",
+      "invalidation": "Failure to hold 24152 after first 15 mins"
+    },
+    "scenario_bearish": {
+      "title": "BEARISH CASE: Pullback Retest of Lower Support",
+      "trigger": "Break below decision zone (24132 \u2013 24172)",
+      "confirmation": "Put unwinding with breadth < 15 advances",
+      "expected_behavior": "Decline toward major support 24102",
+      "invalidation": "Reclaim of 24152"
+    },
+    "scenario_range": {
+      "title": "RANGE CASE: Two-Way Mean Reversion",
+      "trigger": "Price remains bounded between 24152 and 24152",
+      "confirmation": "Compressed VIX (< 12) with balanced options PCR",
+      "expected_behavior": "Oscillation around VWAP / floor pivot",
+      "invalidation": "Decisive breakout beyond 24152 or breakdown below 24152"
+    },
+    "watchlist": {
+      "key_levels": [
+        "24152",
+        "24152",
+        "24132 \u2013 24172"
+      ],
+      "options_signals": [
+        "PCR 1.26",
+        "Max Pain 24150"
+      ],
+      "sectors": [
+        "NIFTY BANK",
+        "NIFTY METAL"
+      ],
+      "known_events": [
+        "Weekly Options Expiry"
+      ]
+    }
+  },
+  "snapshot_1520_payload": null
+}

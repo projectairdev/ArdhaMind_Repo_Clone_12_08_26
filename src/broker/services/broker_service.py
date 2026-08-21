@@ -121,20 +121,29 @@ class BrokerService(IBrokerGateway):
         return self._gateway.get_instruments(exchange)
 
     def place_order(self, **kwargs) -> Any:
-        raise PermissionError("AIR ArdhaMind is read only; order placement is unavailable")
+        return self._gateway.place_order(**kwargs)
 
     def modify_order(self, **kwargs) -> Any:
-        raise PermissionError("AIR ArdhaMind is read only; order modification is unavailable")
+        return self._gateway.modify_order(**kwargs)
 
     def cancel_order(self, **kwargs) -> Any:
-        raise PermissionError("AIR ArdhaMind is read only; order cancellation is unavailable")
+        return self._gateway.cancel_order(**kwargs)
 
-    def exit_position(self, tradingsymbol: str, product: str) -> Optional[str]:
+    def get_order_status(self, broker_order_id: str) -> Dict[str, Any]:
+        return self._gateway.get_order_status(broker_order_id)
+
+    def exit_position(self, **kwargs) -> Any:
         """
         Exits an active position for the given symbol and product by placing an offsetting market order.
         """
-        raise PermissionError("AIR ArdhaMind is read only; position exit is unavailable")
+        return self._gateway.exit_position(**kwargs)
 
+    def get_live_net_positions(self) -> List[Dict[str, Any]]:
+        return self._gateway.get_live_net_positions()
+
+
+    def calculate_order_margins(self, orders: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return self._gateway.calculate_order_margins(orders)
 
     def health(self) -> Any:
         return self._gateway.health()

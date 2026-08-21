@@ -198,12 +198,25 @@ function startPythonDaemon() {
         const t_forward = new Date().toISOString();
         const tickData = {
           ...msg.data,
-          backend_forward_timestamp: t_forward
+          backend_forward_timestamp: t_forward,
+          transport_sent_at: t_forward
         };
+        if (!workstationState) workstationState = {} as any;
+        if (!workstationState.ticks) workstationState.ticks = {};
         workstationState.ticks[msg.symbol] = tickData;
         broadcastToClients({ type: "tick", symbol: msg.symbol, data: tickData });
+      } else if (msg.type === "live_event") {
+        const t_forward = new Date().toISOString();
+        const eventData = {
+          ...msg.data,
+          transport_sent_at: t_forward
+        };
+        broadcastToClients({ type: "live_event", data: eventData });
+      } else if (msg.type === "feed_status") {
+        broadcastToClients({ type: "feed_status", symbol: msg.symbol, data: msg.data });
       } else if (msg.type === "state") {
-        workstationState = msg.data;
+        const existingTicks = workstationState?.ticks || {};
+        workstationState = { ...(msg.data || {}), ticks: (msg.data && msg.data.ticks) || existingTicks };
         broadcastToClients({ type: "state", data: workstationState });
       } else if (msg.type === "response") {
         const req = pendingRequests.get(msg.requestId);
@@ -256,20 +269,43 @@ function shutdownCleanly(signal: string) {
 
 process.on("SIGINT", () => shutdownCleanly("SIGINT"));
 process.on("SIGTERM", () => shutdownCleanly("SIGTERM"));
+process.on("exit", () => {
+  if (pyDaemon) {
+    try { pyDaemon.kill("SIGKILL"); } catch {}
+  }
+});
 
 // Start the daemon process
 startPythonDaemon();
 
-function sendDaemonRequest(action: string, params: any = {}): Promise<any> {
+function sendDaemonRequest(action: string, params: any = {}, timeoutMs: number = 5000): Promise<any> {
   return new Promise((resolve, reject) => {
     if (!pyDaemon?.stdin?.writable || pyDaemon.stdin.destroyed) {
       return reject(new Error("Python bridge daemon is currently offline"));
     }
     const requestId = `REQ-${++requestCounter}-${Date.now()}`;
-    pendingRequests.set(requestId, { resolve, reject });
+
+    const timer = setTimeout(() => {
+      if (pendingRequests.has(requestId)) {
+        pendingRequests.delete(requestId);
+        reject(new Error(`Python bridge request timed out after ${timeoutMs}ms`));
+      }
+    }, timeoutMs);
+
+    pendingRequests.set(requestId, {
+      resolve: (data: any) => {
+        clearTimeout(timer);
+        resolve(data);
+      },
+      reject: (err: any) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    });
 
     pyDaemon.stdin.write(JSON.stringify({ requestId, action, params }) + "\n", (error) => {
       if (!error) return;
+      clearTimeout(timer);
       pendingRequests.delete(requestId);
       reject(new Error(`Python bridge request failed: ${error.message}`));
     });
@@ -322,19 +358,32 @@ app.get("/api/broker/callback", async (req, res) => {
     const result = await sendDaemonRequest("exchange_request_token", { request_token: requestToken });
     console.log(`[AUTH] Token exchange result success: ${Boolean(result && result.success)}`);
     if (result && result.success) {
+      const targetBrokerState = result?.brokerState || "CONNECTED_VERIFIED";
       workstationState.workspaceContext = {
         ...workstationState.workspaceContext,
-        brokerState: "CONNECTED",
+        brokerState: targetBrokerState,
         timestamp: new Date().toISOString()
       };
       broadcastToClients({
         type: "auth_event",
-        brokerState: "CONNECTED",
+        brokerState: targetBrokerState,
         timestamp: new Date().toISOString()
       });
-      console.log("[AUTH] Broker canonical publication SUCCESS — auth_event broadcast to all clients.");
+      broadcastToClients({
+        type: "phase3_broker_health_updated",
+        data: {
+          status: targetBrokerState,
+          connection_status: targetBrokerState,
+          transport_connected: true,
+          authenticated: true,
+          session_valid: true,
+          execution_verified: targetBrokerState === "CONNECTED_VERIFIED",
+          reconciliation_complete: targetBrokerState === "CONNECTED_VERIFIED"
+        }
+      });
+      console.log(`[AUTH] Broker canonical publication SUCCESS — auth_event (${targetBrokerState}) broadcast to all clients.`);
       if (req.headers.accept && req.headers.accept.includes("application/json")) {
-        return res.json({ success: true, brokerState: "CONNECTED" });
+        return res.json({ success: true, brokerState: targetBrokerState });
       }
       return res.redirect("/?connected=true");
     } else {
@@ -386,17 +435,30 @@ app.post("/api/broker/login", async (req, res) => {
       //
       // Instead: immediately update the server-side cached state so REST polls get CONNECTED,
       // then broadcast an auth_event to all WebSocket clients for instant React propagation.
+      const targetBrokerState = result?.brokerState || "CONNECTED_VERIFIED";
       workstationState.workspaceContext = {
         ...workstationState.workspaceContext,
-        brokerState: "CONNECTED",
+        brokerState: targetBrokerState,
         timestamp: new Date().toISOString()
       };
       broadcastToClients({
         type: "auth_event",
-        brokerState: "CONNECTED",
+        brokerState: targetBrokerState,
         timestamp: new Date().toISOString()
       });
-      console.log("[AUTH] Broker CONNECTED — auth_event broadcast to all clients.");
+      broadcastToClients({
+        type: "phase3_broker_health_updated",
+        data: {
+          status: targetBrokerState,
+          connection_status: targetBrokerState,
+          transport_connected: true,
+          authenticated: true,
+          session_valid: true,
+          execution_verified: targetBrokerState === "CONNECTED_VERIFIED",
+          reconciliation_complete: targetBrokerState === "CONNECTED_VERIFIED"
+        }
+      });
+      console.log(`[AUTH] Broker ${targetBrokerState} — auth_event broadcast to all clients.`);
     } else {
       activeApiKey = "";
       activeAccessToken = "";
@@ -421,6 +483,18 @@ app.post("/api/broker/logout", async (req, res) => {
     type: "auth_event",
     brokerState: "DISCONNECTED",
     timestamp: new Date().toISOString()
+  });
+  broadcastToClients({
+    type: "phase3_broker_health_updated",
+    data: {
+      status: "DISCONNECTED",
+      connection_status: "DISCONNECTED",
+      transport_connected: false,
+      authenticated: false,
+      session_valid: false,
+      execution_verified: false,
+      reconciliation_complete: false
+    }
   });
   console.log("[AUTH] Broker DISCONNECTED — auth_event broadcast to all clients.");
   try {
@@ -449,9 +523,16 @@ app.post("/api/interpretation/generate", async (_req, res) => {
   }
 });
 
-app.get("/api/health", (req, res) => {
+app.get("/api/health", async (req, res) => {
   const readiness = workstationState.workspace_readiness || workstationState.workspaceReadiness || {};
   const overallState = readiness.overall_state || "DEGRADED";
+  let bStatus = workstationState.broker_status?.normalized_status || workstationState.broker_status?.status;
+  if (!bStatus) {
+    try {
+      const bh = await sendDaemonRequest("get_broker_health");
+      if (bh && bh.status) bStatus = bh.status;
+    } catch (e) {}
+  }
 
   res.json({
     status: overallState,
@@ -461,7 +542,7 @@ app.get("/api/health", (req, res) => {
     state_sequence: workstationState.state_sequence || 0,
     timestamp: new Date().toISOString(),
     component_readiness: {
-      zerodha: workstationState.broker_status?.status || "disconnected",
+      zerodha: (bStatus || "disconnected").toLowerCase(),
       market_feed: workstationState.market_feed_status?.status || "offline",
       options: workstationState.option_intelligence?.status || "unavailable",
       news: workstationState.news_intelligence?.status || "unavailable",
@@ -471,9 +552,50 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.get("/api/broker/health", (req, res) => {
-  const status = workstationState.broker_status?.status || "disconnected";
-  res.json({ connection_status: status.toUpperCase(), session_valid: status === "connected", last_successful_update: workstationState.broker_status?.last_successful_update || null });
+app.get("/api/broker/health", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_broker_health");
+    if (result && result.status) {
+      res.json({
+        ...result,
+        connection_status: result.status,
+        session_valid: result.session_valid ?? false,
+        last_successful_update: result.last_verified_at || null
+      });
+      return;
+    }
+  } catch (err: any) {
+    console.warn("Failed fetching daemon broker health:", err.message);
+  }
+  if (workstationState.broker_status) {
+    const bs = workstationState.broker_status;
+    const normStatus = bs.normalized_status || bs.status || "DISCONNECTED";
+    res.json({
+      ...bs,
+      status: normStatus,
+      connection_status: normStatus,
+      transport_connected: bs.transport_connected ?? (normStatus !== "DISCONNECTED"),
+      authenticated: bs.authenticated ?? (normStatus === "CONNECTED_VERIFIED" || normStatus === "BROKER_STATE_UNVERIFIED"),
+      session_valid: bs.session_valid ?? (normStatus === "CONNECTED_VERIFIED" || normStatus === "BROKER_STATE_UNVERIFIED"),
+      execution_verified: bs.execution_verified ?? (normStatus === "CONNECTED_VERIFIED"),
+      reconciliation_complete: bs.reconciliation_complete ?? (normStatus === "CONNECTED_VERIFIED"),
+      last_verified_at: bs.last_successful_update || null,
+      blocker_code: bs.blocker_code || null
+    });
+    return;
+  }
+  const status = "DISCONNECTED";
+  res.json({
+    status: status,
+    connection_status: status,
+    transport_connected: false,
+    authenticated: false,
+    session_valid: false,
+    execution_verified: false,
+    reconciliation_complete: false,
+    last_verified_at: null,
+    blocker_code: "BROKER_SERVICE_UNAVAILABLE"
+  });
 });
 
 app.get("/api/portfolio", (req, res) => {
@@ -573,6 +695,568 @@ app.get("/api/planner/optimization-report", (req, res) => {
   res.json(workstationState.optimization_report || {});
 });
 
+// Pre-Market Briefing Endpoints
+app.get("/api/pre-market-briefing/current", async (req, res) => {
+  try {
+    if (workstationState.pre_market_briefing && workstationState.pre_market_briefing.report_id) {
+      return res.json(workstationState.pre_market_briefing);
+    }
+    const result = await sendDaemonRequest("get_pre_market_briefing");
+    res.json(result?.briefing || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/pre-market-briefing/history", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_pre_market_briefing_history");
+    res.json(result?.history || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/performance/records", async (req, res) => {
+  try {
+    const targetDate = (req.query.date as string) || new Date().toISOString().split("T")[0];
+    const result = await sendDaemonRequest("get_performance_records", { date: targetDate });
+    res.json(result?.records || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/performance/history", async (_req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_performance_history");
+    res.json(result?.history || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/performance/evaluate", async (req, res) => {
+  try {
+    const { date, session_truth } = req.body || {};
+    const result = await sendDaemonRequest("evaluate_performance_records", {
+      date: date || new Date().toISOString().split("T")[0],
+      session_truth: session_truth || {}
+    });
+    res.json(result?.records || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/performance/capture", async (req, res) => {
+  try {
+    const { date, phase, state } = req.body || {};
+    const result = await sendDaemonRequest("capture_performance_snapshot", {
+      date: date || new Date().toISOString().split("T")[0],
+      phase: phase || "LIVE_INTRADAY",
+      state: state || workstationState || {}
+    });
+    res.json(result?.records || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/pre-market-briefing/:date", async (req, res) => {
+  try {
+    const targetDate = req.params.date;
+    const result = await sendDaemonRequest("get_pre_market_briefing", { date: targetDate });
+    res.json(result?.briefing || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Staging-only Developer Controls
+app.post("/api/pre-market-briefing/generate", async (req, res) => {
+  const isProduction = process.env.NODE_ENV === "production" && process.env.VITE_STAGING_MODE !== "true";
+  if (isProduction && PORT === 3000) {
+    return res.status(403).json({ error: "Staging developer controls are disabled in production." });
+  }
+  try {
+    const result = await sendDaemonRequest("generate_pre_market_briefing", {
+      force_freeze: req.body?.force_freeze ?? true,
+      force_regenerate: req.body?.force_regenerate ?? true
+    });
+    if (result?.briefing) {
+      workstationState = {
+        ...workstationState,
+        pre_market_briefing: result.briefing
+      };
+      broadcastToClients({ type: "state", data: workstationState });
+    }
+    res.json(result?.briefing || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/pre-market-briefing/validate", async (req, res) => {
+  const isProduction = process.env.NODE_ENV === "production" && process.env.VITE_STAGING_MODE !== "true";
+  if (isProduction && PORT === 3000) {
+    return res.status(403).json({ error: "Staging developer controls are disabled in production." });
+  }
+  try {
+    const result = await sendDaemonRequest("validate_pre_market_briefing", {
+      date: req.body?.date,
+      is_preview: req.body?.is_preview ?? true
+    });
+    if (result?.briefing) {
+      workstationState = {
+        ...workstationState,
+        pre_market_briefing: result.briefing
+      };
+      broadcastToClients({ type: "state", data: workstationState });
+    }
+    res.json(result?.briefing || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Post-Market Briefing API Endpoints
+app.get("/api/post-market-briefing/current", async (_req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_post_market_briefing", {});
+    res.json(result?.data || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/post-market-briefing/history", async (_req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_post_market_briefing_history", {});
+    res.json(result?.history || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/post-market-briefing/:date", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_post_market_briefing", { trading_date: req.params.date });
+    res.json(result?.data || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/post-market-briefing/reconcile", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("reconcile_post_market_briefing", { trading_date: req.body?.date });
+    res.json(result?.data || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Intelligence Sprint I1 Actionable Opportunities Endpoints
+app.get("/api/intelligence/opportunities/current", async (_req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_intelligence_opportunities", {});
+    res.json(result?.data || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/intelligence/opportunities/history", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_intelligence_opportunity_history", { date: req.query.date });
+    res.json(result?.data || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Phase 3 Trade Proposal & Approval State Machine Endpoints
+app.get("/api/phase3/proposals/active", async (_req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_active_proposal");
+    res.json(result?.proposal || { state: "NO_TRADE", contract_symbol: "NO ACTIVE PROPOSAL" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/phase3/proposals/:id/validate", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("validate_proposal", { proposal_id: req.params.id });
+    if (result?.proposal) {
+      broadcastToClients({ type: "phase3_proposal", data: result.proposal });
+    }
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/phase3/proposals/:id/margin", async (req, res) => {
+  try {
+    const lots = req.body?.lots ? parseInt(req.body.lots, 10) : 1;
+    const product = req.body?.product || "NRML";
+    const result = await sendDaemonRequest("calculate_proposal_margin", {
+      proposal_id: req.params.id,
+      lots,
+      product
+    });
+    if (result?.proposal) {
+      broadcastToClients({ type: "phase3_proposal", data: result.proposal });
+    }
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message, status: "MARGIN_UNAVAILABLE" });
+  }
+});
+
+app.post("/api/phase3/proposals/:id/approve", async (req, res) => {
+  try {
+    const lots = req.body?.lots ? parseInt(req.body.lots, 10) : undefined;
+    const product = req.body?.product || undefined;
+    const result = await sendDaemonRequest("approve_proposal", {
+      proposal_id: req.params.id,
+      lots,
+      product
+    });
+    if (result?.proposal) {
+      broadcastToClients({ type: "phase3_proposal", data: result.proposal });
+    }
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/phase3/proposals/:id/reject", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("reject_proposal", {
+      proposal_id: req.params.id,
+      reason: req.body?.reason || "Trader rejected proposal"
+    });
+    if (result?.proposal) {
+      broadcastToClients({ type: "phase3_proposal", data: result.proposal });
+    }
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/phase3/proposals/audit", async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const result = await sendDaemonRequest("get_proposal_audits", { limit });
+    res.json(result?.audits || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── PHASE 3 MILESTONE 3: LIVE BROKER EXECUTION & RECONCILIATION ──
+
+app.post("/api/phase3/orders/execute", async (req, res) => {
+  try {
+    const isLiveEnabled = process.env.ENABLE_LIVE_EXECUTION === "true";
+    if (!isLiveEnabled) {
+      return res.status(403).json({
+        success: false,
+        error: "Live execution is disabled. Set ENABLE_LIVE_EXECUTION=true in staging environment.",
+        code: "LIVE_EXECUTION_DISABLED"
+      });
+    }
+
+    const { proposal_id, intent_id, lots, product } = req.body || {};
+    const result = await sendDaemonRequest("execute_live_order", {
+      proposal_id,
+      intent_id,
+      lots: lots ? parseInt(lots, 10) : 1,
+      product: product || "NRML"
+    });
+
+    if (result?.order) {
+      broadcastToClients({ type: "phase3_order_updated", data: result.order });
+    }
+    if (result?.proposal) {
+      broadcastToClients({ type: "phase3_proposal", data: result.proposal });
+    }
+
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/phase3/orders/active", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_active_orders", {});
+    res.json(result?.orders || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/phase3/orders/recent", async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const result = await sendDaemonRequest("get_recent_orders", { limit });
+    res.json(result?.orders || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/phase3/orders/:id/events", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_order_events", { order_id: req.params.id });
+    res.json(result?.events || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/phase3/positions", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_live_positions", {});
+    res.json(result?.positions || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/phase3/positions/all", async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const result = await sendDaemonRequest("get_all_positions", { limit });
+    res.json(result?.positions || []);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/phase3/orders/:id/cancel", async (req, res) => {
+  try {
+    const isLiveEnabled = process.env.ENABLE_LIVE_EXECUTION === "true";
+    if (!isLiveEnabled) {
+      return res.status(403).json({
+        success: false,
+        error: "Live execution is disabled. Set ENABLE_LIVE_EXECUTION=true in staging environment.",
+        code: "LIVE_EXECUTION_DISABLED"
+      });
+    }
+
+    const { idempotency_key } = req.body || {};
+    const result = await sendDaemonRequest("cancel_order", {
+      order_id: req.params.id,
+      idempotency_key
+    });
+
+    // Trigger immediate reconciliation and broadcast
+    const recon = await sendDaemonRequest("reconcile_orders", {});
+    if (recon?.updated_orders) {
+      recon.updated_orders.forEach((ord: any) => {
+        broadcastToClients({ type: "phase3_order_updated", data: ord });
+      });
+    }
+
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/phase3/positions/:id/exit", async (req, res) => {
+  try {
+    const isLiveEnabled = process.env.ENABLE_LIVE_EXECUTION === "true";
+    if (!isLiveEnabled) {
+      return res.status(403).json({
+        success: false,
+        error: "Live execution is disabled. Set ENABLE_LIVE_EXECUTION=true in staging environment.",
+        code: "LIVE_EXECUTION_DISABLED"
+      });
+    }
+
+    const { idempotency_key, quantity, order_type, price } = req.body || {};
+    const result = await sendDaemonRequest("exit_position", {
+      position_id: req.params.id,
+      idempotency_key,
+      quantity,
+      order_type: order_type || "MARKET",
+      price
+    });
+
+    // Immediate reconciliation
+    const recon = await sendDaemonRequest("reconcile_orders", {});
+    if (recon?.open_positions) {
+      broadcastToClients({ type: "phase3_positions_updated", data: recon.open_positions });
+    }
+
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/phase3/positions/exit-all", async (req, res) => {
+  try {
+    const isLiveEnabled = process.env.ENABLE_LIVE_EXECUTION === "true";
+    if (!isLiveEnabled) {
+      return res.status(403).json({
+        success: false,
+        error: "Live execution is disabled. Set ENABLE_LIVE_EXECUTION=true in staging environment.",
+        code: "LIVE_EXECUTION_DISABLED"
+      });
+    }
+
+    const { idempotency_key } = req.body || {};
+    const result = await sendDaemonRequest("emergency_close_all", {
+      idempotency_key
+    });
+
+    // Immediate reconciliation
+    const recon = await sendDaemonRequest("reconcile_orders", {});
+    if (recon?.open_positions) {
+      broadcastToClients({ type: "phase3_positions_updated", data: recon.open_positions });
+    }
+
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/phase3/orders/reconcile", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("reconcile_orders", {});
+    if (result?.updated_orders && result.updated_orders.length > 0) {
+      result.updated_orders.forEach((ord: any) => {
+        broadcastToClients({ type: "phase3_order_updated", data: ord });
+      });
+    }
+    if (result?.open_positions) {
+      broadcastToClients({ type: "phase3_positions_updated", data: result.open_positions });
+    }
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── MILESTONE 5: EXECUTION JOURNAL & PERFORMANCE LINEAGE ──
+
+app.get("/api/phase3/journal", async (req, res) => {
+  try {
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const offset = req.query.offset ? parseInt(req.query.offset as string, 10) : 0;
+    const date_from = req.query.date_from as string;
+    const date_to = req.query.date_to as string;
+    const symbol = req.query.symbol as string;
+    const setup_type = req.query.setup_type as string;
+    const result_filter = req.query.result_filter as string;
+
+    const result = await sendDaemonRequest("get_journal_entries", {
+      limit,
+      offset,
+      date_from,
+      date_to,
+      symbol,
+      setup_type,
+      result_filter
+    });
+    res.json(result || { entries: [], total: 0 });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/phase3/journal/analytics/summary", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_journal_analytics", {});
+    res.json(result?.summary || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/phase3/journal/:id", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_journal_entry", {
+      journal_id: req.params.id
+    });
+    if (!result?.entry) {
+      return res.status(404).json({ error: "Journal entry not found" });
+    }
+    res.json(result.entry);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/phase3/journal/:id/notes", async (req, res) => {
+  try {
+    const { note_text, tags } = req.body || {};
+    const result = await sendDaemonRequest("add_journal_note", {
+      journal_id: req.params.id,
+      note_text,
+      tags: tags || []
+    });
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── MILESTONE 6: EXECUTION SAFETY & CIRCUIT BREAKERS ──
+
+app.get("/api/phase3/safety/status", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_safety_status", {});
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/phase3/safety/kill-switch", async (req, res) => {
+  try {
+    const { active } = req.body || {};
+    const result = await sendDaemonRequest("toggle_kill_switch", { active: Boolean(active) });
+    broadcastToClients({ type: "phase3_safety_updated", data: result });
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── MILESTONE 7: CONSOLIDATED EXECUTION STATE SNAPSHOT ──
+
+app.get("/api/phase3/state", async (req, res) => {
+  try {
+    const result = await sendDaemonRequest("get_phase3_state", {});
+    res.json(result || {});
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Periodic background reconciler (every 3 seconds)
+setInterval(async () => {
+  try {
+    const result = await sendDaemonRequest("reconcile_orders", {});
+    if (result?.updated_orders && result.updated_orders.length > 0) {
+      result.updated_orders.forEach((ord: any) => {
+        broadcastToClients({ type: "phase3_order_updated", data: ord });
+      });
+    }
+  } catch {}
+}, 3000);
+
 app.post("/api/orders/place", rejectReadOnlyMutation("Order placement"));
 app.post("/api/orders/modify", rejectReadOnlyMutation("Order modification"));
 app.post("/api/orders/cancel", rejectReadOnlyMutation("Order cancellation"));
@@ -633,6 +1317,39 @@ app.get("/api/news/refresh/status", (req, res) => {
 let manualMacroRefreshStatus: "idle" | "running" | "completed" | "failed" = "idle";
 let lastMacroRefreshTime = 0;
 let macroRefreshError: string | null = null;
+
+app.post("/api/live-assistant/query", async (req, res) => {
+  try {
+    const message = req.body?.message || req.body?.prompt || "";
+    const conversation_id = req.body?.conversation_id || "default";
+    const provider = req.body?.provider;
+    
+    if (!message) {
+      return res.status(400).json({ error: "Message/prompt parameter is required." });
+    }
+
+    let effectiveState = workstationState;
+    if (process.env.ALLOW_TEST_STATE_OVERRIDE === "true" || process.env.PYTEST_CURRENT_TEST) {
+      effectiveState = req.body?.workstation_state || workstationState;
+    }
+
+    const daemonResult = await sendDaemonRequest("live_assistant_query", {
+      message,
+      conversation_id,
+      provider,
+      workstation_state: effectiveState
+    });
+
+    if (daemonResult && daemonResult.success) {
+      return res.json(daemonResult.result);
+    } else {
+      return res.status(500).json({ error: daemonResult?.error || "Daemon failed to process query." });
+    }
+  } catch (err: any) {
+    console.error("Live assistant query error:", err);
+    return res.status(500).json({ error: err.message || "Failed to process live assistant query." });
+  }
+});
 
 app.post("/api/macro/refresh", async (req, res) => {
   const now = Date.now();

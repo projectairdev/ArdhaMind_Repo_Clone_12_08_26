@@ -96,9 +96,9 @@ class TestUnauthenticatedDaemonState(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.bs.place_order()
         with self.assertRaises(PermissionError):
-            self.bs.modify_order()
+            self.bs.modify_order(order_id="TEST")
         with self.assertRaises(PermissionError):
-            self.bs.cancel_order()
+            self.bs.cancel_order(order_id="TEST")
 
 
 if __name__ == "__main__":

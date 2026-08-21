@@ -12,14 +12,17 @@ class OptionContext:
     current_weekly_expiry: str
     current_monthly_expiry: str
     time_to_expiry: float  # time to expiry in days or fraction of years
-    atm_iv: float
-    expected_move: float
-    pcr: float
-    max_pain: float
-    highest_call_oi: float
-    highest_put_oi: float
-    highest_call_oi_change: float
-    highest_put_oi_change: float
+    calendar_dte: int = 0
+    trading_dte: int = 0
+    dte_basis: str = "CALENDAR_DAYS"
+    atm_iv: float = 0.0
+    expected_move: float = 0.0
+    pcr: float = 1.0
+    max_pain: float = 0.0
+    highest_call_oi: float = 0.0
+    highest_put_oi: float = 0.0
+    highest_call_oi_change: float = 0.0
+    highest_put_oi_change: float = 0.0
     support_strikes: List[float] = field(default_factory=list)
     resistance_strikes: List[float] = field(default_factory=list)
     liquidity_metrics: Dict[str, Any] = field(default_factory=dict)

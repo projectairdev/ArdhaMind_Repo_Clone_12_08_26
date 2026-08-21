@@ -10,20 +10,20 @@ def read(path: str) -> str:
 def test_nifty_live_strip_removed():
     text = read("frontend/components/NiftyLiveWorkspace.tsx")
     assert "<NiftyIntelligenceStrip" not in text
-    assert "<OverviewPanel />" in text
+    assert "<NiftyCandlestickChart" in text and 'title="Market context"' in text
 
 
 def test_normal_ui_no_canonical_quality():
     text = read("frontend/components/NiftyLiveWorkspace.tsx")
     assert "Canonical quality" not in text
     assert "NIFTY 50" in text
-    assert "Previous Session" in text
+    assert "Session review" in text
 
 
 def test_normal_ui_no_kite_historical_api():
     text = read("frontend/components/NiftyLiveWorkspace.tsx")
     assert 'Source: kite_historical_api' not in text
-    assert 'dq.source === "kite_historical_api" ? "Kite Historical API"' in text
+    assert "<NiftyCandlestickChart" in text
 
 
 def test_normal_ui_no_unified_engine_id():
@@ -117,8 +117,8 @@ def test_distinct_readiness_semantics():
 def test_financial_terminology_intact():
     nifty = read("frontend/components/NiftyLiveWorkspace.tsx")
     story = read("frontend/components/MarketStory.tsx")
-    assert "PCR / Max Pain" in nifty
-    assert "ATM Option IV" in nifty
-    assert "VWAP" in nifty
-    assert "EMA 20 / 50" in nifty
+    assert '["PCR"' in nifty and '["Max Pain"' in nifty
+    options = read("frontend/components/OptionsWorkspace.tsx")
+    assert '["ATM"' in options and '["Expected Move"' in options
+    assert '"Trend"' in nifty and "Market structure" in options
     assert "India VIX" in story or "VIX" in nifty

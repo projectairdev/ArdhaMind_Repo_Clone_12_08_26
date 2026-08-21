@@ -164,7 +164,7 @@ def test_11_global_telemetry_is_owned_by_market_pulse() -> None:
     nifty = Path("src/frontend/components/NiftyLiveWorkspace.tsx").read_text(encoding="utf-8")
     pulse = Path("src/frontend/components/MarketPulseWorkspace.tsx").read_text(encoding="utf-8")
     assert "GlobalMarketsDashboard" not in nifty
-    assert "GLOBAL CUES" in pulse and "MACRO &amp; CROSS-ASSET" in pulse
+    assert "Market metrics & global telemetry" in pulse
 
 
 def test_12_evening_outlook_consumes_only_since_close_macro_keys() -> None:

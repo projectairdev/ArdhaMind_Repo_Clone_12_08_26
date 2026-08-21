@@ -23,10 +23,12 @@ import {
   formatNumber,
   formatCurrency
 } from "../utils/safeHelpers";
+import { resolveMarketSessionState } from "../utils/canonicalSemanticContract";
 
 export function TradeCenter() {
   const { themeClasses, fontClasses, accentClasses } = useTheme();
   const {
+    canonicalState,
     opportunityContext: opp,
     strategyEvaluation: evals,
     confidenceReport: conf,
@@ -99,8 +101,9 @@ export function TradeCenter() {
     ? (confidenceScoreMap?.[activeCandidate.candidate_id] ?? null)
     : null;
 
-  // 1. Market Closed check
-  const isMarketClosed = marketContext?.market_status === "CLOSED" || opp?.market_status === "CLOSED" || opp?.trading_session === "CLOSED";
+  // 1. Canonical Market Closed check
+  const canonicalSession = resolveMarketSessionState(canonicalState, marketContext);
+  const isMarketClosed = canonicalSession === "CLOSED" || canonicalSession === "POST_MARKET";
   
   // 2. Feed status validation (Broker Status, Option Chain, Spot and Latency)
   const isFeedCritical = apiLatency !== null && apiLatency > 5000;

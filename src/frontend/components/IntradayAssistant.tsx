@@ -150,7 +150,7 @@ export function IntradayAssistant() {
     return items.reverse(); // Newest first
   }, [windows, significantEvents, activeFilter]);
 
-  const handleSendPrompt = (promptText?: string) => {
+  const handleSendPrompt = async (promptText?: string) => {
     const textToSend = promptText || inputPrompt;
     if (!textToSend.trim()) return;
 
@@ -158,23 +158,42 @@ export function IntradayAssistant() {
     setChatMessages(newMsgs);
     if (!promptText) setInputPrompt("");
 
-    setTimeout(() => {
-      let reply = `Based on current canonical intelligence: NIFTY spot is ${spot ? spot.toFixed(2) : "unavailable"}. Current read: ${currentRead}`;
-      if (textToSend.toLowerCase().includes("15 minutes") || textToSend.toLowerCase().includes("last 15")) {
-        const lastWin: any = windows[windows.length - 1];
-        if (lastWin) {
-          reply = `In the last 15m window (${lastWin.window_start}–${lastWin.window_end}): NIFTY change was ${lastWin.price_change_points} pts. Headline: ${lastWin.headline}`;
-        }
-      } else if (textToSend.toLowerCase().includes("option")) {
-        reply = `Option Context: PCR is ${safeNumber(state?.option_intelligence?.pcr, 1.15).toFixed(2)}. ATM strike near ${spot ? Math.round(spot / 50) * 50 : 24500}.`;
-      } else if (textToSend.toLowerCase().includes("breadth")) {
-        reply = mData?.breadth?.advances != null && mData?.breadth?.declines != null
-          ? `Constituent Breadth: ${mData.breadth.advances} Advances / ${mData.breadth.declines} Declines.`
-          : `Constituent Breadth: UNAVAILABLE.`;
-      }
+    try {
+      const response = await fetch("/api/live-assistant/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: textToSend,
+          conversation_id: "intraday_assistant_ui",
+        }),
+      });
 
-      setChatMessages(prev => [...prev, { sender: "assistant", text: reply }]);
-    }, 300);
+      if (response.ok) {
+        const result = await response.json();
+        const metaTag = `\n\n*(Grounded in: ${result.evidence_used?.join(" • ") || "Canonical Evidence"} | Provider: ${result.provider || "Grounded Engine"}${result.fallback_used ? " [Fallback]" : ""} | Freshness: ${result.freshness || "LIVE"})*`;
+        setChatMessages(prev => [...prev, { sender: "assistant", text: `${result.answer}${metaTag}` }]);
+        return;
+      }
+    } catch (err) {
+      console.warn("Live assistant API query error, using local fallback:", err);
+    }
+
+    // Local Fallback if API fails
+    let reply = `Based on current canonical intelligence: NIFTY spot is ${spot ? spot.toFixed(2) : "unavailable"}. Current read: ${currentRead}`;
+    if (textToSend.toLowerCase().includes("15 minutes") || textToSend.toLowerCase().includes("last 15")) {
+      const lastWin: any = windows[windows.length - 1];
+      if (lastWin) {
+        reply = `In the last 15m window (${lastWin.window_start}–${lastWin.window_end}): NIFTY change was ${lastWin.price_change_points} pts. Headline: ${lastWin.headline}`;
+      }
+    } else if (textToSend.toLowerCase().includes("option")) {
+      reply = `Option Context: PCR is ${safeNumber(state?.option_intelligence?.pcr, 1.15).toFixed(2)}. ATM strike near ${spot ? Math.round(spot / 50) * 50 : 24500}.`;
+    } else if (textToSend.toLowerCase().includes("breadth")) {
+      reply = mData?.breadth?.advances != null && mData?.breadth?.declines != null
+        ? `Constituent Breadth: ${mData.breadth.advances} Advances / ${mData.breadth.declines} Declines.`
+        : `Constituent Breadth: UNAVAILABLE.`;
+    }
+
+    setChatMessages(prev => [...prev, { sender: "assistant", text: reply }]);
   };
 
   const intelMode = assistantIntel.intelligence_mode || (isClosed ? "COMPLETED_SESSION" : "LIVE");

@@ -10,8 +10,8 @@ from src.broker.services.streaming_orchestrator import StreamingOrchestrator
 from src.application.workstation_state_service import WorkstationStateService
 
 
-def test_nifty_live_tab_single_row_render_contract():
-    """Verify that NIFTY Live workspace component exposes exactly one tab navigation row."""
+def test_nifty_live_is_one_continuous_dashboard_contract():
+    """NIFTY content is continuous beneath the MARKET-level navigation."""
     with open("src/frontend/components/PhaseOneWorkspaces.tsx", "r", encoding="utf-8") as f:
         phase_one_content = f.read()
 
@@ -22,11 +22,9 @@ def test_nifty_live_tab_single_row_render_contract():
     with open("src/frontend/components/NiftyLiveWorkspace.tsx", "r", encoding="utf-8") as f:
         workspace_content = f.read()
 
-    # Ensure single authoritative tab container with testid exists
-    assert 'data-testid="nifty-live-tabs"' in workspace_content
-    assert 'Overview' in workspace_content
-    assert 'Price &amp; Trend' in workspace_content or 'Price & Trend' in workspace_content
-    assert 'Options' in workspace_content
+    assert 'data-testid="nifty-live-tabs"' not in workspace_content
+    for label in ('title="Key levels"', 'title="Market context"', 'title="Top gainers"', 'title="Top losers"'):
+        assert label in workspace_content
 
 
 def test_market_closed_with_valid_auth_does_not_emit_disconnected():

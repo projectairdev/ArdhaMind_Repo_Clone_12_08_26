@@ -108,8 +108,8 @@ def test_supported_configuration_cannot_activate_trading_or_paper_mode() -> None
 def test_canonical_frontend_routes_only_six_read_only_workspaces() -> None:
     layout = (ROOT / "src/frontend/layout/DashboardLayout.tsx").read_text(encoding="utf-8")
     for workspace in (
-        "NiftyLiveWorkspace", "MarketPulseWorkspace", "TodaysAnalysisWorkspace",
-        "NewsUpdatesWorkspace", "LiveAssistantWorkspace", "SettingsWorkspace",
+        "NiftyLiveWorkspace", "MarketPulseWorkspace", "MarketIntelligenceWorkspace",
+        "NewsWorkspace", "SettingsWorkspace",
     ):
         assert workspace in layout
     for retired in ("ExecutionWorkspace", "TradingJournal", "BrokerIntegration", "OperationsManager"):

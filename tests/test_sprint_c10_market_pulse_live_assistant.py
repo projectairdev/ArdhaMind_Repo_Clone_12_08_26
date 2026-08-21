@@ -242,9 +242,10 @@ def test_27_nifty_live_price_trend_available():
 
 # 28. NIFTY Live Options remains available
 def test_28_nifty_live_options_available():
-    file = Path("src/frontend/components/NiftyLiveWorkspace.tsx")
-    text = file.read_text(encoding="utf-8")
-    assert "Options" in text
+    layout = Path("src/frontend/layout/DashboardLayout.tsx").read_text(encoding="utf-8")
+    options = Path("src/frontend/components/OptionsWorkspace.tsx").read_text(encoding="utf-8")
+    assert 'marketSubTab === "options"' in layout
+    assert "<OptionChainLadder" in options and "<OpenInterestHeatmap" in options
 
 
 # 29. Spot update/change remains correct

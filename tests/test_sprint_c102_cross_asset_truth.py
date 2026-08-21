@@ -75,28 +75,28 @@ def test_12_missing_usd_inr_produces_unavailable():
     util_code = read_src("frontend/utils/canonicalQuotes.ts")
     pulse_code = read_src("frontend/components/MarketPulseWorkspace.tsx")
     assert "isAvailable: false" in util_code
-    assert "UNAVAILABLE" in pulse_code
+    assert "Unavailable" in pulse_code
 
 
 def test_13_missing_brent_produces_unavailable():
     util_code = read_src("frontend/utils/canonicalQuotes.ts")
     pulse_code = read_src("frontend/components/MarketPulseWorkspace.tsx")
     assert "isAvailable: false" in util_code
-    assert "UNAVAILABLE" in pulse_code
+    assert "Unavailable" in pulse_code
 
 
 def test_14_missing_us10y_produces_unavailable():
     util_code = read_src("frontend/utils/canonicalQuotes.ts")
     pulse_code = read_src("frontend/components/MarketPulseWorkspace.tsx")
     assert "isAvailable: false" in util_code
-    assert "UNAVAILABLE" in pulse_code
+    assert "Unavailable" in pulse_code
 
 
 def test_15_missing_gift_produces_unavailable():
     util_code = read_src("frontend/utils/canonicalQuotes.ts")
     pulse_code = read_src("frontend/components/MarketPulseWorkspace.tsx")
     assert "isAvailable: false" in util_code
-    assert "UNAVAILABLE" in pulse_code
+    assert "Unavailable" in pulse_code
 
 
 def test_16_no_hardcoded_83_92_production_fallback():
@@ -126,7 +126,7 @@ def test_19_no_hardcoded_gift_numeric_fallback():
 def test_20_us10y_bps_semantics_validated():
     pulse_code = read_src("frontend/components/MarketPulseWorkspace.tsx")
     macro_code = read_src("frontend/components/MacroIntelligence.tsx")
-    assert "bps" in pulse_code
+    assert 'getCanonicalQuote(macroQuotes, "US_10Y")' in pulse_code
     assert "bps" in macro_code
 
 

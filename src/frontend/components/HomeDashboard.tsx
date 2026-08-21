@@ -29,6 +29,7 @@ import {
   formatCurrency,
   formatPercent
 } from "../utils/safeHelpers";
+import { resolveMarketSessionState } from "../utils/canonicalSemanticContract";
 
 interface HomeDashboardProps {
   onNavigate: (tab: string) => void;
@@ -38,6 +39,7 @@ export function HomeDashboard({ onNavigate }: HomeDashboardProps) {
   const { themeClasses, accentClasses, fontClasses } = useTheme();
 
   const {
+    canonicalState,
     marketContext: market,
     optionContext: option,
     decisionReport: decision,
@@ -110,8 +112,9 @@ export function HomeDashboard({ onNavigate }: HomeDashboardProps) {
   const unrealizedPnL = safeNumber(portfolio?.statistics?.total_unrealized_pnl);
   const utilizationPct = Math.round((totalMarginUtilized / (availableCash + totalMarginUtilized)) * 100) || 0;
 
-  // 1. Market Closed check
-  const isMarketClosed = market?.market_status === "CLOSED" || planner?.market_summary?.market_status === "CLOSED";
+  // 1. Canonical Market Closed check
+  const canonicalSession = resolveMarketSessionState(canonicalState, market);
+  const isMarketClosed = canonicalSession === "CLOSED" || canonicalSession === "POST_MARKET";
   
   // 2. Feed status check
   const isFeedCritical = apiLatency !== null && apiLatency > 5000;

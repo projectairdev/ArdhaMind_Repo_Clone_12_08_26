@@ -187,10 +187,26 @@ class UnifiedNiftyIntelligenceBuilder:
 
     @classmethod
     def _news(cls, news):
-        items=[x for x in (news.get("items") or []) if x.get("canonical_eligible", True)]
-        dirs=[str(x.get("expected_direction") or "NEUTRAL").upper() for x in items if float(x.get("nifty_relevance_score") or 0) >= 6]
+        raw_items = news.get("items") or []
+        items = []
+        now = datetime.now(timezone.utc)
+        for x in raw_items:
+            if x.get("canonical_eligible") is False or x.get("eligible") is False:
+                continue
+            pub = x.get("published_at")
+            if pub:
+                try:
+                    dt = datetime.fromisoformat(str(pub).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    if (now - dt).total_seconds() > 36 * 3600:
+                        continue
+                except Exception:
+                    pass
+            items.append(x)
+        dirs = [str(x.get("expected_direction") or "NEUTRAL").upper() for x in items if float(x.get("nifty_relevance_score") or 0) >= 6]
         if not items: return cls._signal("UNAVAILABLE", [], source="canonical.news_intelligence", eligible=False, reason="eligible current news unavailable")
-        pos=dirs.count("POSITIVE"); neg=dirs.count("NEGATIVE"); state="POSITIVE" if pos and not neg else "NEGATIVE" if neg and not pos else "MIXED" if pos and neg else "NEUTRAL"
+        pos = dirs.count("POSITIVE"); neg = dirs.count("NEGATIVE"); state = "POSITIVE" if pos and not neg else "NEGATIVE" if neg and not pos else "MIXED" if pos and neg else "NEUTRAL"
         return cls._signal(state, [f"{len(items)} freshness-eligible news items; {pos} positive, {neg} negative high-relevance classifications."], source="canonical.news_intelligence", freshness=str(news.get("freshness") or "eligible"))
 
     @classmethod

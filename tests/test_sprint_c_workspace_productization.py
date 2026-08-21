@@ -36,13 +36,13 @@ def test_scenario_cards_are_conditional_not_predictions():
 def test_nifty_live_is_a_canonical_command_center():
     text = source("NiftyLiveWorkspace.tsx")
     assert '<NiftyIntelligenceStrip' not in text
-    assert all(term in text for term in ("SpotSummary", "breadth", "top_gainers", "top_losers", "PCR / Max Pain", "ATM Option IV"))
+    assert all(term in text for term in ("SpotSummary", "breadth", "gainers", "losers", '["PCR"', '["Max Pain"', "MiniPriceChart"))
 
 
 def test_nifty_live_preserves_closed_session_and_last_valid_semantics():
     text = source("NiftyLiveWorkspace.tsx")
-    assert "LAST_VALID_SESSION" in text and "isClosed" in text
-    assert "Previous-session comparison unavailable" in text
+    assert 'mode === "post_market"' in text
+    assert "Session review" in text
 
 
 def test_unified_panel_uses_only_canonical_state():

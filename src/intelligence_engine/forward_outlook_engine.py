@@ -326,20 +326,21 @@ class ForwardOutlookEngine:
             "actual_outcome": "PENDING_HORIZON_COMPLETION"
         }
 
+        status_str = "PRE_CLOSE_PREVIEW" if not is_closed else ("READY" if confidence != "LOW" else "LOW_CONFIDENCE")
         horizon_lbl = (
             "Session Outlook Archive & Next Session Horizon"
             if is_closed
-            else "Intraday Scenario Outlook (Horizon: next 15–30 minutes)"
+            else "PRE_CLOSE_PREVIEW — Intraday Scenario Outlook (Horizon: next 15–30 minutes)"
         )
         report = ForwardOutlookReport(
             methodology_version=FORWARD_OUTLOOK_METHODOLOGY_VERSION,
             outlook_id=validation_stub["outlook_id"],
             generated_at=now_str, session_date=session_date, horizon_minutes=30,
-            analysis_status="READY" if confidence != "LOW" else "LOW_CONFIDENCE",
+            analysis_status=status_str,
             current_regime="SESSION_COMPLETE" if is_closed else "LIVE_SESSION",
             current_trend=t_trend, overall_confidence=confidence,
             scenario_spread=spread, primary_scenario=primary,
-            alternate_scenarios=alternates, what_changed=what_changed,
+            alternate_scenarios=alternates, what_changed={**what_changed, "is_final_close": is_closed},
             outcome_validation_stub=validation_stub,
             data_quality={"coverage_pct": round((coverage_valid / 50.0) * 100, 1), "status": "FULL_EVIDENCE"},
             horizon_label=horizon_lbl

@@ -1,0 +1,129 @@
+{
+  "generated": "2026-08-16T03:53:00+05:30",
+  "generator": "ArdhaMindBot/1.0 asset-acquisition-agent",
+  "note": "All assets sourced from Wikimedia Commons (public domain / CC0 / freely licensed). Logos remain trademarked by their respective owners. Use only in referential/data-display contexts.",
+  "thumbnail_note": "Wikimedia thumbnail URLs with non-standard pixel widths (e.g. 400px, 1200px, 2560px) now return HTTP 400. Direct SVG/full-resolution URLs used instead.",
+  "assets": [
+    {
+      "id": "nse",
+      "label": "National Stock Exchange of India",
+      "file": "exchanges/nse.svg",
+      "source": "MONOGRAM_FALLBACK",
+      "license": "original_work",
+      "status": "monogram",
+      "note": "Official NSE logo not available on Wikimedia Commons. SVG monogram fallback generated. Replace with official asset under license.",
+      "bytes": 500
+    },
+    {
+      "id": "sp_global",
+      "label": "S&P Global Ratings",
+      "file": "indices/sp_global.svg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/0/09/S%26P_Global_Ratings.svg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:S%26P_Global_Ratings.svg",
+      "license": "Public domain (logo, threshold of originality)",
+      "status": "downloaded",
+      "bytes": 10235
+    },
+    {
+      "id": "sp500",
+      "label": "Standard & Poor's wordmark",
+      "file": "indices/sp500.svg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/a/a8/Standard_%26_Poor%27s.svg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:Standard_%26_Poor%27s.svg",
+      "license": "Public domain (logo, threshold of originality)",
+      "status": "downloaded",
+      "bytes": 15898
+    },
+    {
+      "id": "nasdaq",
+      "label": "NASDAQ Logo",
+      "file": "indices/nasdaq.svg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/8/87/NASDAQ_Logo.svg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:NASDAQ_Logo.svg",
+      "license": "Public domain (logo, threshold of originality)",
+      "status": "downloaded",
+      "bytes": 3307
+    },
+    {
+      "id": "dow_jones",
+      "label": "Dow Jones & Company Logo",
+      "file": "indices/dow_jones.svg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/6/69/Dow_Jones_logo.svg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:Dow_Jones_logo.svg",
+      "license": "Public domain (logo, threshold of originality)",
+      "status": "downloaded",
+      "bytes": 5777
+    },
+    {
+      "id": "nikkei",
+      "label": "Nikkei Inc. Logo",
+      "file": "indices/nikkei.svg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/7/78/Nikkei_Logo.svg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:Nikkei_Logo.svg",
+      "license": "Public domain (logo, threshold of originality)",
+      "status": "downloaded",
+      "bytes": 622
+    },
+    {
+      "id": "hang_seng",
+      "label": "Hang Seng Index",
+      "file": "indices/hang_seng.svg",
+      "source": "MONOGRAM_FALLBACK",
+      "license": "original_work",
+      "status": "monogram",
+      "note": "Hang Seng Index logo not available on Wikimedia Commons. SVG monogram fallback generated. Replace with official asset under license.",
+      "bytes": 477
+    },
+    {
+      "id": "gold",
+      "label": "Gold Bullion",
+      "file": "commodities/gold.jpg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/5/52/Gold_bullion_1.jpg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:Gold_bullion_1.jpg",
+      "license": "CC BY-SA 3.0 / see Wikimedia page",
+      "status": "downloaded",
+      "note": "Downloaded first 500KB of full 1.49MB image",
+      "bytes": 500000
+    },
+    {
+      "id": "brent_crude",
+      "label": "Oil Platform P-51 (Petrobras, Brazil)",
+      "file": "commodities/brent_crude.jpg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/a/ab/Oil_platform_P-51_%28Brazil%29.jpg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:Oil_platform_P-51_(Brazil).jpg",
+      "license": "CC BY-SA 3.0 Agência Brasil",
+      "status": "downloaded",
+      "bytes": 508192
+    },
+    {
+      "id": "inr",
+      "label": "Indian Rupee Symbol",
+      "file": "currencies/inr.svg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/e/ee/Indian_Rupee_symbol.svg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:Indian_Rupee_symbol.svg",
+      "license": "Public domain",
+      "status": "downloaded",
+      "bytes": 256
+    },
+    {
+      "id": "india_flag",
+      "label": "Flag of India",
+      "file": "currencies/india_flag.svg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/4/41/Flag_of_India.svg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:Flag_of_India.svg",
+      "license": "Public domain",
+      "status": "downloaded",
+      "bytes": 848
+    },
+    {
+      "id": "usd",
+      "label": "Flag of the United States (DoS ECA Color Standard)",
+      "file": "currencies/usd.svg",
+      "source": "https://upload.wikimedia.org/wikipedia/commons/a/a9/Flag_of_the_United_States_%28DoS_ECA_Color_Standard%29.svg",
+      "wikimedia_page": "https://commons.wikimedia.org/wiki/File:Flag_of_the_United_States_(DoS_ECA_Color_Standard).svg",
+      "license": "Public domain",
+      "status": "downloaded",
+      "bytes": 799
+    }
+  ]
+}

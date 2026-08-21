@@ -102,7 +102,8 @@ class TestStateConsistencyInvariants:
             "market_session": {"status": "CLOSED", "is_closed": True, "session_date": today_str},
             "market_data": {"current_spot": 24150.0, "previous_close": 24000.0}
         }
-        report = PreMarketIntelligenceEngine.analyze_pre_market(state)
+        post_market_utc = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0)
+        report = PreMarketIntelligenceEngine.analyze_pre_market(state, as_of_time=post_market_utc)
         summary = report.opening_validation.get("summary", "")
         assert "completed" in summary or "closed" in summary
         assert "Awaiting market open" not in summary

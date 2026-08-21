@@ -69,7 +69,7 @@ class TestForwardOutlookEngine(unittest.TestCase):
     def test_14_early_session_building_state(self):
         state = self._state()
         report = ForwardOutlookEngine.evaluate_outlook(state)
-        self.assertIn(report.analysis_status, ["READY", "BUILDING", "PARTIAL"])
+        self.assertIn(report.analysis_status, ["READY", "BUILDING", "PARTIAL", "PRE_CLOSE_PREVIEW"])
 
     def test_15_pre_market_unavailable_state(self):
         state = self._state()

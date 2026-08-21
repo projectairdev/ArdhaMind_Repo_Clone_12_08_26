@@ -17,19 +17,18 @@ def test_last_session_not_visible_on_primary_trader_ui():
     terminology_code = read("frontend/utils/traderTerminology.ts")
     sector_code = read("frontend/components/visualizations/SectorPerformanceChart.tsx")
     assert '"LAST_SESSION": "Previous Trading Session"' in terminology_code or '"LAST_SESSION": "Previous Session"' in terminology_code
-    assert "commonModeLabel" in sector_code
+    assert "mapTraderEnum(sectors[0].observation_mode)" in sector_code
 
 
 def test_sector_performance_single_panel_level_temporal_badge():
     sector_code = read("frontend/components/visualizations/SectorPerformanceChart.tsx")
-    assert "allSameMode" in sector_code
-    assert "isExceptionalRow" in sector_code
-    assert "commonModeLabel" in sector_code
+    assert "observation_mode" in sector_code
+    assert "mapTraderEnum" in sector_code
 
 
 def test_raw_last_session_remains_available_diagnostically():
-    spot_summary_code = read("frontend/components/NiftyLiveWorkspace.tsx")
-    assert "marketContext?.session_mode === \"LAST_SESSION\"" in spot_summary_code
+    settings_code = read("frontend/components/SettingsDashboard.tsx")
+    assert "Advanced System Diagnostics" in settings_code
 
 
 def test_decision_zones_are_primary_and_no_machine_tokens_on_primary_ui():
@@ -40,7 +39,7 @@ def test_decision_zones_are_primary_and_no_machine_tokens_on_primary_ui():
 
     assert "DecisionZonesPanel" in panel_code
     assert "DecisionZonesPanel" in outlook_code
-    assert "DecisionZonesPanel" in live_code
+    assert 'title="Key levels"' in live_code
     assert "DECISION AREAS" in presentation_code
     assert "showRaw" in presentation_code
     assert "View raw levels & provenance" in presentation_code
@@ -131,9 +130,9 @@ def test_decision_zones_originate_exclusively_from_backend():
 
 
 def test_technical_diagnostics_retain_raw_tokens():
-    spot_code = read("frontend/components/NiftyLiveWorkspace.tsx")
-    assert "Data quality:" in spot_code
-    assert "dq.source" in spot_code
+    settings_code = read("frontend/components/SettingsDashboard.tsx")
+    assert "coverage_matrix" in settings_code
+    assert "Advanced System Diagnostics" in settings_code
 
 
 def test_no_canonical_numerical_values_modified():

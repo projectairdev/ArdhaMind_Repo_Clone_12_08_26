@@ -21,6 +21,7 @@ import time
 import logging
 from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
+from src.utils.time_utils import is_trading_day, previous_trading_day, is_market_hours
 
 logger = logging.getLogger("MarketContextBuilder")
 
@@ -72,6 +73,131 @@ def _compute_atr(candles: List[Dict], period: int = 14) -> float:
     # Simple average for first ATR value, then Wilder's smoothing
     window = trs[-period:] if len(trs) >= period else trs
     return round(sum(window) / len(window), 2)
+
+
+def _compute_ema(series: List[float], period: int) -> Optional[float]:
+    if len(series) < period:
+        return None
+    multiplier = 2.0 / (period + 1.0)
+    ema = sum(series[:period]) / float(period)
+    for val in series[period:]:
+        ema = (val - ema) * multiplier + ema
+    return round(ema, 2)
+
+
+def _compute_rsi(series: List[float], period: int = 14) -> Optional[float]:
+    if len(series) < period + 1:
+        return None
+    gains = []
+    losses = []
+    for i in range(1, len(series)):
+        diff = series[i] - series[i - 1]
+        if diff >= 0:
+            gains.append(diff)
+            losses.append(0.0)
+        else:
+            gains.append(0.0)
+            losses.append(-diff)
+    if len(gains) < period:
+        return None
+    avg_gain = sum(gains[:period]) / float(period)
+    avg_loss = sum(losses[:period]) / float(period)
+    for i in range(period, len(gains)):
+        avg_gain = (avg_gain * (period - 1) + gains[i]) / float(period)
+        avg_loss = (avg_loss * (period - 1) + losses[i]) / float(period)
+    if avg_loss == 0:
+        return 100.0
+    rs = avg_gain / avg_loss
+    return round(100.0 - (100.0 / (1.0 + rs)), 2)
+
+
+def _compute_macd(series: List[float]) -> Optional[Dict[str, float]]:
+    if len(series) < 35:
+        return None
+    # EMA 12 and EMA 26
+    multiplier12 = 2.0 / 13.0
+    multiplier26 = 2.0 / 27.0
+    multiplier9 = 2.0 / 10.0
+
+    # Calculate full EMA 12 series
+    ema12_val = sum(series[:12]) / 12.0
+    ema12_series = [ema12_val]
+    for val in series[12:]:
+        ema12_val = (val - ema12_val) * multiplier12 + ema12_val
+        ema12_series.append(ema12_val)
+
+    # Calculate full EMA 26 series
+    ema26_val = sum(series[:26]) / 26.0
+    ema26_series = [ema26_val]
+    for val in series[26:]:
+        ema26_val = (val - ema26_val) * multiplier26 + ema26_val
+        ema26_series.append(ema26_val)
+
+    # Align MACD line (EMA12 - EMA26)
+    # ema12_series has length len(series) - 11, ema26_series has length len(series) - 25
+    offset = 14
+    macd_line = [e12 - e26 for e12, e26 in zip(ema12_series[offset:], ema26_series)]
+    if len(macd_line) < 9:
+        return None
+    signal_val = sum(macd_line[:9]) / 9.0
+    for m in macd_line[9:]:
+        signal_val = (m - signal_val) * multiplier9 + signal_val
+    hist = macd_line[-1] - signal_val
+    return {
+        "macd": round(macd_line[-1], 2),
+        "signal": round(signal_val, 2),
+        "histogram": round(hist, 2),
+    }
+
+
+def _compute_adx(candles: List[Dict], period: int = 14) -> Optional[float]:
+    if len(candles) < period * 2:
+        return None
+    trs = []
+    plus_dms = []
+    minus_dms = []
+    for i in range(1, len(candles)):
+        h = float(candles[i].get("high", 0))
+        l = float(candles[i].get("low", 0))
+        prev_h = float(candles[i - 1].get("high", 0))
+        prev_l = float(candles[i - 1].get("low", 0))
+        prev_c = float(candles[i - 1].get("close", 0))
+
+        tr = max(h - l, abs(h - prev_c), abs(l - prev_c))
+        up_move = h - prev_h
+        down_move = prev_l - l
+
+        plus_dm = up_move if (up_move > down_move and up_move > 0) else 0.0
+        minus_dm = down_move if (down_move > up_move and down_move > 0) else 0.0
+
+        trs.append(tr)
+        plus_dms.append(plus_dm)
+        minus_dms.append(minus_dm)
+
+    if len(trs) < period:
+        return None
+    smooth_tr = sum(trs[:period])
+    smooth_plus_dm = sum(plus_dms[:period])
+    smooth_minus_dm = sum(minus_dms[:period])
+
+    dx_series = []
+    for i in range(period, len(trs)):
+        smooth_tr = smooth_tr - (smooth_tr / period) + trs[i]
+        smooth_plus_dm = smooth_plus_dm - (smooth_plus_dm / period) + plus_dms[i]
+        smooth_minus_dm = smooth_minus_dm - (smooth_minus_dm / period) + minus_dms[i]
+
+        plus_di = (smooth_plus_dm / smooth_tr * 100.0) if smooth_tr > 0 else 0.0
+        minus_di = (smooth_minus_dm / smooth_tr * 100.0) if smooth_tr > 0 else 0.0
+        di_sum = plus_di + minus_di
+        dx = (abs(plus_di - minus_di) / di_sum * 100.0) if di_sum > 0 else 0.0
+        dx_series.append(dx)
+
+    if len(dx_series) < period:
+        return round(sum(dx_series) / len(dx_series), 2) if dx_series else None
+    adx = sum(dx_series[:period]) / float(period)
+    for dx in dx_series[period:]:
+        adx = (adx * (period - 1) + dx) / float(period)
+    return round(adx, 2)
 
 
 def _determine_volatility_state(vix: float) -> str:
@@ -135,6 +261,30 @@ _kite_extensions_last_fetch: float = 0.0
 _KITE_EXTENSIONS_FETCH_INTERVAL_SECONDS = 60
 
 
+def _load_disk_candle_cache_if_needed() -> None:
+    global _candle_buffer, _candle_last_fetch
+    if not _candle_buffer:
+        try:
+            import json, os
+            cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "cache")
+            cache_path = os.path.join(cache_dir, "nifty_candles_cache.json")
+            if os.path.exists(cache_path):
+                with open(cache_path, "r") as f:
+                    loaded = json.load(f)
+                if loaded:
+                    for c in loaded:
+                        if "date" in c and isinstance(c["date"], str):
+                            try:
+                                c["date"] = datetime.fromisoformat(c["date"])
+                            except Exception:
+                                pass
+                    _candle_buffer = loaded
+                    _candle_last_fetch = time.time()
+                    logger.info(f"Loaded {len(_candle_buffer)} fallback candles from disk cache")
+        except Exception as _load_err:
+            logger.debug(f"Could not load fallback candle cache: {_load_err}")
+
+
 def _refresh_candle_buffer(bs: Any) -> None:
     """Fetches 1-min NIFTY 50 candles from Kite REST API and stores in module buffer."""
     global _candle_buffer, _candle_last_fetch
@@ -146,8 +296,8 @@ def _refresh_candle_buffer(bs: Any) -> None:
         gateway = bs.get_gateway()
         kite = getattr(gateway, "_kite_client", gateway)
 
-        from_dt = datetime.now() - timedelta(days=3)
-        to_dt = datetime.now()
+        from_dt = datetime.now() - timedelta(days=7)
+        to_dt = datetime.now() + timedelta(days=1)
 
         # Find NIFTY 50 instrument token
         from src.broker.services.instrument_service import InstrumentService
@@ -156,12 +306,14 @@ def _refresh_candle_buffer(bs: Any) -> None:
         nifty_inst = inst_svc.lookup_index_instrument("NIFTY 50")
         if not nifty_inst or not nifty_inst.get("instrument_token"):
             logger.warning("NIFTY 50 instrument token is unresolved; historical fetch suppressed.")
+            _load_disk_candle_cache_if_needed()
             return
         token = int(nifty_inst["instrument_token"])
 
         fetch_fn = getattr(kite, "historical_data", None) or getattr(kite, "get_historical_data", None)
         if not fetch_fn:
             logger.warning("No historical data fetch function available.")
+            _load_disk_candle_cache_if_needed()
             return
 
         candles_raw = fetch_fn(
@@ -176,8 +328,25 @@ def _refresh_candle_buffer(bs: Any) -> None:
             _candle_buffer = candles_raw
             _candle_last_fetch = now
             logger.info(f"Refreshed intraday candle buffer: {len(_candle_buffer)} candles")
+            try:
+                import json, os
+                cache_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "data", "cache")
+                os.makedirs(cache_dir, exist_ok=True)
+                cache_path = os.path.join(cache_dir, "nifty_candles_cache.json")
+                serializable_candles = []
+                for c in candles_raw[-375:]:
+                    c_dict = dict(c)
+                    if "date" in c_dict and hasattr(c_dict["date"], "isoformat"):
+                        c_dict["date"] = c_dict["date"].isoformat()
+                    serializable_candles.append(c_dict)
+                with open(cache_path, "w") as f:
+                    json.dump(serializable_candles, f)
+            except Exception as _save_err:
+                logger.debug(f"Could not persist candle cache: {_save_err}")
     except Exception as e:
         logger.error(f"Failed to refresh candle buffer: {e}")
+
+    _load_disk_candle_cache_if_needed()
 
 
 # ---------------------------------------------------------------------------
@@ -285,8 +454,8 @@ class MarketContextBuilder:
             except Exception:
                 pass
 
-        if previous_close is None and (cached_macro_context or {}).get("nifty_previous_close"):
-            pc_val = (cached_macro_context or {}).get("nifty_previous_close")
+        if previous_close is None and (constituent_metadata or {}).get("nifty_previous_close"):
+            pc_val = (constituent_metadata or {}).get("nifty_previous_close")
             if pc_val and float(pc_val) > 0:
                 previous_close = float(pc_val)
 
@@ -313,19 +482,68 @@ class MarketContextBuilder:
 
         vwap = _compute_vwap(_candle_buffer)
         atr = _compute_atr(_candle_buffer)
+        closes = [float(c["close"]) for c in _candle_buffer if c.get("close") is not None]
+        ema20 = _compute_ema(closes, 20)
+        ema50 = _compute_ema(closes, 50)
+        ema200 = _compute_ema(closes, 200)
+        rsi = _compute_rsi(closes, 14)
+        macd = _compute_macd(closes)
+        adx = _compute_adx(_candle_buffer, 14)
 
-        # Build chart candles payload from _candle_buffer
+        # Build chart candles payload from _candle_buffer (bound strictly to single session date)
         candles_payload = []
         if _candle_buffer:
-            for c in _candle_buffer[-30:]:
+            # Determine target session date for candles
+            now_dt = datetime.now()
+            today_d = date.today()
+            if is_market_hours(now_dt):
+                target_date_str = str(today_d)
+            else:
+                target_d = today_d if is_trading_day(today_d) else previous_trading_day(today_d)
+                if now_dt.hour < 9 or (now_dt.hour == 9 and now_dt.minute < 15):
+                    target_d = previous_trading_day(target_d)
+                target_date_str = str(target_d)
+
+            session_candles = [
+                c for c in _candle_buffer
+                if (c.get("date").strftime("%Y-%m-%d") if hasattr(c.get("date"), "strftime") else str(c.get("date"))[:10]) == target_date_str
+            ]
+
+            # If target session candles absent in memory buffer, check latest date in buffer
+            if not session_candles and _candle_buffer:
+                latest_c = _candle_buffer[-1]
+                latest_dt = latest_c.get("date")
+                latest_date_str = latest_dt.strftime("%Y-%m-%d") if hasattr(latest_dt, "strftime") else str(latest_dt)[:10]
+                session_candles = [
+                    c for c in _candle_buffer
+                    if (c.get("date").strftime("%Y-%m-%d") if hasattr(c.get("date"), "strftime") else str(c.get("date"))[:10]) == latest_date_str
+                ]
+
+            session_cand_highs = [float(c["high"]) for c in session_candles if c.get("high") is not None]
+            session_cand_lows = [float(c["low"]) for c in session_candles if c.get("low") is not None]
+            if session_cand_highs:
+                high_price = max(session_cand_highs)
+            if session_cand_lows:
+                low_price = min(session_cand_lows)
+            if session_candles and session_candles[0].get("open") is not None:
+                open_price = float(session_candles[0]["open"])
+
+            for c in session_candles:
                 dt_obj = c.get("date")
+                ts_sec = int(dt_obj.timestamp()) if hasattr(dt_obj, "timestamp") else None
                 if hasattr(dt_obj, "strftime"):
                     t_str = dt_obj.strftime("%H:%M")
+                    iso_str = dt_obj.isoformat()
                 else:
                     dt_val = str(dt_obj or "")
+                    iso_str = dt_val
                     t_str = dt_val.split(" ")[1][:5] if " " in dt_val else (dt_val.split("T")[1][:5] if "T" in dt_val else dt_val[-8:-3])
+
                 candles_payload.append({
                     "time": t_str,
+                    "timestamp": ts_sec,
+                    "datetime": iso_str,
+                    "trading_date": (dt_obj.strftime("%Y-%m-%d") if hasattr(dt_obj, "strftime") else str(dt_obj)[:10]),
                     "o": float(c.get("open", 0.0)),
                     "h": float(c.get("high", 0.0)),
                     "l": float(c.get("low", 0.0)),
@@ -334,15 +552,33 @@ class MarketContextBuilder:
                 })
 
         session_mode = "LIVE"
-        if spot <= 0.0 and _candle_buffer:
-            last_c = _candle_buffer[-1]
-            spot = float(last_c.get("close", 0.0))
-            ltp = spot
-            bid = spot
-            ask = spot
-            ts_val = last_c.get("date")
-            last_tick_time = str(ts_val) if ts_val else now_str
-            session_mode = "LAST_SESSION"
+        if spot <= 0.0:
+            if _candle_buffer:
+                last_c = _candle_buffer[-1]
+                spot = float(last_c.get("close", 0.0))
+                ltp = spot
+                bid = spot
+                ask = spot
+                ts_val = last_c.get("date")
+                last_tick_time = str(ts_val) if ts_val else now_str
+                session_mode = "LAST_SESSION"
+            else:
+                try:
+                    import json
+                    from src.broker.services.market_feed_service import MarketFeedService
+                    snap_path = MarketFeedService.SNAPSHOT_PATH
+                    if snap_path.exists():
+                        with open(snap_path, "r") as f:
+                            snap_data = json.load(f)
+                        u_spot = snap_data.get("underlying_spot")
+                        if u_spot and float(u_spot) > 0:
+                            spot = float(u_spot)
+                            ltp = spot
+                            bid = spot
+                            ask = spot
+                            session_mode = "LAST_SESSION"
+                except Exception:
+                    pass
 
         # ---- Trend determination from observed values ----
         market_regime, trend_direction, trend_strength = _determine_trend(spot, vwap, atr)
@@ -435,6 +671,11 @@ class MarketContextBuilder:
             "high": high_price,
             "low": low_price,
             "close": ltp if ltp > 0 else spot,
+            "session_high": high_price,
+            "session_low": low_price,
+            "session_open": open_price,
+            "session_close": ltp if ltp > 0 else spot,
+            "intraday_range": round(high_price - low_price, 2) if (high_price is not None and low_price is not None) else None,
             "previous_close": previous_close,
             "spot_change": spot_change,
             "spot_change_pct": spot_change_pct,
@@ -456,6 +697,12 @@ class MarketContextBuilder:
             # Computed from live data
             "vwap": vwap,
             "atr": atr,
+            "ema20": ema20,
+            "ema50": ema50,
+            "ema200": ema200,
+            "rsi": rsi,
+            "macd": macd,
+            "adx": adx,
             # Volatility
             "india_vix": india_vix,
             "india_vix_context": india_vix_context,
@@ -469,6 +716,7 @@ class MarketContextBuilder:
             "market_regime": market_regime,
             "trend_direction": trend_direction,
             "trend_strength": trend_strength,
+            "pivot": round((supports[0] + resistances[0]) / 2.0, 2) if (supports and resistances) else (spot if spot > 0 else None),
             "support_levels": supports,
             "resistance_levels": resistances,
             # Breadth (N/A — requires equity scanner)

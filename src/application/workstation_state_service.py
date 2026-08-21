@@ -264,7 +264,21 @@ class WorkstationStateService:
         generated = current.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
         market_closed = str(market_state).upper() in {"CLOSED", "MARKET_CLOSED", "POST_MARKET", "HOLIDAY", "TRADING_HOLIDAY"}
         expired = str(broker_state).upper() in {"SESSION_EXPIRED", "TOKEN_EXPIRED", "EXPIRED"}
-        market = sanitize_read_only(payload.get("marketContext") or {})
+        raw_market_ctx = sanitize_read_only(payload.get("marketContext") or {})
+        raw_market_data = sanitize_read_only(payload.get("market_data") or {})
+        price_keys = {"current_spot", "close", "previous_close", "open", "high", "low", "ltp"}
+        market = {**raw_market_data}
+        for k, v in raw_market_ctx.items():
+            if v is None:
+                continue
+            if k in price_keys and isinstance(v, (int, float)) and v <= 0:
+                continue
+            market[k] = v
+
+        if market.get("change") is None and market.get("spot_change") is not None:
+            market["change"] = market.get("spot_change")
+        if market.get("change_percent") is None and market.get("spot_change_pct") is not None:
+            market["change_percent"] = market.get("spot_change_pct")
 
         session_date = market.get("session_date") or current.strftime("%Y-%m-%d")
         if cls._last_loaded_session_date != session_date:
@@ -277,10 +291,27 @@ class WorkstationStateService:
             market["candle_validation_warnings"] = candle_errors
 
         tech = sanitize_read_only(payload.get("technicalAnalysis") or {})
+        if not tech.get("vwap") and market.get("vwap"):
+            tech["vwap"] = market.get("vwap")
+        if not tech.get("atr") and market.get("atr"):
+            tech["atr"] = market.get("atr")
+        if not tech.get("ema20") and market.get("ema20"):
+            tech["ema20"] = market.get("ema20")
+        if not tech.get("ema50") and market.get("ema50"):
+            tech["ema50"] = market.get("ema50")
+        if not tech.get("ema200") and market.get("ema200"):
+            tech["ema200"] = market.get("ema200")
+        if not tech.get("rsi") and market.get("rsi"):
+            tech["rsi"] = market.get("rsi")
+        if not tech.get("macd") and market.get("macd"):
+            tech["macd"] = market.get("macd")
+        if not tech.get("adx") and market.get("adx"):
+            tech["adx"] = market.get("adx")
+
         if not tech.get("vwap") or tech.get("vwap") == 0:
             tech["vwap_status"] = "UNAVAILABLE"
             tech["vwap_reason"] = "Index spot data has no volume; VWAP requires volume-weighted ticks."
-        if not tech.get("ema_20") or not tech.get("ema_50"):
+        if not tech.get("ema20") or not tech.get("ema50"):
             tech["ema_status"] = "UNAVAILABLE"
             tech["ema_reason"] = "Requires minimum 50 historical candles for calculation."
         if tech.get("trend_direction") in {None, "", "UNKNOWN"}:
@@ -289,6 +320,24 @@ class WorkstationStateService:
         payload["marketContext"] = market
 
         options = sanitize_read_only(payload.get("optionContext") or {})
+        if isinstance(options, dict) and (options.get("current_weekly_expiry") or options.get("expiry")):
+            exp_str = options.get("current_weekly_expiry") or options.get("expiry")
+            try:
+                exp_d = datetime.strptime(str(exp_str)[:10], "%Y-%m-%d").date()
+                today_d = current.date() if 'current' in locals() and isinstance(current, datetime) else datetime.now(timezone.utc).date()
+                cal_dte = max(0, (exp_d - today_d).days)
+                cur_d = today_d
+                tr_dte = 0
+                while cur_d < exp_d:
+                    if cur_d.weekday() < 5:
+                        tr_dte += 1
+                    cur_d += timedelta(days=1)
+                options["calendar_dte"] = cal_dte
+                options["trading_dte"] = tr_dte
+                options["dte_basis"] = "CALENDAR_DAYS"
+                options["time_to_expiry_days"] = cal_dte
+            except Exception:
+                pass
         market_observed = cls._timestamp(market)
         option_observed = cls._timestamp(options)
         market_value = market.get("current_spot", market.get("price"))
@@ -1222,7 +1271,11 @@ class WorkstationStateService:
         session_story["todays_analysis"] = todays_analysis_report
         session_story["pre_market_report"] = pre_market_report
 
-        live_assistant_intel = LiveAssistantEngine.analyze_live_session(eval_state, cls._snapshots_history, todays_analysis_report)
+        try:
+            live_assistant_intel = LiveAssistantEngine.analyze_live_session(eval_state, cls._snapshots_history, todays_analysis_report)
+        except Exception as la_err:
+            logger.error("LiveAssistantEngine analysis failed gracefully: %s", la_err, exc_info=True)
+            live_assistant_intel = LiveAssistantEngine.fallback_unavailable_intel(session_date)
         forward_outlook_report = ForwardOutlookEngine.evaluate_outlook(
             eval_state, todays_analysis_report, live_assistant_intel, cls._snapshots_history
         ).to_dict()
@@ -1249,8 +1302,16 @@ class WorkstationStateService:
             "full_report": forward_outlook_report
         }
 
+        from src.intelligence_engine.pre_market_briefing_engine import PreMarketBriefingEngine
+        try:
+            briefing_report = PreMarketBriefingEngine.generate_or_get_briefing(eval_state).to_dict()
+        except Exception as pmb_err:
+            logger.error("PreMarketBriefingEngine generation failed gracefully: %s", pmb_err, exc_info=True)
+            briefing_report = {}
+
         unified["session_story"] = session_story
         unified["pre_market_report"] = pre_market_report
+        unified["pre_market_briefing"] = briefing_report
         unified["todays_analysis"] = todays_analysis_report
         unified["live_assistant_intelligence"] = live_assistant_intel
         unified["forward_outlook"] = forward_outlook_report
@@ -1260,6 +1321,7 @@ class WorkstationStateService:
 
         live_assistant_temporal_state["session_story"] = session_story
         live_assistant_temporal_state["live_assistant_intelligence"] = live_assistant_intel
+        snap["pre_market_briefing"] = briefing_report
         live_assistant_temporal_state["forward_outlook"] = forward_outlook_report
         live_assistant_temporal_state["live_feed_latency_truth"] = latency_diagnostics
 
@@ -1276,17 +1338,38 @@ class WorkstationStateService:
 
         cls._persist_session_history(session_date, force=force_flush)
 
+        state_seq = cls._next_sequence()
+
+        from src.opportunity_engine.registry import OpportunityRegistryService
+        opp_eval_context = {
+            "market_context": section("marketContext", market_status),
+            "option_context": section("optionContext", option_status),
+            "breadth": section("marketContext", market_status).get("breadth") or {},
+            "news": section("newsSentiment", news_status),
+            "freshness_state": market_status.value.upper(),
+            "market_state": str(market_state).upper(),
+            "market_closed": market_closed,
+        }
+        opp_intel = OpportunityRegistryService.get_instance().evaluate_and_update(opp_eval_context, state_seq)
+
         return CanonicalWorkstationState(
-            cls.SCHEMA_VERSION, cls._next_sequence(), generated, cls._runtime_id,
+            cls.SCHEMA_VERSION, state_seq, generated, cls._runtime_id,
             {"status": "closed" if str(market_state).upper() == "MARKET_CLOSED" else str(market_state).lower(), "is_closed": market_closed},
             {"status": "degraded" if expired else "ready", "read_only": True},
-            {"status": "session_expired" if expired else str(broker_state).lower(),
-             "reconnect_required": expired,
-             "session_valid": broker_account.get("session_valid") if broker_account else not expired,
-             "last_authenticated_at": broker_account.get("last_authenticated_at") if broker_account else None,
-             "last_profile_validation": broker_account.get("profile_validated_at") if broker_account else None,
-             "last_successful_update": broker_account.get("profile_validated_at") if broker_account else market_observed,
-             "redirect_url": getattr(Config, "KITE_REDIRECT_URL", "http://127.0.0.1:3000/api/broker/callback")},
+            {
+                "status": "connected" if str(broker_state).upper() == "CONNECTED_VERIFIED" else "session_expired" if str(broker_state).upper() in ("CONNECTED_AUTH_REQUIRED", "TOKEN_EXPIRED", "SESSION_EXPIRED", "EXPIRED", "AUTH_REQUIRED") else "unverified" if str(broker_state).upper() in ("BROKER_STATE_UNVERIFIED", "RECONNECTING", "UNVERIFIED", "CONNECTED") else "disconnected",
+                "normalized_status": "CONNECTED_VERIFIED" if str(broker_state).upper() == "CONNECTED_VERIFIED" else "CONNECTED_AUTH_REQUIRED" if str(broker_state).upper() in ("CONNECTED_AUTH_REQUIRED", "TOKEN_EXPIRED", "SESSION_EXPIRED", "EXPIRED", "AUTH_REQUIRED") else "BROKER_STATE_UNVERIFIED" if str(broker_state).upper() in ("BROKER_STATE_UNVERIFIED", "UNVERIFIED", "CONNECTED") else "RECONNECTING" if str(broker_state).upper() == "RECONNECTING" else "DISCONNECTED",
+                "transport_connected": str(broker_state).upper() not in ("DISCONNECTED", "OFFLINE"),
+                "authenticated": str(broker_state).upper() in ("CONNECTED_VERIFIED", "BROKER_STATE_UNVERIFIED", "CONNECTED"),
+                "execution_verified": str(broker_state).upper() == "CONNECTED_VERIFIED",
+                "session_valid": str(broker_state).upper() in ("CONNECTED_VERIFIED", "BROKER_STATE_UNVERIFIED", "CONNECTED"),
+                "reconciliation_complete": str(broker_state).upper() == "CONNECTED_VERIFIED",
+                "reconnect_required": str(broker_state).upper() != "CONNECTED_VERIFIED",
+                "last_authenticated_at": broker_account.get("last_authenticated_at") if broker_account else None,
+                "last_profile_validation": broker_account.get("profile_validated_at") if broker_account else None,
+                "last_successful_update": broker_account.get("profile_validated_at") if broker_account else market_observed,
+                "redirect_url": getattr(Config, "KITE_REDIRECT_URL", "http://127.0.0.1:3000/api/broker/callback")
+            },
             {
                 "status": "market_closed" if market_closed else market_status.value,
                 "source": market_source,
@@ -1318,6 +1401,7 @@ class WorkstationStateService:
             unified,
             live_assistant_temporal_state=live_assistant_temporal_state,
             session_story=session_story,
+            opportunity_intelligence=opp_intel,
             warnings=support.warnings, errors=[],
         )
 

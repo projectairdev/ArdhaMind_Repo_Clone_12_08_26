@@ -1,0 +1,8 @@
+<!-- Hang Seng Index - HSI
+     SVG monogram fallback. Official logo not available on Wikimedia Commons.
+     Replace with official asset when licensed. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" width="120" height="40">
+  <rect width="120" height="40" rx="4" fill="#d32f2f"/>
+  <text x="60" y="27" font-family="Arial,Helvetica,sans-serif" font-size="15"
+        font-weight="bold" fill="#ffffff" text-anchor="middle" letter-spacing="1">HSI</text>
+</svg>

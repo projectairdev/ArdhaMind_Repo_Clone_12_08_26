@@ -91,9 +91,27 @@ export function BrokerIntegration() {
     loadConfig();
   }, []);
 
-  const brokerHealth = report?.broker_health;
-  const isSessionValid = brokerHealth?.session_valid ?? false;
-  const isConnected = brokerHealth?.connection_status === "CONNECTED";
+  const [authoritativeHealth, setAuthoritativeHealth] = useState<any>(null);
+
+  const fetchAuthHealth = async () => {
+    try {
+      const res = await fetch("/api/broker/health");
+      if (res.ok) {
+        const data = await res.json();
+        setAuthoritativeHealth(data);
+      }
+    } catch {}
+  };
+
+  useEffect(() => {
+    fetchAuthHealth();
+  }, [lastSyncTime]);
+
+  const brokerHealth = authoritativeHealth || report?.broker_health;
+  const isSessionValid = authoritativeHealth?.session_valid ?? (brokerHealth?.session_valid ?? false);
+  const isConnected = authoritativeHealth?.status === "CONNECTED_VERIFIED" || authoritativeHealth?.execution_verified === true;
+  const isExecutionVerified = authoritativeHealth?.execution_verified ?? false;
+  const isReconciled = authoritativeHealth?.reconciliation_complete ?? false;
   const isProfileLoaded = account && account.client_id !== "N/A" && account.client_id !== "";
   const areFundsLoaded = funds && funds.available_cash > 0;
 
@@ -490,11 +508,20 @@ export function BrokerIntegration() {
               </div>
 
               <div className="flex justify-between items-center border-b border-slate-900 pb-2">
-                <span className="text-slate-500 uppercase text-[9px]">Token Validity:</span>
+                <span className="text-slate-500 uppercase text-[9px]">Execution Verification:</span>
                 <span className={`font-semibold text-[10px] ${
-                  isSessionValid ? "text-emerald-400" : "text-rose-400"
+                  isExecutionVerified ? "text-emerald-400" : "text-rose-400"
                 }`}>
-                  {isSessionValid ? "VALID_SESSION" : "EXPIRED_OR_MISSING"}
+                  {isExecutionVerified ? "VERIFIED (READY)" : "UNVERIFIED"}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center border-b border-slate-900 pb-2">
+                <span className="text-slate-500 uppercase text-[9px]">Broker Reconciliation:</span>
+                <span className={`font-semibold text-[10px] ${
+                  isReconciled ? "text-emerald-400" : "text-amber-400"
+                }`}>
+                  {isReconciled ? "RECONCILED" : "PENDING / RECONCILING"}
                 </span>
               </div>
 

@@ -1,92 +1,32 @@
-# tests/test_market_pulse_scoped_refresh.py
-"""
-Targeted test suite for SPRINT D3.5C.1 Market Pulse Scoped Refresh UI Completion.
-Validates exact scoped controls, individual card refresh buttons, Forward Outlook navigation, provider boundaries, and timestamp truth semantics.
-"""
-from __future__ import annotations
-
-import unittest
+"""Dashboard restructure contract for MARKET / METRICS."""
 from pathlib import Path
 
-COMP_PATH = Path("src/frontend/components/MarketPulseWorkspace.tsx")
-MACRO_COMP_PATH = Path("src/frontend/components/MacroIntelligence.tsx")
-LAYOUT_PATH = Path("src/frontend/layout/DashboardLayout.tsx")
+COMP = Path("src/frontend/components/MarketPulseWorkspace.tsx").read_text(encoding="utf-8")
 
 
-class TestMarketPulseScopedRefreshUI(unittest.TestCase):
-
-    def setUp(self):
-        self.code = COMP_PATH.read_text(encoding="utf-8")
-        self.macro_code = MACRO_COMP_PATH.read_text(encoding="utf-8")
-        self.layout_code = LAYOUT_PATH.read_text(encoding="utf-8")
-
-    def test_1_scoped_macro_refresh_control_visible(self):
-        self.assertIn("↻ REFRESH GLOBAL & MACRO", self.code)
-        self.assertIn("handleMacroRefresh", self.code)
-
-    def test_2_fii_dii_refresh_control_visible(self):
-        self.assertIn("↻ REFRESH FII/DII", self.macro_code)
-        self.assertIn("handleMacroRefresh", self.code)
-
-    def test_3_news_refresh_control_visible(self):
-        self.assertIn("↻ REFRESH NEWS", self.code)
-        self.assertIn("handleNewsRefresh", self.code)
-
-    def test_4_option_chain_revalidate_remains(self):
-        self.assertIn("REVALIDATE CHAIN", self.code)
-
-    def test_5_live_nifty_has_no_manual_refresh(self):
-        # Core India card header has no individual refresh button
-        core_card = self.code.split("CARD 1: CORE INDIA", 1)[1].split("CARD 2: DERIVATIVES", 1)[0]
-        self.assertNotIn("onClick=", core_card)
-
-    def test_6_streamed_breadth_has_no_manual_refresh(self):
-        # Constituents breadth widget has no individual refresh button
-        breadth_card = self.code.split("CARD 6: CONSTITUENTS BREADTH", 1)[1]
-        self.assertNotIn("onClick=", breadth_card)
-
-    def test_7_duplicate_clicks_guarded(self):
-        self.assertIn("if (macroRefreshing) return", self.code)
-        self.assertIn("if (newsRefreshing) return", self.code)
-
-    def test_8_family_refresh_invokes_correct_boundary(self):
-        self.assertIn("apiMacroRefresh", self.code)
-        self.assertIn("apiNewsRefresh", self.code)
-        helpers_code = Path("src/frontend/utils/safeHelpers.ts").read_text(encoding="utf-8")
-        self.assertIn("/api/macro/refresh", helpers_code)
-        self.assertIn("/api/news/refresh", helpers_code)
-
-    def test_9_unchanged_observation_semantics(self):
-        # Checked timestamp updates, Observed remains canonical
-        self.assertIn("Checked:", self.macro_code)
-        self.assertIn("Observed:", self.macro_code)
-
-    def test_10_failed_refresh_preserves_last_valid_value(self):
-        self.assertIn("Macro refresh failed", self.code)
-        self.assertIn("News refresh incomplete", self.code)
-
-    def test_11_rate_limited_state_renders(self):
-        self.assertIn("Rate limited (1/min)", self.code)
-        self.assertIn("rate_limited", self.code)
-
-    def test_12_market_closed_macro_news_refresh_remains_possible(self):
-        # Scoped handlers are independent of isClosed guard
-        self.assertIn("handleMacroRefresh", self.code)
-        self.assertIn("handleNewsRefresh", self.code)
-
-    def test_13_no_fake_card_timestamp_rewriting(self):
-        self.assertIn("ObservedCheckedFreshness", self.code)
-
-    def test_14_individual_tile_refresh_controls_present(self):
-        # Individual tile refresh button title in MacroIntelligence
-        self.assertIn("title={`Refresh ${label}`}", self.macro_code)
-        self.assertIn("onRefreshItem", self.macro_code)
-
-    def test_15_forward_outlook_wired_in_navigation(self):
-        self.assertIn('id: "forward-outlook"', self.layout_code)
-        self.assertIn('label: "Scenario Outlook"', self.layout_code)
-        self.assertIn("ForwardOutlookWorkspace", self.layout_code)
+def test_metrics_uses_authoritative_master_sync_only():
+    assert "await syncBroker(true)" in COMP
+    assert "apiMacroRefresh" not in COMP and "apiNewsRefresh" not in COMP and "fetch(" not in COMP
+    assert 'refreshState === "refreshing"' in COMP and '"Refreshing…"' in COMP and '"Updated"' in COMP
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_metrics_is_master_detail_with_sector_access():
+    assert "xl:grid-cols-[minmax(280px,35fr)_minmax(0,65fr)]" in COMP
+    assert "InstrumentCard" in COMP and "Related Markets" in COMP and "CompactObservationState" in COMP
+    assert "SectorPerformanceChart" in COMP
+
+
+def test_expected_cross_asset_rows_remain_visible_when_missing():
+    for key in ("GIFT_NIFTY", "S&P 500", "NASDAQ", "DOW_JONES", "NIKKEI_225", "HANG_SENG", "INDIA_VIX", "USD_INR", "DXY", "BRENT_CRUDE", "GOLD", "US_10Y", "IN_10Y"):
+        assert f'"{key}"' in COMP
+    assert '"Unavailable"' in COMP
+
+
+def test_additional_canonical_quotes_and_flows_are_retained():
+    assert "Object.keys(quotes)" in COMP and "additional" in COMP
+    assert '"FII Flow"' in COMP and '"DII Flow"' in COMP
+
+
+def test_metrics_contains_no_hardcoded_market_numbers():
+    for fake in ("83.92", "102.50", "78.40", "2,450.00", "3.88%", "6.86%", "12.66"):
+        assert fake not in COMP

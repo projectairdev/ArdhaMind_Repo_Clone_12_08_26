@@ -11,7 +11,8 @@ def read(path: str) -> str:
 def test_nifty_summary_is_compact_overview_only_and_not_generic():
     nifty = read("components/NiftyLiveWorkspace.tsx")
     views = read("components/UnifiedIntelligencePanel.tsx")
-    assert "<OverviewPanel />" in nifty
+    for label in ('label="High"', 'label="Low"', 'label="Volume"', 'label="Value"', 'title="Key levels"', 'title="Market context"', 'title="Top gainers"', 'title="Top losers"'):
+        assert label in nifty
     assert 'data-intelligence-view="compact-command-center"' in views
     assert "SESSION INTELLIGENCE" in views
 
@@ -50,30 +51,26 @@ def test_all_purpose_views_consume_one_canonical_field_without_frontend_reasonin
 
 def test_top_bar_separates_session_and_feed_without_duplicate_settings():
     top = read("components/WorkstationTopBar.tsx")
-    assert top.count("data-market-session-status") == 1
-    assert "Feed {feed}" in top and 'aria-label="Settings"' not in top
-    assert 'id: "provider-summary"' in top
+    assert "Market:" in top and "Broker:" in top
+    assert "Live Assistant" in top and "Settings" in top
+    assert "Notifications" not in top
 
 
 def test_refresh_is_single_path_guarded_and_truthful():
-    top = read("components/WorkstationTopBar.tsx")
-    assert "await syncBroker(true)" in top and "fetch(" not in top
-    assert "if (syncing || refreshing) return" in top
-    assert "Canonical stream current" in top and "Partial canonical view" in top and "existing snapshot preserved" in top
+    metrics = read("components/MarketPulseWorkspace.tsx")
+    assert "await syncBroker(true)" in metrics and "fetch(" not in metrics
+    assert "refreshing || loading" in metrics
 
 
 def test_toasts_are_deduplicated_transient_and_not_render_loop_driven():
     top = read("components/WorkstationTopBar.tsx")
-    assert "current?.kind === next.kind && current.message === next.message ? current : next" in top
-    assert "setTimeout(() => setToast(null)" in top
-    assert "Market Closed" not in top.split("showToast", 1)[1]
+    assert "toast" not in top.lower()
+    assert "setTimeout" not in top
 
 
 def test_notifications_have_severity_timestamp_and_stable_keys():
     top = read("components/WorkstationTopBar.tsx")
-    assert "kind: \"warning\" | \"error\"" in top
-    assert "timestamp: string" in top and "alert.timestamp" in top
-    assert "key={alert.id}" in top
+    assert "Notifications" not in top and "Bell" not in top
 
 
 def test_settings_provider_health_is_bounded_and_keyboard_scrollable():
@@ -85,7 +82,7 @@ def test_settings_provider_health_is_bounded_and_keyboard_scrollable():
 
 def test_sidebar_remains_clean_and_settings_is_single_primary_path():
     layout = read("layout/DashboardLayout.tsx")
-    assert '{ id: "settings", label: "System Control"' in layout
+    assert "PRIMARY_MODULES" in layout and "settingsOpen ?" in layout
     assert "Decision intelligence only. Execution and order management are unavailable." not in layout
 
 
