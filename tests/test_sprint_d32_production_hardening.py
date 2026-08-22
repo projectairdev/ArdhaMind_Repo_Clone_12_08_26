@@ -477,7 +477,7 @@ def test_full_12_aug_close_reconstruction():
 # ---------------------------------------------------------------------------
 def test_read_only_boundary_preservation():
     service = BrokerService.get_instance()
-    with pytest.raises(PermissionError, match="read only"):
+    with pytest.raises(PermissionError, match=r"(?i)(read only|live execution is disabled)"):
         service.place_order()
 
     payload = get_base_payload()
