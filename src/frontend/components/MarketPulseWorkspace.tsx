@@ -632,7 +632,8 @@ export function MarketPulseWorkspace() {
         {/* ── CARD 4: MARKET BREADTH ── */}
         <Surface id="market-metrics-breadth" className="overflow-hidden flex flex-col justify-between h-auto">
           <SectionHeader title="4. MARKET BREADTH" accent="cyan" />
-          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[10px]">
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-1.5 font-mono text-[10px]">
+            {/* Top Block: Advances / Declines Bar & Coverage */}
             <div className="space-y-1">
               <div className="flex justify-between items-center text-[#707987] font-semibold text-[9.5px]">
                 <span>Advances ({advCount})</span>
@@ -642,28 +643,45 @@ export function MarketPulseWorkspace() {
                 <div style={{ width: `${advPct}%` }} className="h-full bg-[#00C896]" />
                 <div style={{ width: `${100 - advPct}%` }} className="h-full bg-[#E5484D]" />
               </div>
-              <div className="flex justify-between text-[9px] text-[#707987] pt-0.5">
+              <div className="flex justify-between text-[8.5px] text-[#707987] pt-0.5">
                 <span>Unchanged: <strong className="text-[#E6E8EB]">{unchCount}</strong></span>
                 <span>Coverage: <strong className="text-[#E6E8EB]">50/50</strong></span>
               </div>
             </div>
 
-            <div className="border-t border-[#191D23] pt-1.5 space-y-1.5">
-              <div className="flex justify-between">
+            {/* Middle Block: A/D Ratio, Percentages & Breadth Trend */}
+            <div className="border-t border-[#191D23] pt-1 space-y-0.5">
+              <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">A/D Ratio</span>
                 <span className="font-bold text-[#E6E8EB] air-data">{adRatio}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between py-0.5">
+                <span className="text-[#707987]">Advancing %</span>
+                <span className="font-bold text-[#00C896] air-data">{advPct}%</span>
+              </div>
+              <div className="flex justify-between py-0.5">
+                <span className="text-[#707987]">Declining %</span>
+                <span className="font-bold text-[#E5484D] air-data">{100 - advPct}%</span>
+              </div>
+              <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">Breadth Trend</span>
                 <span className="font-bold text-[#00C896] air-data">{breadthTrend}</span>
               </div>
-              <div className="flex justify-between">
+            </div>
+
+            {/* Bottom Block: 52W Highs/Lows & Universe */}
+            <div className="border-t border-[#191D23] pt-1 space-y-0.5">
+              <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">52W Highs / Lows</span>
                 <span className="font-bold text-[#707987] air-data">{newHighs != null && newLows != null ? `${newHighs} / ${newLows}` : "UNAVAILABLE"}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between py-0.5">
+                <span className="text-[#707987]">Participation State</span>
+                <span className="font-bold text-[#00C896] uppercase air-data">{breadthBias}</span>
+              </div>
+              <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">Breadth Universe</span>
-                <span className="text-[9px] text-[#707987]">NIFTY 50 + NSE Broad</span>
+                <span className="text-[8.5px] text-[#707987]">NIFTY 50 + NSE Broad</span>
               </div>
             </div>
           </div>
@@ -672,42 +690,55 @@ export function MarketPulseWorkspace() {
         {/* ── CARD 5: VOLATILITY & RANGE ── */}
         <Surface id="market-metrics-vix" className="overflow-hidden flex flex-col justify-between h-auto">
           <SectionHeader title="5. VOLATILITY & RANGE" accent="cyan" />
-          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[10px]">
-            <div className="space-y-1">
-              <div className="flex justify-between">
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-1.5 font-mono text-[10px]">
+            {/* Top Block: India VIX & Regime */}
+            <div className="space-y-0.5">
+              <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">India VIX</span>
                 <span className="font-bold text-[#00C896] air-data">
                   {formatNumber(vixVal, 2)}{" "}
-                  <span className="text-[9px]">({vixChangePct >= 0 ? "+" : ""}{formatNumber(vixChangePct, 2)}%)</span>
+                  <span className="text-[8.5px]">({vixChangePct >= 0 ? "+" : ""}{formatNumber(vixChangePct, 2)}%)</span>
                 </span>
               </div>
-              <div>
-                <div className="flex justify-between">
-                  <span className="text-[#707987]">ATR (14-period)</span>
-                  <span className="font-bold text-[#E6E8EB] air-data">{formatNumber(atr, 2)}</span>
-                </div>
-                <div className="text-[7.5px] text-[#707987] mt-0.5">1m / 5m Candles • 75 bars • Completed Session Reference</div>
-              </div>
-              <div className="flex justify-between pt-0.5">
-                <span className="text-[#707987]">Intraday Range</span>
-                <span className="font-bold text-[#E6E8EB] air-data">{intradayRange}</span>
+              <div className="flex justify-between py-0.5">
+                <span className="text-[#707987]">Volatility Regime</span>
+                <span className="font-bold text-[#00C896] uppercase">{vixRegime}</span>
               </div>
             </div>
 
-            <div className="border-t border-[#191D23] pt-1.5 space-y-1">
-              <div className="flex justify-between text-[8px] text-[#707987]">
-                <span>Low: <strong className="text-[#E6E8EB]">{formatNumber(low, 2)}</strong></span>
-                <span>High: <strong className="text-[#E6E8EB]">{formatNumber(high, 2)}</strong></span>
+            {/* Second Block: ATR & Range */}
+            <div className="border-t border-[#191D23] pt-1 space-y-0.5">
+              <div className="flex justify-between py-0.5">
+                <span className="text-[#707987]">ATR (14-period)</span>
+                <span className="font-bold text-[#E6E8EB] air-data">{formatNumber(atr, 2)}</span>
               </div>
+              <div className="flex justify-between py-0.5">
+                <span className="text-[#707987]">Intraday Range</span>
+                <span className="font-bold text-[#E6E8EB] air-data">{intradayRange}</span>
+              </div>
+              <div className="text-[7.5px] text-[#707987] pt-0.5">1m / 5m Candles • 75 bars • Completed Session Reference</div>
+            </div>
+
+            {/* Third Block: Day Bounds */}
+            <div className="border-t border-[#191D23] pt-1 space-y-0.5">
+              <div className="flex justify-between py-0.5">
+                <span className="text-[#707987]">Day Low</span>
+                <span className="font-bold text-[#E6E8EB] air-data">{formatNumber(low, 2)}</span>
+              </div>
+              <div className="flex justify-between py-0.5">
+                <span className="text-[#707987]">Day High</span>
+                <span className="font-bold text-[#E6E8EB] air-data">{formatNumber(high, 2)}</span>
+              </div>
+            </div>
+
+            {/* Bottom Block: Range Consumed Visual & ATR / VIX Metrics */}
+            <div className="border-t border-[#191D23] pt-1 space-y-1">
               <div className="h-1.5 w-full bg-[#191D23] rounded-full overflow-hidden flex">
                 <div style={{ width: `${rangeConsumedPct}%` }} className="h-full bg-[#38BDF8]" />
               </div>
-              <div className="text-[8.5px] text-[#707987] text-right">
-                Range Consumed: <strong className="text-[#38BDF8]">{rangeConsumedPct}%</strong>
-              </div>
-              <div className="flex justify-between pt-1 border-t border-[#191D23]/60">
-                <span className="text-[#707987]">Volatility Regime</span>
-                <span className="font-bold text-[#00C896] uppercase">{vixRegime}</span>
+              <div className="flex justify-between text-[8.5px] text-[#707987]">
+                <span>Range Consumed: <strong className="text-[#38BDF8]">{rangeConsumedPct}%</strong></span>
+                <span>ATR % Spot: <strong className="text-[#E6E8EB]">{spot && atr ? `${((atr / spot) * 100).toFixed(2)}%` : "—"}</strong></span>
               </div>
             </div>
           </div>
@@ -906,40 +937,68 @@ export function MarketPulseWorkspace() {
         {/* ── CARD 10: METRIC INTERPRETATION ── */}
         <Surface className="overflow-hidden flex flex-col justify-between h-auto">
           <SectionHeader title="10. METRIC INTERPRETATION" accent="cyan" />
-          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono">
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[10px]">
             {/* 6-Cell Raw State Grid (3x2) */}
-            <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23]">
-                <div className="text-[7.5px] text-[#707987] uppercase font-bold">TREND</div>
-                <div className="font-bold uppercase text-[9.5px] mt-0.5 text-[#E59700]">{trend}</div>
+            <div className="grid grid-cols-3 gap-1.5 text-center">
+              <div className="bg-[#0E1013] p-1 rounded border border-[#191D23]">
+                <div className="text-[7px] text-[#707987] uppercase font-bold">TREND</div>
+                <div className="font-bold uppercase text-[9px] mt-0.5 text-[#E59700]">{trend}</div>
               </div>
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23]">
-                <div className="text-[7.5px] text-[#707987] uppercase font-bold">MOMENTUM</div>
-                <div className="font-bold uppercase text-[9.5px] mt-0.5 text-[#E59700]">{momentum}</div>
+              <div className="bg-[#0E1013] p-1 rounded border border-[#191D23]">
+                <div className="text-[7px] text-[#707987] uppercase font-bold">MOMENTUM</div>
+                <div className="font-bold uppercase text-[9px] mt-0.5 text-[#E59700]">{momentum}</div>
               </div>
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23]">
-                <div className="text-[7.5px] text-[#707987] uppercase font-bold">BREADTH</div>
-                <div className="font-bold uppercase text-[9.5px] mt-0.5 text-[#00C896]">{breadthBias}</div>
+              <div className="bg-[#0E1013] p-1 rounded border border-[#191D23]">
+                <div className="text-[7px] text-[#707987] uppercase font-bold">BREADTH</div>
+                <div className="font-bold uppercase text-[9px] mt-0.5 text-[#00C896]">{breadthBias}</div>
               </div>
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23]">
-                <div className="text-[7.5px] text-[#707987] uppercase font-bold">VOLATILITY</div>
-                <div className="font-bold uppercase text-[9.5px] mt-0.5 text-[#00C896]">{vixRegime}</div>
+              <div className="bg-[#0E1013] p-1 rounded border border-[#191D23]">
+                <div className="text-[7px] text-[#707987] uppercase font-bold">VOLATILITY</div>
+                <div className="font-bold uppercase text-[9px] mt-0.5 text-[#00C896]">{vixRegime}</div>
               </div>
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23]">
-                <div className="text-[7.5px] text-[#707987] uppercase font-bold">INSTITUTIONAL</div>
-                <div className="font-bold uppercase text-[9.5px] mt-0.5 text-[#00C896]">
+              <div className="bg-[#0E1013] p-1 rounded border border-[#191D23]">
+                <div className="text-[7px] text-[#707987] uppercase font-bold">INSTITUTIONAL</div>
+                <div className="font-bold uppercase text-[9px] mt-0.5 text-[#00C896]">
                   {netFlow != null && netFlow >= 0 ? "POSITIVE" : "NEGATIVE"}
                 </div>
               </div>
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23]">
-                <div className="text-[7.5px] text-[#707987] uppercase font-bold">OVERALL</div>
-                <div className="font-bold text-[#E59700] uppercase text-[9.5px] mt-0.5">MIXED</div>
+              <div className="bg-[#0E1013] p-1 rounded border border-[#191D23]">
+                <div className="text-[7px] text-[#707987] uppercase font-bold">OVERALL</div>
+                <div className="font-bold text-[#E59700] uppercase text-[9px] mt-0.5">MIXED</div>
               </div>
             </div>
 
-            {/* Concise 2-Line Synthesis Summary */}
-            <div className="bg-[#0E1013] p-2.5 rounded border border-[#191D23] text-[9.5px] text-[#E6E8EB] leading-relaxed">
-              {synthesisSentence}
+            {/* Structured Deterministic Summary Panel */}
+            <div className="bg-[#0E1013] p-2 rounded border border-[#191D23] space-y-1 text-[8.5px] leading-relaxed">
+              <div className="flex items-start gap-1.5">
+                <span className="text-[#38BDF8] font-bold shrink-0">Market State:</span>
+                <span className="text-[#E6E8EB]">Neutral trend with bullish breadth and low volatility regime.</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-[#00C896] font-bold shrink-0">Participation:</span>
+                <span className="text-[#E6E8EB]">{advCount} ADV / {decCount} DEC; breadth remains positive across universe.</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-[#E59700] font-bold shrink-0">Positioning:</span>
+                <span className="text-[#E6E8EB]">DII buying ({signedStr(diiNet, 1)} Cr) offsets FII selling ({signedStr(fiiNet, 1)} Cr); net positive.</span>
+              </div>
+              <div className="flex items-start gap-1.5">
+                <span className="text-[#707987] font-bold shrink-0">Risk & Bounds:</span>
+                <span className="text-[#E6E8EB]">Low volatility (VIX {formatNumber(vixVal, 2)}). ATR {formatNumber(atr, 2)} with {rangeConsumedPct}% range consumed.</span>
+              </div>
+            </div>
+
+            {/* Key Alignment Strip */}
+            <div className="grid grid-cols-3 gap-1 text-[7.5px] text-center pt-0.5 border-t border-[#191D23]">
+              <div className="bg-[#0E1013] py-0.5 px-1 rounded border border-[#00C896]/30 text-[#00C896]">
+                Breadth: Supportive
+              </div>
+              <div className="bg-[#0E1013] py-0.5 px-1 rounded border border-[#00C896]/30 text-[#00C896]">
+                Flows: Supportive
+              </div>
+              <div className="bg-[#0E1013] py-0.5 px-1 rounded border border-[#E59700]/30 text-[#E59700]">
+                Momentum: Neutral
+              </div>
             </div>
           </div>
         </Surface>
