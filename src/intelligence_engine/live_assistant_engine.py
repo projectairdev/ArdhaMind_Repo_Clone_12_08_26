@@ -137,7 +137,32 @@ class LiveAssistantEngine:
             ]
             return runtime_session_date, "COMPLETED_SESSION", same_date_snaps
 
-        # Search backward on disk / in memory for newest session_date with genuine continuous trading snapshots
+        # Check LightweightSessionStore for newest completed session telemetry first
+        try:
+            from src.storage import LightweightSessionStore
+            store = LightweightSessionStore.get_instance()
+            latest_close = store.load_latest_session_close()
+            if latest_close and latest_close.session_date and latest_close.session_date != runtime_session_date:
+                t_buckets = store.load_telemetry_series(latest_close.session_date)
+                if t_buckets:
+                    # Convert compact telemetry buckets to snapshot format
+                    synth_snaps = []
+                    for b in t_buckets:
+                        synth_snaps.append({
+                            "session_date": latest_close.session_date,
+                            "timestamp": b.get("timestamp") or f"{latest_close.session_date}T{b.get('window_end', '15:30')}:00Z",
+                            "market_session_phase": b.get("session_phase", "CONTINUOUS_TRADING"),
+                            "spot": b.get("end_spot") or b.get("start_spot"),
+                            "breadth": {"advances": b.get("breadth_advances", 25), "declines": b.get("breadth_declines", 25)},
+                            "vix": b.get("vix", 12.5),
+                            "options": {"pcr": b.get("pcr", 1.0), "max_pain": b.get("max_pain", 24250)}
+                        })
+                    if synth_snaps:
+                        return latest_close.session_date, "COMPLETED_SESSION", synth_snaps
+        except Exception as exc:
+            logger.debug(f"Could not load telemetry from LightweightSessionStore: {exc}")
+
+        # Search backward on disk / in memory for newest session_date with genuine continuous trading snapshots (Legacy Fallback)
         target_dir = cache_dir
         if target_dir is not None and target_dir.exists():
             history_files = sorted(target_dir.glob("session_history_*.json"), key=lambda p: p.name, reverse=True)

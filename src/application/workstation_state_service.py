@@ -215,7 +215,49 @@ class WorkstationStateService:
                 "material_events": cls._live_event_stream[:50]
             }
 
+            # 1. Primary legacy write (STILL ENABLED)
             atomic_write_json(str(cache_file), payload)
+
+            # 2. Parallel Lightweight Session Store Dual-Write (Phase E Shadow Mode)
+            try:
+                from src.storage import LightweightSessionStore
+                store = LightweightSessionStore.get_instance()
+                
+                # Persist single atomic recovery snapshot
+                if session_snaps:
+                    latest_snap = session_snaps[-1]
+                    store.persist_recovery_state(
+                        state=latest_snap,
+                        runtime_id=cls._runtime_id,
+                        state_sequence=curr_seq,
+                        session_date=session_date,
+                        market_session_phase=latest_snap.get("market_session_phase", "")
+                    )
+                    
+                    # Record 15-minute telemetry bucket
+                    t_str = latest_snap.get("timestamp") or ""
+                    hhmm = t_str[11:16] if len(t_str) >= 16 else "15:30"
+                    opt_snap = latest_snap.get("options") or {}
+                    br_snap = latest_snap.get("breadth") or {}
+                    
+                    bucket = {
+                        "timestamp": t_str,
+                        "window_start": hhmm,
+                        "window_end": hhmm,
+                        "start_spot": latest_snap.get("spot"),
+                        "end_spot": latest_snap.get("spot"),
+                        "breadth_advances": br_snap.get("advances"),
+                        "breadth_declines": br_snap.get("declines"),
+                        "vix": latest_snap.get("vix"),
+                        "pcr": opt_snap.get("pcr"),
+                        "max_pain": opt_snap.get("max_pain"),
+                        "session_phase": latest_snap.get("market_session_phase", "CONTINUOUS_TRADING"),
+                        "evidence_quality": "SUFFICIENT"
+                    }
+                    store.record_telemetry_bucket(session_date, bucket)
+            except Exception as shadow_exc:
+                logger.debug(f"[WorkstationStateService] Shadow storage write exception: {shadow_exc}")
+
             cls._last_persistence_time = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             cls._last_persisted_snap_count = curr_snap_count
             cls._last_persisted_seq = curr_seq

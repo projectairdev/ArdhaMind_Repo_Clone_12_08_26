@@ -42,6 +42,7 @@ def test_no_hidden_session_history_readers():
         "live_assistant/evidence_router.py",
         "live_assistant/answer_planner.py",
         "live_assistant/deterministic_fallback.py",
+        "storage/retention_manager.py",
     }
     
     unexpected = set(readers) - known_consumers

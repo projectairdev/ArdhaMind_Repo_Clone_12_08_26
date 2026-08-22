@@ -766,20 +766,38 @@ class PerformanceTrackerEngine:
             if len(pending_recs) > 0:
                 m_data = state.get("market_data") or state.get("marketContext") or {}
 
-                # Check for finalized session history file if available
-                sess_hist_file = CACHE_DIR / f"session_history_{trading_date}.json"
-                if sess_hist_file.exists():
-                    try:
-                        with open(sess_hist_file, "r") as f:
-                            s_hist = json.load(f)
-                        if s_hist.get("actual_session"):
-                            act_s = s_hist["actual_session"]
-                            m_data["open"] = act_s.get("actual_open") or m_data.get("open")
-                            m_data["high"] = act_s.get("actual_high") or m_data.get("high")
-                            m_data["low"] = act_s.get("actual_low") or m_data.get("low")
-                            m_data["close"] = act_s.get("actual_close") or m_data.get("close")
-                    except Exception as e:
-                        logger.warning(f"Could not load session history for {trading_date}: {e}")
+                # Check LightweightSessionStore for finalized session close, fallback to legacy session_history
+                try:
+                    from src.storage import LightweightSessionStore
+                    close_core = LightweightSessionStore.get_instance().load_session_close(trading_date)
+                    if close_core and close_core.market_ohlcv:
+                        ohlcv = close_core.market_ohlcv
+                        if ohlcv.open is not None:
+                            m_data["open"] = ohlcv.open
+                        if ohlcv.high is not None:
+                            m_data["high"] = ohlcv.high
+                        if ohlcv.low is not None:
+                            m_data["low"] = ohlcv.low
+                        if ohlcv.close is not None:
+                            m_data["close"] = ohlcv.close
+                except Exception as exc:
+                    logger.debug(f"Could not load SessionCloseCore for {trading_date}: {exc}")
+
+                if m_data.get("close") is None:
+                    # Fallback to legacy session_history file
+                    sess_hist_file = CACHE_DIR / f"session_history_{trading_date}.json"
+                    if sess_hist_file.exists():
+                        try:
+                            with open(sess_hist_file, "r") as f:
+                                s_hist = json.load(f)
+                            if s_hist.get("actual_session"):
+                                act_s = s_hist["actual_session"]
+                                m_data["open"] = act_s.get("actual_open") or m_data.get("open")
+                                m_data["high"] = act_s.get("actual_high") or m_data.get("high")
+                                m_data["low"] = act_s.get("actual_low") or m_data.get("low")
+                                m_data["close"] = act_s.get("actual_close") or m_data.get("close")
+                        except Exception as e:
+                            logger.warning(f"Could not load session history for {trading_date}: {e}")
 
                 open_val = float(m_data.get("open") or m_data.get("current_spot") or state.get("last_price") or 24152.05)
                 high_val = float(m_data.get("high") or open_val)
