@@ -120,6 +120,37 @@ export function AdvancedDiagnosticsDrawer({
             </div>
           </Surface>
 
+          {/* Post-Auth Startup Telemetry */}
+          {diag.postAuthMetrics && (
+            <Surface id="settings-diagnostics-post-auth-latency" className="overflow-hidden">
+              <SectionHeader title="POST-AUTH STARTUP LATENCY TELEMETRY" eyebrow="2. Startup Latency Trace" accent="emerald" />
+              <div className="p-3 bg-[#0B0D10] space-y-2">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono text-[9.5px]">
+                  <div className="p-2 rounded bg-[#0E1013] border border-[#191D23]">
+                    <div className="text-[8px] text-[#707987] font-bold uppercase">TOKEN EXCHANGE</div>
+                    <div className="font-bold text-[#E6E8EB] mt-0.5">{diag.postAuthMetrics.tokenExchangeMs ?? "—"} ms</div>
+                  </div>
+                  <div className="p-2 rounded bg-[#0E1013] border border-[#191D23]">
+                    <div className="text-[8px] text-[#707987] font-bold uppercase">SESSION SAVE</div>
+                    <div className="font-bold text-[#E6E8EB] mt-0.5">{diag.postAuthMetrics.sessionSaveMs ?? "—"} ms</div>
+                  </div>
+                  <div className="p-2 rounded bg-[#0E1013] border border-[#191D23]">
+                    <div className="text-[8px] text-[#707987] font-bold uppercase">BROKER CONNECT</div>
+                    <div className="font-bold text-[#E6E8EB] mt-0.5">{diag.postAuthMetrics.brokerConnectMs ?? "—"} ms</div>
+                  </div>
+                  <div className="p-2 rounded bg-[#0E1013] border border-[#191D23]">
+                    <div className="text-[8px] text-[#707987] font-bold uppercase">FEED SUBSCRIBE</div>
+                    <div className="font-bold text-[#E6E8EB] mt-0.5">{diag.postAuthMetrics.feedConnectMs ?? "—"} ms</div>
+                  </div>
+                  <div className="p-2 rounded bg-[#0E1013] border border-[#38BDF8]/30 bg-[#38BDF8]/5">
+                    <div className="text-[8px] text-[#38BDF8] font-bold uppercase">TOTAL POST-AUTH</div>
+                    <div className="font-bold text-[#00C896] mt-0.5">{diag.postAuthMetrics.totalPostAuthMs ?? "—"} ms</div>
+                  </div>
+                </div>
+              </div>
+            </Surface>
+          )}
+
           {/* 3. Dataset Integrity Checks & Export */}
           <Surface id="settings-diagnostics-options" className="overflow-hidden">
             <SectionHeader title="DATASET INTEGRITY &amp; TELEMETRY COUNTS" eyebrow="2. Pipeline Integrity" accent="violet" />

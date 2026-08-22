@@ -349,16 +349,29 @@ app.get("/api/broker/login-url", async (_req, res) => {
 
 app.get("/api/broker/callback", async (req, res) => {
   const requestToken = (req.query.request_token as string) || (req.query.requestToken as string);
+  const startTime = Date.now();
   console.log(`[AUTH] Callback route reached. RequestToken present: ${Boolean(requestToken)}`);
   if (!requestToken) {
     res.status(400).json({ success: false, error: "Missing request_token parameter from Zerodha authentication." });
     return;
   }
+
+  // Push immediate authenticating/connecting event over WS to active shells
+  broadcastToClients({
+    type: "auth_event",
+    brokerState: "CONNECTING",
+    feedState: "STARTING",
+    timestamp: new Date().toISOString()
+  });
+
   try {
     const result = await sendDaemonRequest("exchange_request_token", { request_token: requestToken });
-    console.log(`[AUTH] Token exchange result success: ${Boolean(result && result.success)}`);
+    const totalCallbackMs = Date.now() - startTime;
+    console.log(`[AUTH] Token exchange result success: ${Boolean(result && result.success)} (Total callback: ${totalCallbackMs}ms)`);
+
     if (result && result.success) {
       const targetBrokerState = result?.brokerState || "CONNECTED_VERIFIED";
+      const targetFeedState = result?.feedState || "READY";
       workstationState.workspaceContext = {
         ...workstationState.workspaceContext,
         brokerState: targetBrokerState,
@@ -367,6 +380,7 @@ app.get("/api/broker/callback", async (req, res) => {
       broadcastToClients({
         type: "auth_event",
         brokerState: targetBrokerState,
+        feedState: targetFeedState,
         timestamp: new Date().toISOString()
       });
       broadcastToClients({
@@ -378,14 +392,40 @@ app.get("/api/broker/callback", async (req, res) => {
           authenticated: true,
           session_valid: true,
           execution_verified: targetBrokerState === "CONNECTED_VERIFIED",
-          reconciliation_complete: targetBrokerState === "CONNECTED_VERIFIED"
+          reconciliation_complete: targetBrokerState === "CONNECTED_VERIFIED",
+          post_auth_metrics: result.postAuthMetrics
         }
       });
       console.log(`[AUTH] Broker canonical publication SUCCESS — auth_event (${targetBrokerState}) broadcast to all clients.`);
-      if (req.headers.accept && req.headers.accept.includes("application/json")) {
-        return res.json({ success: true, brokerState: targetBrokerState });
+
+      if ((req.headers.accept && req.headers.accept.includes("application/json")) || req.query.format === "json") {
+        return res.json({ success: true, brokerState: targetBrokerState, postAuthMetrics: result.postAuthMetrics });
       }
-      return res.redirect("/?connected=true");
+
+      // Fast return HTML redirect
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AIR Ardha — Authenticated</title>
+  <style>
+    body { background: #07080A; color: #38BDF8; font-family: monospace; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .card { background: #0B0D10; border: 1px solid #191D23; padding: 24px; border-radius: 4px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div style="font-weight: bold; font-size: 14px; margin-bottom: 8px;">ZERODHA AUTHENTICATED</div>
+    <div style="font-size: 11px; color: #707987;">Restoring workstation shell… (${totalCallbackMs}ms)</div>
+  </div>
+  <script>
+    try { localStorage.setItem("BROKER_STATE", "CONNECTED_VERIFIED"); } catch(e){}
+    window.location.replace("/?connected=true");
+  </script>
+</body>
+</html>`;
+      res.setHeader("Content-Type", "text/html");
+      return res.status(200).send(html);
     } else {
       console.log(`[AUTH] Token exchange failed: ${result?.error || "Unknown error"}`);
       if (req.headers.accept && req.headers.accept.includes("application/json")) {

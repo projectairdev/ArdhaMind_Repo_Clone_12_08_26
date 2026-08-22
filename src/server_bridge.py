@@ -511,8 +511,23 @@ def handle_daemon_command(action, params, bs, wm):
         request_token = params.get("request_token")
         if not request_token:
             return {"success": False, "error": "Missing request token"}
+
+        t_start = time.time()
+        logger.info(f"[POST_AUTH_TIMING] A1 callback_received: {datetime.utcnow().isoformat()}Z")
+
+        # Broadcast instant authentication progress event
+        print(json.dumps({
+            "type": "auth_event",
+            "brokerState": "CONNECTING",
+            "feedState": "STARTING",
+            "timestamp": datetime.utcnow().isoformat() + "Z"
+        }), flush=True)
+
         try:
+            t_ex_start = time.time()
             session = AuthenticationManager.generate_access_token(request_token)
+            t_ex_ms = round((time.time() - t_ex_start) * 1000.0, 1)
+
             access_token = session.get("access_token")
             api_key = session.get("api_key") or getattr(Config, "KITE_API_KEY", "")
             user_id = session.get("user_id") or session.get("client_id")
@@ -520,7 +535,10 @@ def handle_daemon_command(action, params, bs, wm):
             if not access_token:
                 return {"success": False, "error": "Token exchange failed: access_token not returned"}
 
+            logger.info(f"[POST_AUTH_TIMING] A2 token_exchanged in {t_ex_ms}ms")
+
             # Save session to local disk cache
+            t_save_start = time.time()
             saved = SessionManager.save_session(
                 access_token=access_token,
                 api_key=api_key,
@@ -528,29 +546,40 @@ def handle_daemon_command(action, params, bs, wm):
                 persist_key=True,
                 persist_token=True
             )
-
-            # Verify reload immediately
-            loaded_data = SessionManager.load_session()
-            reload_ok = loaded_data and loaded_data.get("access_token") == access_token
+            t_save_ms = round((time.time() - t_save_start) * 1000.0, 1)
+            logger.info(f"[POST_AUTH_TIMING] A3 session_persisted in {t_save_ms}ms")
 
             # Connect authoritative BrokerService singleton
+            t_conn_start = time.time()
             gateway = bs.get_gateway()
             connected = gateway.connect(api_key=api_key, access_token=access_token)
+            t_conn_ms = round((time.time() - t_conn_start) * 1000.0, 1)
+            logger.info(f"[POST_AUTH_TIMING] A5 gateway_connected ({connected}) in {t_conn_ms}ms")
 
-            if connected:
-                try:
-                    setup_real_ticks_callback()
-                    bs.connect_stream()
-                    bs.subscribe_stream([
-                        "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
-                        "NIFTY METAL", "NIFTY FMCG", "NIFTY REALTY", "NIFTY ENERGY",
-                        "NIFTY OIL AND GAS", "NIFTY FIN SERVICE", "INDIA VIX",
-                    ])
-                    logger.info("Auto-started streaming feed and core subscriptions upon OAuth completion.")
-                except Exception as se:
-                    logger.error(f"Failed to auto-start stream on OAuth completion: {se}")
+            # Parallelized stream connection & subscription setup
+            t_feed_start = time.time()
+            feed_ready = False
 
-            # Perform profile test
+            def _connect_and_subscribe():
+                nonlocal feed_ready
+                if connected:
+                    try:
+                        setup_real_ticks_callback()
+                        bs.connect_stream()
+                        bs.subscribe_stream([
+                            "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
+                            "NIFTY METAL", "NIFTY FMCG", "NIFTY REALTY", "NIFTY ENERGY",
+                            "NIFTY OIL AND GAS", "NIFTY FIN SERVICE", "INDIA VIX",
+                        ])
+                        feed_ready = True
+                        logger.info("Auto-started streaming feed and core subscriptions upon OAuth completion.")
+                    except Exception as se:
+                        logger.error(f"Failed to auto-start stream on OAuth completion: {se}")
+
+            feed_thread = threading.Thread(target=_connect_and_subscribe, daemon=True, name="post-auth-feed")
+            feed_thread.start()
+
+            # Perform profile test in parallel
             profile_ok = False
             client_id = user_id or getattr(gateway, "user_id", None) or "USER_OK"
             if connected and hasattr(gateway, "_kite_client") and gateway._kite_client:
@@ -559,16 +588,36 @@ def handle_daemon_command(action, params, bs, wm):
                     profile_ok = True
                     client_id = prof.get("user_id") or prof.get("client_id") or client_id
                 except Exception as pe:
-                        logger.warning(f"Profile verification call warning: {pe}")
-                        profile_ok = True  # session connects via gateway.connect
+                    logger.warning(f"Profile verification call warning: {pe}")
+                    profile_ok = True
 
-            print(f"generate_session: SUCCESS", file=sys.stderr, flush=True)
-            print(f"session_saved: {'YES' if saved else 'NO'}", file=sys.stderr, flush=True)
-            print(f"session_file_exists: YES", file=sys.stderr, flush=True)
-            print(f"session_restored: {'YES' if reload_ok else 'NO'}", file=sys.stderr, flush=True)
-            print(f"broker_service_authenticated: {'YES' if connected else 'NO'}", file=sys.stderr, flush=True)
+            feed_thread.join(timeout=1.5)
+            t_feed_ms = round((time.time() - t_feed_start) * 1000.0, 1)
+            logger.info(f"[POST_AUTH_TIMING] A7/A8 feed_connected_subscribed in {t_feed_ms}ms")
+
             from src.broker.services.authoritative_broker_health import BrokerHealthEvaluator
             BrokerHealthEvaluator.set_reconciliation_status(complete=True, in_progress=False)
+
+            total_post_auth_ms = round((time.time() - t_start) * 1000.0, 1)
+            logger.info(f"[POST_AUTH_TIMING] A10 canonical_ready total: {total_post_auth_ms}ms")
+
+            timing_metrics = {
+                "tokenExchangeMs": t_ex_ms,
+                "sessionSaveMs": t_save_ms,
+                "brokerConnectMs": t_conn_ms,
+                "feedConnectMs": t_feed_ms,
+                "totalPostAuthMs": total_post_auth_ms,
+                "completedAt": datetime.utcnow().isoformat() + "Z"
+            }
+            setattr(BrokerHealthEvaluator, "_last_post_auth_metrics", timing_metrics)
+
+            # Broadcast final connected auth event
+            print(json.dumps({
+                "type": "auth_event",
+                "brokerState": "CONNECTED_VERIFIED",
+                "feedState": "READY" if feed_ready else "STANDBY",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }), flush=True)
 
             # Force immediate canonical workstation state broadcast
             try:
@@ -598,7 +647,9 @@ def handle_daemon_command(action, params, bs, wm):
             return {
                 "success": True,
                 "brokerState": "CONNECTED_VERIFIED",
+                "feedState": "READY" if feed_ready else "STANDBY",
                 "client_id": client_id,
+                "postAuthMetrics": timing_metrics,
                 "context": serialize(wm.get_context())
             }
         except Exception as e:
