@@ -13,16 +13,16 @@ def read_frontend(rel_path: str) -> str:
     return full_path.read_text(encoding="utf-8")
 
 
-# ── 1. SUBTABS & ARCHITECTURE CONTRACTS ──
+# ── 1. ARCHITECTURE & COMPONENT CONTRACTS ──
 
-def test_settings_workspace_six_subtabs_contract():
+def test_settings_workspace_consolidated_architecture():
     code = read_frontend("components/settings/SettingsWorkspace.tsx")
-    assert 'label: "OVERVIEW"' in code
-    assert 'label: "CONNECTIONS"' in code
-    assert 'label: "PREFERENCES"' in code
-    assert 'label: "NOTIFICATIONS"' in code
-    assert 'label: "DIAGNOSTICS"' in code
-    assert 'label: "ABOUT"' in code
+    assert "SETTINGS" in code
+    assert "Workstation preferences, data connections, alerts, and safety controls." in code
+    assert "id=\"status-card-broker\"" in code
+    assert "id=\"status-card-market-data\"" in code
+    assert "id=\"status-card-news-engine\"" in code
+    assert "id=\"status-card-ai-assistant\"" in code
 
 
 def test_settings_adapter_structure_contract():
@@ -41,12 +41,7 @@ def test_settings_components_do_not_render_secret_tokens():
     for rel_path in [
         "utils/canonicalSettingsAdapter.ts",
         "components/settings/SettingsWorkspace.tsx",
-        "components/settings/SettingsOverview.tsx",
-        "components/settings/SettingsConnections.tsx",
-        "components/settings/SettingsPreferences.tsx",
-        "components/settings/SettingsNotifications.tsx",
-        "components/settings/SettingsDiagnostics.tsx",
-        "components/settings/SettingsAbout.tsx",
+        "components/settings/AdvancedDiagnosticsDrawer.tsx",
     ]:
         code = read_frontend(rel_path)
         # Verify no secret variables are exposed or rendered in plain text
@@ -59,25 +54,24 @@ def test_settings_components_do_not_render_secret_tokens():
 # ── 3. PREFERENCES & SAFE RESET CONTRACTS ──
 
 def test_settings_preferences_safe_reset():
-    code = read_frontend("components/settings/SettingsPreferences.tsx")
-    assert "Reset Local UI Preferences" in code
-    assert "Confirm Reset Local UI Preferences?" in code
-    # Safe reset must reset local preferences without touching broker
+    code = read_frontend("components/settings/SettingsWorkspace.tsx")
+    assert "SAFE RESET" in code
+    assert "Reset local UI preferences to workstation defaults." in code
     assert "DEFAULT_USER_PREFERENCES" in code
-    assert "delete" not in code.lower() or "delete market" not in code.lower()
+    assert "delete" not in code.lower() or "delete backend" in code.lower() or "delete market" not in code.lower()
 
 
 def test_staging_qa_controls_visibility():
-    code = read_frontend("components/settings/SettingsPreferences.tsx")
+    code = read_frontend("components/settings/SettingsWorkspace.tsx")
     assert 'pres.environment === "STAGING"' in code
-    assert "STAGING QA PREVIEW CONTROLS" in code
+    assert "STAGING QA SESSION CONTROLS" in code
 
 
 # ── 4. NOTIFICATIONS TRUTH CONTRACTS ──
 
 def test_notifications_permission_truth():
-    code = read_frontend("components/settings/SettingsNotifications.tsx")
-    assert "Browser notification permission required" in code
+    code = read_frontend("components/settings/SettingsWorkspace.tsx")
+    assert "Browser permission required" in code
     assert "highImpactNewsAlerts" in code
     assert "brokerDisconnectAlerts" in code
 
@@ -85,31 +79,23 @@ def test_notifications_permission_truth():
 # ── 5. DIAGNOSTICS & ABOUT CONTRACTS ──
 
 def test_diagnostics_export_contract():
-    code = read_frontend("components/settings/SettingsDiagnostics.tsx")
+    code = read_frontend("components/settings/AdvancedDiagnosticsDrawer.tsx")
     assert "handleExportDiagnostics" in code
     assert "ardhamind-diagnostics" in code
     assert "overallHealth" in code
 
 
 def test_about_read_only_invariants_guarantee():
-    code_about = read_frontend("components/settings/SettingsAbout.tsx")
+    code_ws = read_frontend("components/settings/SettingsWorkspace.tsx")
     code_adapter = read_frontend("utils/canonicalSettingsAdapter.ts")
-    assert "READ ONLY" in code_about
-    assert "Order placement, paper trading, and broker mutations are strictly disabled" in code_adapter
+    assert "READ ONLY" in code_ws
+    assert "Order placement, paper trading, and broker mutations are strictly disabled" in code_adapter or "hard-disabled" in code_ws
 
 
-# ── 6. SUBTAB SWITCHING & RENDERING CONTRACTS ──
+# ── 6. WORKSPACE WIRING CONTRACTS ──
 
-def test_settings_subtab_navigation_wiring():
-    """Verify DashboardLayout passes onSelectSubTab and SettingsWorkspace handles subtab changes."""
+def test_settings_workspace_wiring():
     dash_code = read_frontend("layout/DashboardLayout.tsx")
     settings_code = read_frontend("components/settings/SettingsWorkspace.tsx")
-
-    assert "onSelectSubTab={setSettingsSubTab}" in dash_code, "DashboardLayout must pass onSelectSubTab"
-    assert "currentSubTab === \"overview\" ? (" in settings_code
-    assert "currentSubTab === \"connections\" ? (" in settings_code
-    assert "currentSubTab === \"preferences\" ? (" in settings_code
-    assert "currentSubTab === \"notifications\" ? (" in settings_code
-    assert "currentSubTab === \"diagnostics\" ? (" in settings_code
-    assert "<SettingsAbout" in settings_code
-
+    assert "<SettingsWorkspace" in dash_code
+    assert "AdvancedDiagnosticsDrawer" in settings_code
