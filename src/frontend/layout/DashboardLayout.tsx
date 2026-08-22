@@ -184,14 +184,14 @@ export function DashboardLayout() {
 
         {/* Main Workspace Frame: Sidebar + Content */}
         <div className="flex min-h-0 flex-1 bg-[#050607]">
-          {/* Primary Sidebar Module Navigation (5 Primary Modules ONLY) */}
+          {/* Primary Sidebar Module Navigation (5 Primary Modules ONLY - Slim 200px Width) */}
           <aside
             id="workstation-sidebar"
             className={`${
               mobileOpen ? "block" : "hidden"
-            } w-[230px] sm:w-[240px] absolute z-40 h-full border-r border-[#191D23] bg-[#050607] px-2 py-3 lg:static lg:block overflow-y-auto shrink-0`}
+            } w-[200px] absolute z-40 h-full border-r border-[#191D23] bg-[#050607] px-1.5 py-2.5 lg:static lg:block overflow-y-auto shrink-0`}
           >
-            <nav className="space-y-1 font-mono">
+            <nav className="space-y-0.5 font-mono">
               {PRIMARY_MODULES.map((module) => {
                 const Glyph = module.glyph;
                 const isActive = !settingsOpen && activeModule === module.id;
@@ -203,14 +203,14 @@ export function DashboardLayout() {
                     onClick={() => navigateModule(module.id)}
                     aria-current={isActive ? "page" : undefined}
                     aria-label={labelText}
-                    className={`flex h-11 w-full items-center gap-3 rounded-[3px] border-l-2 px-3 text-left text-[11px] font-bold tracking-wide transition-colors ${
+                    className={`flex h-10 w-full items-center gap-2 rounded-[2px] border-l-2 px-2 text-left text-[11px] font-mono tracking-tight transition-colors whitespace-nowrap ${
                       isActive
-                        ? "border-[#38BDF8] bg-[#12151A] text-[#E6E8EB]"
-                        : "border-transparent text-[#707987] hover:bg-[#0E1013] hover:text-[#A5ABB4]"
+                        ? "border-[#38BDF8] bg-[#12151A] text-[#E6E8EB] font-bold"
+                        : "border-transparent text-[#707987] hover:bg-[#0E1013] hover:text-[#A5ABB4] font-medium"
                     }`}
                   >
                     <Glyph
-                      size={17}
+                      size={15}
                       className={`shrink-0 ${isActive ? "text-[#38BDF8]" : "text-[#707987]"}`}
                     />
                     <span className="truncate">{labelText}</span>

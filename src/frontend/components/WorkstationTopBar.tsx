@@ -116,21 +116,21 @@ export function WorkstationTopBar({
       className="sticky top-0 z-50 flex h-14 md:h-16 shrink-0 items-center justify-between border-b border-[#191D23] bg-[#050607] px-3.5 sm:px-5 font-mono text-[11px] w-full min-w-0"
     >
       {/* ── LEFT: ARDHA BRAND IDENTITY ── */}
-      <div className="flex items-center gap-2.5 min-w-0 shrink-0">
+      <div className="flex items-center gap-2 min-w-0 shrink-0">
         <button
           aria-label="Toggle navigation"
           title="Toggle navigation"
           className="rounded border border-[#242830] bg-[#0B0D10] p-1.5 text-[#A5ABB4] hover:bg-[#13161A] lg:hidden shrink-0"
           onClick={onToggleMobile}
         >
-          {mobileOpen ? <X size={15} /> : <Menu size={15} />}
+          {mobileOpen ? <X size={14} /> : <Menu size={14} />}
         </button>
 
-        <div className="flex items-center gap-2 min-w-0">
-          <ArdhaMindBrandMark size={22} />
-          <span className="text-sm font-bold tracking-tight text-[#E6E8EB] whitespace-nowrap">ARDHA</span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <ArdhaMindBrandMark size={20} />
+          <span className="text-[13px] font-bold tracking-tight text-[#E6E8EB] whitespace-nowrap font-mono">ARDHA</span>
           {staging && (
-            <span className="rounded border border-[#E59700]/40 bg-[#E59700]/10 px-1.5 py-0.5 text-[8.5px] font-bold text-[#E59700] uppercase shrink-0 tracking-wider">
+            <span className="rounded border border-[#E59700]/40 bg-[#E59700]/10 px-1 py-0.2 text-[8px] font-bold text-[#E59700] uppercase shrink-0 tracking-wider">
               STAGING
             </span>
           )}
