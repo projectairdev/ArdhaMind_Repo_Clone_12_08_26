@@ -10,7 +10,18 @@ export type PrimaryModuleId =
 
 export type MarketSubTab = "nifty" | "metrics" | "options";
 export type NewsSubTab = "live_news" | "catalysts" | "calendar";
-export type SettingsSubTab = "overview" | "connections" | "preferences" | "notifications" | "diagnostics" | "about";
+export type SettingsSubTab =
+  | "overview"
+  | "workspace"
+  | "connections"
+  | "ai_engines"
+  | "notifications"
+  | "safety"
+  | "system"
+  | "advanced"
+  | "preferences"
+  | "diagnostics"
+  | "about";
 
 export interface NavigationTarget {
   workspace: PrimaryModuleId | string;

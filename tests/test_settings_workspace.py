@@ -15,14 +15,14 @@ def read_frontend(rel_path: str) -> str:
 
 # ── 1. ARCHITECTURE & COMPONENT CONTRACTS ──
 
-def test_settings_workspace_consolidated_architecture():
+def test_settings_workspace_simplified_architecture():
     code = read_frontend("components/settings/SettingsWorkspace.tsx")
     assert "SETTINGS" in code
-    assert "Workstation preferences, data connections, alerts, and safety controls." in code
-    assert "id=\"status-card-broker\"" in code
-    assert "id=\"status-card-market-data\"" in code
-    assert "id=\"status-card-news-engine\"" in code
-    assert "id=\"status-card-ai-assistant\"" in code
+    assert "Workspace preferences, connections and alerts." in code
+    assert "GENERAL" in code
+    assert "CONNECTIONS" in code
+    assert "NOTIFICATIONS" in code
+    assert "ADVANCED" in code
 
 
 def test_settings_adapter_structure_contract():
@@ -55,8 +55,8 @@ def test_settings_components_do_not_render_secret_tokens():
 
 def test_settings_preferences_safe_reset():
     code = read_frontend("components/settings/SettingsWorkspace.tsx")
-    assert "SAFE RESET" in code
-    assert "Reset local UI preferences to workstation defaults." in code
+    assert "RESET UI PREFERENCES" in code
+    assert "Restores UI settings to defaults without altering broker/session/backend data." in code
     assert "DEFAULT_USER_PREFERENCES" in code
     assert "delete" not in code.lower() or "delete backend" in code.lower() or "delete market" not in code.lower()
 
@@ -71,12 +71,12 @@ def test_staging_qa_controls_visibility():
 
 def test_notifications_permission_truth():
     code = read_frontend("components/settings/SettingsWorkspace.tsx")
-    assert "Browser permission required" in code
+    assert "Desktop notification permission required." in code
     assert "highImpactNewsAlerts" in code
     assert "brokerDisconnectAlerts" in code
 
 
-# ── 5. DIAGNOSTICS & ABOUT CONTRACTS ──
+# ── 5. DIAGNOSTICS CONTRACTS ──
 
 def test_diagnostics_export_contract():
     code = read_frontend("components/settings/AdvancedDiagnosticsDrawer.tsx")
@@ -88,7 +88,7 @@ def test_diagnostics_export_contract():
 def test_about_read_only_invariants_guarantee():
     code_ws = read_frontend("components/settings/SettingsWorkspace.tsx")
     code_adapter = read_frontend("utils/canonicalSettingsAdapter.ts")
-    assert "READ ONLY" in code_ws
+    assert "Read-only safeguards active." in code_ws
     assert "Order placement, paper trading, and broker mutations are strictly disabled" in code_adapter or "hard-disabled" in code_ws
 
 

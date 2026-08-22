@@ -118,7 +118,11 @@ export function loadStoredPreferences(): UserPreferencesState {
     const raw = localStorage.getItem("ardhamind_user_preferences");
     if (!raw) return DEFAULT_USER_PREFERENCES;
     const parsed = JSON.parse(raw);
-    return { ...DEFAULT_USER_PREFERENCES, ...parsed };
+    const merged = { ...DEFAULT_USER_PREFERENCES, ...parsed };
+    if (merged.defaultWorkspace === ("trading_cheatsheet" as any) || merged.defaultWorkspace === ("cheatsheet" as any)) {
+      merged.defaultWorkspace = "market";
+    }
+    return merged;
   } catch {
     return DEFAULT_USER_PREFERENCES;
   }

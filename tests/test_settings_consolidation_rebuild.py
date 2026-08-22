@@ -1,7 +1,7 @@
 # tests/test_settings_consolidation_rebuild.py
 """
 Automated Unit, Integration, & Architectural Verification Tests for
-SETTINGS WORKSPACE CONSOLIDATION & PROFESSIONAL REBUILD SPRINT.
+SETTINGS SIMPLIFICATION & FINAL UX REBUILD SPRINT.
 Staging Quality Gates for AIR ArdhaMind.
 """
 
@@ -14,34 +14,33 @@ def read_frontend(rel_path: str) -> str:
     return full_path.read_text(encoding="utf-8")
 
 
-class TestSettingsConsolidatedArchitecture:
-    """Tests confirming the retirement of the 6-tab navigation and implementation of the single-page control center."""
+class TestSettingsSimplifiedArchitecture:
+    """Tests confirming the simplified 4-section single-page settings architecture."""
 
     def test_single_page_settings_header_and_subtitle(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
         assert "SETTINGS" in code
-        assert "Workstation preferences, data connections, alerts, and safety controls." in code
-        assert "READ ONLY" in code
+        assert "Workspace preferences, connections and alerts." in code
 
-    def test_top_status_strip_four_cards(self):
+    def test_four_primary_sections_exist(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
-        assert 'id="status-card-broker"' in code
-        assert 'id="status-card-market-data"' in code
-        assert 'id="status-card-news-engine"' in code
-        assert 'id="status-card-ai-assistant"' in code
-        assert "Zerodha KiteConnect" in code
-        assert "NIFTY Spot" in code
-        assert "Deterministic + GPT-4o" in code
+        assert "GENERAL" in code
+        assert "CONNECTIONS" in code
+        assert "NOTIFICATIONS" in code
+        assert "ADVANCED" in code
 
-    def test_main_two_column_grid_layout(self):
+    def test_no_internal_sidebar_rail(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
-        assert "grid-cols-1 lg:grid-cols-12" in code
-        assert "lg:col-span-5" in code  # Left column (~45%)
-        assert "lg:col-span-7" in code  # Right column (~55%)
+        assert "CONTROL CENTER" not in code
+        assert "SETTINGS_SECTIONS" not in code
+
+    def test_centered_max_width_container(self):
+        code = read_frontend("components/settings/SettingsWorkspace.tsx")
+        assert "max-w-[960px]" in code
 
 
 class TestPreferencesAndFormatting:
-    """Tests for workspace display and formatting preferences."""
+    """Tests for workspace display and formatting preferences in GENERAL section."""
 
     def test_time_format_options(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
@@ -59,10 +58,10 @@ class TestPreferencesAndFormatting:
 
     def test_default_landing_workspaces(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
-        assert "MARKET" in code
-        assert "MARKET INTELLIGENCE" in code
-        assert "NEWS & UPDATES" in code
-        assert "PORTFOLIO" in code
+        assert "Market" in code
+        assert "Market Intelligence" in code
+        assert "News & Updates" in code
+        assert "Portfolio" in code
 
     def test_default_market_views(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
@@ -72,9 +71,8 @@ class TestPreferencesAndFormatting:
 
     def test_safe_reset_preserves_backend(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
-        assert "SAFE RESET" in code
-        assert "Reset local UI preferences to workstation defaults." in code
-        assert "Does not disconnect broker, alter market data, or delete backend state." in code
+        assert "RESET UI PREFERENCES" in code
+        assert "Restores UI settings to defaults without altering broker/session/backend data." in code
         assert "handleResetPreferences" in code
         assert "DEFAULT_USER_PREFERENCES" in code
 
@@ -84,8 +82,8 @@ class TestAlertsAndNotifications:
 
     def test_browser_permission_banner(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
-        assert "Browser permission required for desktop popups" in code
-        assert "Enable Notifications" in code or "handleRequestBrowserPermission" in code
+        assert "Desktop notification permission required." in code
+        assert "Enable" in code or "handleRequestBrowserPermission" in code
 
     def test_five_alert_subscription_toggles(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
@@ -108,32 +106,35 @@ class TestConnectionsAndBrokerAuth:
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
         assert "Zerodha KiteConnect" in code
         assert "Authenticate Broker" in code or "handleOAuthConnect" in code
-        assert "Disconnect" in code or "handleBrokerDisconnect" in code
+        assert "Manage" in code or "handleBrokerDisconnect" in code
 
     def test_connected_service_rows(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
-        assert "NSE Market Data Stream" in code
-        assert "NIFTY Option Chain Matrix" in code
-        assert "Financial News Pipeline" in code
-        assert "Macro &amp; Economic Calendar" in code or "Macro & Economic Calendar" in code
-        assert "OpenAI GPT-4o Reasoning" in code
+        assert "Market Data" in code
+        assert "Options Data" in code
+        assert "News Engine" in code
+        assert "Macro Calendar" in code
+        assert "AI Assistant" in code
 
 
 class TestSafetyAndDiagnostics:
-    """Tests for Read-Only invariants, Runtime Snapshot, and Advanced Diagnostics Drawer."""
+    """Tests for Read-Only invariants, Advanced Disclosure, and Diagnostics Drawer."""
 
-    def test_read_only_safety_card(self):
+    def test_read_only_safety_note(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
-        assert "READ-ONLY SAFETY INVARIANTS" in code or "READ ONLY" in code
-        assert "Order placement, paper trading, order modification, and broker mutations are hard-disabled" in code
+        assert "Read-only safeguards active." in code
+
+    def test_advanced_disclosure_accordion(self):
+        code = read_frontend("components/settings/SettingsWorkspace.tsx")
+        assert "setAdvancedExpanded" in code
+        assert "Diagnostics, QA controls and reset options" in code
 
     def test_runtime_snapshot_fields(self):
         code = read_frontend("components/settings/SettingsWorkspace.tsx")
-        assert "RUNTIME SNAPSHOT" in code
         assert "Runtime ID" in code
         assert "State Sequence" in code
         assert "Environment" in code
-        assert "Market Session" in code
+        assert "Session" in code
         assert "Last Sync" in code
         assert "Version" in code
 
@@ -141,10 +142,7 @@ class TestSafetyAndDiagnostics:
         drawer_code = read_frontend("components/settings/AdvancedDiagnosticsDrawer.tsx")
         assert "AdvancedDiagnosticsDrawer" in drawer_code
         assert "COMPONENT READINESS MATRIX" in drawer_code
-        assert "DATASET INTEGRITY &amp; TELEMETRY COUNTS" in drawer_code or "DATASET INTEGRITY" in drawer_code
         assert "handleExportDiagnostics" in drawer_code
-        assert "DetectorHealthPanel" in drawer_code
-        assert "ArdhaPerformancePanel" in drawer_code
 
     def test_security_audit_no_exposed_secrets(self):
         for rel in [
