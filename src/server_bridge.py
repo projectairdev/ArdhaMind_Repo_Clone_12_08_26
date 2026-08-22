@@ -579,27 +579,30 @@ def handle_daemon_command(action, params, bs, wm):
             feed_thread = threading.Thread(target=_connect_and_subscribe, daemon=True, name="post-auth-feed")
             feed_thread.start()
 
-            # Perform profile test in parallel
+            # Perform profile validation test
             profile_ok = False
             client_id = user_id or getattr(gateway, "user_id", None) or "USER_OK"
             if connected and hasattr(gateway, "_kite_client") and gateway._kite_client:
                 try:
                     prof = gateway._kite_client.profile()
-                    profile_ok = True
-                    client_id = prof.get("user_id") or prof.get("client_id") or client_id
+                    if prof and (prof.get("user_id") or prof.get("client_id")):
+                        profile_ok = True
+                        client_id = prof.get("user_id") or prof.get("client_id") or client_id
                 except Exception as pe:
-                    logger.warning(f"Profile verification call warning: {pe}")
-                    profile_ok = True
+                    logger.error(f"Profile verification call failed: {pe}")
+                    profile_ok = False
 
             feed_thread.join(timeout=1.5)
             t_feed_ms = round((time.time() - t_feed_start) * 1000.0, 1)
             logger.info(f"[POST_AUTH_TIMING] A7/A8 feed_connected_subscribed in {t_feed_ms}ms")
 
+            final_broker_state = "CONNECTED_VERIFIED" if (connected and profile_ok) else "CONNECTED_AUTH_REQUIRED"
+
             from src.broker.services.authoritative_broker_health import BrokerHealthEvaluator
-            BrokerHealthEvaluator.set_reconciliation_status(complete=True, in_progress=False)
+            BrokerHealthEvaluator.set_reconciliation_status(complete=profile_ok, in_progress=False)
 
             total_post_auth_ms = round((time.time() - t_start) * 1000.0, 1)
-            logger.info(f"[POST_AUTH_TIMING] A10 canonical_ready total: {total_post_auth_ms}ms")
+            logger.info(f"[POST_AUTH_TIMING] A10 canonical_ready total: {total_post_auth_ms}ms (Profile OK: {profile_ok})")
 
             timing_metrics = {
                 "tokenExchangeMs": t_ex_ms,
@@ -607,6 +610,7 @@ def handle_daemon_command(action, params, bs, wm):
                 "brokerConnectMs": t_conn_ms,
                 "feedConnectMs": t_feed_ms,
                 "totalPostAuthMs": total_post_auth_ms,
+                "profileVerified": profile_ok,
                 "completedAt": datetime.utcnow().isoformat() + "Z"
             }
             setattr(BrokerHealthEvaluator, "_last_post_auth_metrics", timing_metrics)
@@ -614,8 +618,8 @@ def handle_daemon_command(action, params, bs, wm):
             # Broadcast final connected auth event
             print(json.dumps({
                 "type": "auth_event",
-                "brokerState": "CONNECTED_VERIFIED",
-                "feedState": "READY" if feed_ready else "STANDBY",
+                "brokerState": final_broker_state,
+                "feedState": ("READY" if feed_ready else "STANDBY") if profile_ok else "STOPPED",
                 "timestamp": datetime.utcnow().isoformat() + "Z"
             }), flush=True)
 
@@ -625,7 +629,7 @@ def handle_daemon_command(action, params, bs, wm):
                 legacy_data = {
                     "workspaceContext": {
                         "currentMode": "READ_ONLY",
-                        "brokerState": "CONNECTED_VERIFIED",
+                        "brokerState": final_broker_state,
                         "marketState": "CLOSED",
                         "brokerType": "ZERODHA",
                         "marketDataSource": "LIVE",
@@ -638,16 +642,16 @@ def handle_daemon_command(action, params, bs, wm):
                     "macroIntelligence": cached_macro_context or get_initial_macro_context()
                 }
                 canonical_state = WorkstationStateService.build_from_legacy(
-                    legacy_data, broker_state="CONNECTED_VERIFIED", market_state="CLOSED"
+                    legacy_data, broker_state=final_broker_state, market_state="CLOSED"
                 )
                 print(json.dumps({"type": "state", "data": canonical_state.to_dict()}), flush=True)
             except Exception as broadcast_err:
                 logger.error(f"Failed immediate post-login state broadcast: {broadcast_err}")
 
             return {
-                "success": True,
-                "brokerState": "CONNECTED_VERIFIED",
-                "feedState": "READY" if feed_ready else "STANDBY",
+                "success": profile_ok,
+                "brokerState": final_broker_state,
+                "feedState": ("READY" if feed_ready else "STANDBY") if profile_ok else "STOPPED",
                 "client_id": client_id,
                 "postAuthMetrics": timing_metrics,
                 "context": serialize(wm.get_context())

@@ -419,7 +419,6 @@ app.get("/api/broker/callback", async (req, res) => {
     <div style="font-size: 11px; color: #707987;">Restoring workstation shell… (${totalCallbackMs}ms)</div>
   </div>
   <script>
-    try { localStorage.setItem("BROKER_STATE", "CONNECTED_VERIFIED"); } catch(e){}
     window.location.replace("/?connected=true");
   </script>
 </body>

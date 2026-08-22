@@ -1195,22 +1195,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
 
     if (connected === "true" || connected === "connected" || loginStatus === "success") {
       window.history.replaceState({}, document.title, window.location.pathname);
-      setWorkspaceContextState(prev => ({ ...prev, brokerState: "CONNECTED_VERIFIED", marketState: "CLOSED" }));
-      setCanonicalState(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          broker_status: {
-            ...prev.broker_status,
-            status: "CONNECTED_VERIFIED",
-            normalized_status: "CONNECTED_VERIFIED",
-            execution_verified: true,
-            session_valid: true,
-            authenticated: true,
-            reconnect_required: false
-          }
-        };
-      });
+      setWorkspaceContextState(prev => ({ ...prev, brokerState: "CONNECTING" }));
       syncBroker(true);
     } else if (loginStatus === "failed") {
       const reason = params.get("reason");
