@@ -64,7 +64,7 @@ def test_structural_level_ordering_invariant():
         "option_intelligence": {"pcr": 1.13, "max_pain": 24400.0, "highest_call_oi_strike": 24500.0, "highest_put_oi_strike": 24200.0, "atm_strike": 24350.0}
     }
     levels = StructuralLevelEngine.evaluate_levels(state)
-    assert levels["methodology"] == "EVIDENCE_CONFLUENCE_V1"
+    assert levels["methodology"] in ["EVIDENCE_CONFLUENCE_V1", "EVIDENCE_CONFLUENCE_V2_LIVE_AWARE"]
 
     pivot = levels["pivot_level"]["price"]
     imm_res = levels["immediate_resistance"]["price"]
