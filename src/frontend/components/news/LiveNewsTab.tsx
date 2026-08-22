@@ -17,6 +17,9 @@ import {
   X,
   Search,
   Radio,
+  Eye,
+  ArrowRight,
+  Sparkles,
 } from "lucide-react";
 import { Surface, SectionHeader } from "../ui/WorkspacePrimitives";
 import {
@@ -83,18 +86,18 @@ export function LiveNewsTab({
   });
 
   const topStory = pres.topStory;
-  // 3-5 secondary/related stories for related coverage
-  const relatedStories = pres.liveFeed.filter((s) => s.id !== topStory?.id).slice(0, 4);
+  // 3-4 secondary/related stories for related coverage
+  const relatedStories = pres.liveFeed.filter((s) => s.id !== topStory?.id).slice(0, 3);
 
   // Official source count
   const officialStoryCount = pres.liveFeed.filter((s) => s.sourceType === "OFFICIAL").length;
   const officialPct =
     pres.liveFeed.length > 0 ? Math.round((officialStoryCount / pres.liveFeed.length) * 100) : 0;
 
-  // Next 4 upcoming events for timeline
+  // Next 3 upcoming events for timeline
   const upcomingTimelineEvents = pres.calendarEvents
     .filter((e) => e.isFuture || e.status === "UPCOMING")
-    .slice(0, 4);
+    .slice(0, 3);
 
   return (
     <div className="space-y-2.5 font-sans text-left text-[11px] min-w-0">
@@ -236,10 +239,10 @@ export function LiveNewsTab({
         </div>
       </Surface>
 
-      {/* ── 2. MAIN 3-COLUMN WORKSTATION GRID ── */}
+      {/* ── 2. UPPER 3-COLUMN WORKSTATION GRID (CONTENT-DRIVEN NATURAL HEIGHT) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(310px,1fr)_minmax(380px,1.3fr)] xl:grid-cols-[330px_minmax(0,1fr)_330px] gap-2.5 items-start min-w-0">
         {/* ── LEFT COLUMN: LIVE NEWS FEED ── */}
-        <Surface className="overflow-hidden flex flex-col h-[calc(100vh-210px)] min-h-[500px] min-w-0">
+        <Surface className="overflow-hidden flex flex-col min-w-0">
           {/* Header & Filter Bar */}
           <div className="flex flex-wrap items-center justify-between border-b border-[#191D23] bg-[#0E1013] px-3 py-2 font-mono shrink-0 gap-1.5">
             <div className="flex items-center gap-1.5 shrink-0">
@@ -278,10 +281,10 @@ export function LiveNewsTab({
             </div>
           </div>
 
-          {/* Story Card List */}
+          {/* Story Card List (Max height 460px with bounded scroll) */}
           <div
             ref={feedListRef}
-            className="p-2 bg-[#0B0D10] space-y-1.5 font-mono text-[10px] min-h-0 flex-1 overflow-y-auto custom-terminal-scrollbar"
+            className="p-2 bg-[#0B0D10] space-y-1.5 font-mono text-[10px] max-h-[460px] overflow-y-auto custom-terminal-scrollbar"
             style={{
               scrollbarWidth: "thin",
               scrollbarColor: "#242830 #0B0D10",
@@ -385,7 +388,7 @@ export function LiveNewsTab({
 
           {/* Left Rail Action Footer: VIEW ALL NEWS */}
           <div className="p-2 border-t border-[#191D23] bg-[#0E1013] flex justify-between items-center text-[9px] font-mono">
-            <span className="text-[#707987]">{pres.liveFeed.length} Total Stories Ingested</span>
+            <span className="text-[#707987]">{pres.liveFeed.length} Stories Ingested</span>
             <button
               onClick={() => setShowAllNewsModal(true)}
               className="text-[#38BDF8] font-bold hover:underline flex items-center gap-1"
@@ -405,10 +408,10 @@ export function LiveNewsTab({
               eyebrow="Highest NIFTY Impact"
               accent="cyan"
             />
-            <div className="p-3 bg-[#0B0D10] space-y-2.5 font-mono">
+            <div className="p-3 bg-[#0B0D10] space-y-2 font-mono">
               {topStory ? (
                 <>
-                  <div className="p-3 rounded bg-[#0E1013] border border-[#191D23] space-y-2">
+                  <div className="p-2.5 rounded bg-[#0E1013] border border-[#191D23] space-y-1.5">
                     <div className="flex items-center justify-between flex-wrap gap-1">
                       <span className="text-[9px] font-bold text-[#8B5CF6] bg-[#8B5CF6]/15 px-2 py-0.5 rounded flex items-center gap-1">
                         <ShieldCheck size={9} />
@@ -506,50 +509,50 @@ export function LiveNewsTab({
             />
             <div className="p-2.5 bg-[#0B0D10] space-y-2 font-mono text-[9px]">
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-                <div className="p-2 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
+                <div className="p-1.5 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
                   <div className="text-[7.5px] text-[#707987] uppercase font-bold">
                     Primary Sector
                   </div>
-                  <div className="font-bold text-[#38BDF8] text-[11px] truncate">
+                  <div className="font-bold text-[#38BDF8] text-[10.5px] truncate">
                     {topStory?.affectedSectors?.join(", ") || "BROAD_MARKET"}
                   </div>
                 </div>
-                <div className="p-2 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
+                <div className="p-1.5 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
                   <div className="text-[7.5px] text-[#707987] uppercase font-bold">
                     Impact Duration
                   </div>
-                  <div className="font-bold text-[#00C896] text-[11px] truncate">
+                  <div className="font-bold text-[#00C896] text-[10.5px] truncate">
                     {topStory?.impactDuration || "INTRADAY"}
                   </div>
                 </div>
-                <div className="p-2 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
+                <div className="p-1.5 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
                   <div className="text-[7.5px] text-[#707987] uppercase font-bold">
                     Source Quality
                   </div>
-                  <div className="font-bold text-[#8B5CF6] text-[10px] truncate flex items-center gap-1">
+                  <div className="font-bold text-[#8B5CF6] text-[9.5px] truncate flex items-center gap-1">
                     <ShieldCheck size={9} />
                     <span>
                       {topStory?.sourceType === "OFFICIAL" ? "OFFICIAL" : "VERIFIED MEDIA"}
                     </span>
                   </div>
                 </div>
-                <div className="p-2 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
+                <div className="p-1.5 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
                   <div className="text-[7.5px] text-[#707987] uppercase font-bold">Relevance</div>
-                  <div className="font-bold text-[#38BDF8] text-[11px]">
+                  <div className="font-bold text-[#38BDF8] text-[10.5px]">
                     {topStory ? `${Math.round(topStory.niftyRelevance * 100)}%` : "—"}
                   </div>
                 </div>
-                <div className="p-2 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
+                <div className="p-1.5 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
                   <div className="text-[7.5px] text-[#707987] uppercase font-bold">Direction</div>
-                  <div className="font-bold text-[#00C896] text-[11px]">
+                  <div className="font-bold text-[#00C896] text-[10.5px]">
                     {topStory?.expectedDirection || "NEUTRAL"}
                   </div>
                 </div>
-                <div className="p-2 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
+                <div className="p-1.5 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5">
                   <div className="text-[7.5px] text-[#707987] uppercase font-bold">
                     Historical Impact
                   </div>
-                  <div className="font-bold text-[#707987] text-[10px]">UNAVAILABLE</div>
+                  <div className="font-bold text-[#707987] text-[9.5px]">UNAVAILABLE</div>
                 </div>
               </div>
             </div>
@@ -609,7 +612,7 @@ export function LiveNewsTab({
           )}
         </div>
 
-        {/* ── RIGHT COLUMN: MARKET IMPACT SUMMARY -> SECTOR NEWS IMPACT -> EVENT TIMELINE -> PROVIDER HEALTH ── */}
+        {/* ── RIGHT COLUMN: MARKET IMPACT SUMMARY -> SECTOR NEWS IMPACT -> EVENT TIMELINE ── */}
         <div className="space-y-2.5 min-w-0 items-start col-span-1 lg:col-span-2 xl:col-span-1">
           {/* 1. MARKET IMPACT SUMMARY */}
           <Surface className="overflow-hidden">
@@ -765,15 +768,149 @@ export function LiveNewsTab({
               </div>
             </div>
           </Surface>
+        </div>
+      </div>
 
-          {/* 4. PROVIDER & SOURCE HEALTH */}
-          <Surface className="overflow-hidden">
-            <SectionHeader
-              title="PROVIDER &amp; SOURCE HEALTH"
-              eyebrow="Ingestion Status"
-              accent="cyan"
-            />
-            <div className="p-2.5 bg-[#0B0D10] space-y-1 font-mono text-[8.5px]">
+      {/* ── 3. LOWER INTELLIGENCE TIER (WHAT CHANGED + NIFTY IMPACT WATCHLIST + PROVIDER HEALTH) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.3fr_330px] gap-2.5 items-stretch min-w-0">
+        {/* ── SECTION A: WHAT CHANGED SINCE LAST CHECK ── */}
+        <Surface className="overflow-hidden flex flex-col justify-between">
+          <SectionHeader
+            title="WHAT CHANGED SINCE LAST CHECK"
+            eyebrow="Session Intelligence Shifts"
+            accent="cyan"
+          />
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[9px]">
+            {/* Baseline timestamp */}
+            <div className="flex items-center justify-between text-[8px] text-[#707987] border-b border-[#191D23] pb-1">
+              <span>Baseline: {pres.whatChangedBaseline}</span>
+              <span className="text-[#38BDF8] font-bold">Active Comparison</span>
+            </div>
+
+            {/* Delta Rows */}
+            <div className="space-y-1.5 flex-1">
+              {pres.whatChangedItems && pres.whatChangedItems.length > 0 ? (
+                pres.whatChangedItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-1.5 rounded bg-[#0E1013] border border-[#191D23] space-y-0.5"
+                  >
+                    <div className="flex justify-between items-center text-[7.5px]">
+                      <span className="text-[#707987] font-bold">{item.category}</span>
+                      <span className="text-[#707987]">{item.time}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-[9.5px]">
+                      <span className="text-[#707987] truncate max-w-[45%]">{item.before}</span>
+                      <ArrowRight size={10} className="text-[#38BDF8] shrink-0 mx-1" />
+                      <span
+                        className={`font-bold truncate max-w-[45%] ${
+                          item.tone === "POSITIVE"
+                            ? "text-[#00C896]"
+                            : item.tone === "NEGATIVE"
+                            ? "text-[#E5484D]"
+                            : item.tone === "AMBER"
+                            ? "text-[#E59700]"
+                            : "text-[#38BDF8]"
+                        }`}
+                      >
+                        {item.after}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-4 text-center text-[#707987] italic text-[9px]">
+                  Comparison unavailable — awaiting sequential state snapshot.
+                </div>
+              )}
+            </div>
+
+            <div className="text-[7.5px] text-[#707987] pt-1 border-t border-[#191D23]">
+              Deterministic sequence tracking · Zero fabricated deltas
+            </div>
+          </div>
+        </Surface>
+
+        {/* ── SECTION B: NIFTY IMPACT WATCHLIST ── */}
+        <Surface className="overflow-hidden flex flex-col justify-between">
+          <SectionHeader
+            title="NIFTY IMPACT WATCHLIST"
+            eyebrow="Constituents &amp; Sectors with Highest News Exposure"
+            accent="cyan"
+          />
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[9px]">
+            {/* Watchlist Rows */}
+            <div className="space-y-1.5 flex-1">
+              {pres.impactWatchlist && pres.impactWatchlist.length > 0 ? (
+                pres.impactWatchlist.slice(0, 4).map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-1.5 rounded bg-[#0E1013] border border-[#191D23] hover:border-[#38BDF8]/40 transition space-y-0.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-[#E6E8EB] text-[10.5px]">
+                          {item.symbol}
+                        </span>
+                        <span className="text-[7.5px] text-[#707987] bg-[#191D23] px-1 rounded">
+                          {item.sector}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span
+                          className={`text-[7.5px] font-bold px-1 py-0.2 rounded ${
+                            item.impact === "HIGH"
+                              ? "bg-[#E5484D]/20 text-[#E5484D]"
+                              : "bg-[#E59700]/20 text-[#E59700]"
+                          }`}
+                        >
+                          {item.impact}
+                        </span>
+                        <span
+                          className={`text-[7.5px] font-bold px-1 py-0.2 rounded ${
+                            item.direction === "POSITIVE"
+                              ? "bg-[#00C896]/20 text-[#00C896]"
+                              : item.direction === "NEGATIVE"
+                              ? "bg-[#E5484D]/20 text-[#E5484D]"
+                              : "bg-[#E59700]/20 text-[#E59700]"
+                          }`}
+                        >
+                          {item.direction}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[8px] text-[#707987] pt-0.5">
+                      <span className="text-[#A5ABB4] truncate">{item.whyWatch}</span>
+                      <span className="text-[#38BDF8] shrink-0 font-bold ml-1">
+                        {item.storyCount} {item.storyCount === 1 ? "story" : "stories"}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-4 text-center text-[#707987] italic text-[9px]">
+                  Aggregating constituent news exposure...
+                </div>
+              )}
+            </div>
+
+            <div className="text-[7.5px] text-[#707987] pt-1 border-t border-[#191D23] flex justify-between">
+              <span>Ranked by verified impact &amp; constituent exposure</span>
+              <span>Deduplicated distinct evidence</span>
+            </div>
+          </div>
+        </Surface>
+
+        {/* ── SECTION C: PROVIDER & SOURCE HEALTH (ALIGNED LOWER RIGHT) ── */}
+        <Surface className="overflow-hidden flex flex-col justify-between">
+          <SectionHeader
+            title="PROVIDER &amp; SOURCE HEALTH"
+            eyebrow="Ingestion Status &amp; Latency"
+            accent="cyan"
+          />
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-1.5 font-mono text-[8.5px]">
+            <div className="space-y-1">
               {pres.providerHealthList.map((p, i) => (
                 <div
                   key={i}
@@ -784,29 +921,31 @@ export function LiveNewsTab({
                       <span>{p.providerName}</span>
                       {p.isOfficial && <ShieldCheck size={9} className="text-[#8B5CF6]" />}
                     </div>
-                    <div className="text-[7.5px] text-[#707987]">{p.publisherLabel}</div>
+                    <div className="text-[7.5px] text-[#707987]">
+                      {p.publisherLabel} • {p.lastSuccessTime}
+                    </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-[7.5px] font-bold text-[#00C896] bg-[#00C896]/20 px-1 py-0.5 rounded uppercase">
+                    <span className="text-[7.5px] font-bold text-[#00C896] bg-[#00C896]/20 px-1.5 py-0.5 rounded uppercase">
                       {p.status}
                     </span>
                     <div className="text-[7.5px] text-[#707987] mt-0.5">{p.itemCount} items</div>
                   </div>
                 </div>
               ))}
-
-              <div className="pt-1 border-t border-[#191D23] flex justify-end">
-                <button
-                  onClick={() => setShowSourceModal(true)}
-                  className="text-[#38BDF8] font-bold text-[8.5px] hover:underline flex items-center gap-1"
-                >
-                  <span>VIEW SOURCE MONITOR</span>
-                  <span>→</span>
-                </button>
-              </div>
             </div>
-          </Surface>
-        </div>
+
+            <div className="pt-1 border-t border-[#191D23] flex justify-end">
+              <button
+                onClick={() => setShowSourceModal(true)}
+                className="text-[#38BDF8] font-bold text-[8.5px] hover:underline flex items-center gap-1"
+              >
+                <span>VIEW SOURCE MONITOR</span>
+                <span>→</span>
+              </button>
+            </div>
+          </div>
+        </Surface>
       </div>
 
       {/* ═══════════════════════════════════════════════════════════════════════

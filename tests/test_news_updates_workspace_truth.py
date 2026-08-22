@@ -103,3 +103,32 @@ def test_degraded_feed_honest_language_contract():
     live_code = read_frontend("components/news/LiveNewsTab.tsx")
     assert "CANONICAL NEWS FEED UNAVAILABLE" in live_code
 
+
+def test_what_changed_since_last_check_contract():
+    """Assert WHAT CHANGED SINCE LAST CHECK is rendered with baseline and delta rows."""
+    live_code = read_frontend("components/news/LiveNewsTab.tsx")
+    adapter_code = read_frontend("utils/canonicalNewsAdapter.ts")
+    assert "WHAT CHANGED SINCE LAST CHECK" in live_code
+    assert "pres.whatChangedBaseline" in live_code
+    assert "pres.whatChangedItems" in live_code
+    assert "export interface NewsDeltaItem" in adapter_code
+
+
+def test_nifty_impact_watchlist_contract():
+    """Assert NIFTY IMPACT WATCHLIST is rendered with symbol/sector, impact, direction, and why watch."""
+    live_code = read_frontend("components/news/LiveNewsTab.tsx")
+    adapter_code = read_frontend("utils/canonicalNewsAdapter.ts")
+    assert "NIFTY IMPACT WATCHLIST" in live_code
+    assert "pres.impactWatchlist" in live_code
+    assert "export interface NiftyImpactWatchlistItem" in adapter_code
+    assert "whyWatch" in live_code
+    assert "storyCount" in live_code
+
+
+def test_no_oversized_fixed_height_scroll_container_causing_blank_gap():
+    """Assert LiveNewsTab no longer uses artificial 100vh viewport-height container."""
+    live_code = read_frontend("components/news/LiveNewsTab.tsx")
+    assert "h-[calc(100vh-210px)]" not in live_code
+    assert "max-h-[460px]" in live_code
+
+
