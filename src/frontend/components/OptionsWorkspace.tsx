@@ -269,7 +269,7 @@ export function OptionsWorkspace() {
       {/* ═══════════════════════════════════════════════════════════════════════
           2. MAIN 3-COLUMN DERIVATIVES WORKSTATION GRID
           ═══════════════════════════════════════════════════════════════════════ */}
-      <div className="grid gap-2 grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)_250px] items-stretch">
+      <div className="grid gap-2 grid-cols-1 lg:grid-cols-[255px_minmax(0,1fr)_265px] items-stretch">
         {/* ── LEFT COLUMN: POSITIONING MAP ── */}
         <Surface className="overflow-hidden flex flex-col justify-between h-auto">
           <SectionHeader title="POSITIONING MAP" eyebrow="DERIVATIVES CONCENTRATIONS" accent="cyan" />
@@ -281,7 +281,7 @@ export function OptionsWorkspace() {
                 <select
                   value={selectedExpiry}
                   onChange={(e) => setSelectedExpiry(e.target.value)}
-                  className="w-full appearance-none bg-[#0E1013] border border-[#242830] rounded px-2.5 py-1.5 text-[11px] font-bold text-[#E6E8EB] focus:outline-none focus:border-[#38BDF8] transition cursor-pointer"
+                  className="w-full appearance-none bg-[#0E1013] border border-[#242830] rounded px-2.5 py-1.5 text-[11.5px] font-bold text-[#E6E8EB] focus:outline-none focus:border-[#38BDF8] transition cursor-pointer"
                 >
                   {expiriesList.map((exp) => (
                     <option key={exp} value={exp} className="bg-[#0E1013] text-[#E6E8EB]">
@@ -301,15 +301,15 @@ export function OptionsWorkspace() {
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">Call OI:</span>
-                <span className="font-bold text-[#E5484D] air-data text-[12px]">{totalCallOiCr != null ? `${totalCallOiCr} Cr` : "—"}</span>
+                <span className="font-bold text-[#E5484D] air-data text-[13px]">{totalCallOiCr != null ? `${totalCallOiCr} Cr` : "—"}</span>
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">Put OI:</span>
-                <span className="font-bold text-[#00C896] air-data text-[12px]">{totalPutOiCr != null ? `${totalPutOiCr} Cr` : "—"}</span>
+                <span className="font-bold text-[#00C896] air-data text-[13px]">{totalPutOiCr != null ? `${totalPutOiCr} Cr` : "—"}</span>
               </div>
               <div className="flex justify-between py-0.5 font-bold border-t border-[#191D23]/60 pt-1">
                 <span className="text-[#E6E8EB]">Total OI:</span>
-                <span className="text-[#38BDF8] air-data text-[12px]">{totalOiCr != null ? `${totalOiCr} Cr` : "—"}</span>
+                <span className="text-[#38BDF8] air-data text-[13px]">{totalOiCr != null ? `${totalOiCr} Cr` : "—"}</span>
               </div>
 
               {/* Horizontal Balance Bar */}
@@ -318,7 +318,7 @@ export function OptionsWorkspace() {
                   <div style={{ width: `${callRatioPct}%` }} className="h-full bg-[#E5484D]" />
                   <div style={{ width: `${putRatioPct}%` }} className="h-full bg-[#00C896]" />
                 </div>
-                <div className="flex justify-between text-[8px] text-[#707987] font-bold">
+                <div className="flex justify-between text-[8.5px] text-[#707987] font-bold">
                   <span>CE {callRatioPct}%</span>
                   <span>PE {putRatioPct}%</span>
                 </div>
@@ -329,16 +329,16 @@ export function OptionsWorkspace() {
             <div className="border-t border-[#191D23] pt-2 space-y-1.5">
               <div className="text-[8.5px] uppercase font-bold text-[#707987]">KEY CONCENTRATIONS</div>
               <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center">
-                <span className="text-[#E5484D] font-bold text-[9px]">CALL WALL (RES):</span>
-                <span className="font-bold text-[#E6E8EB] air-data text-[12px]">{formatNumber(callWall, 0)}</span>
+                <span className="text-[#E5484D] font-bold text-[9.5px]">CALL WALL (RES):</span>
+                <span className="font-bold text-[#E6E8EB] air-data text-[13px]">{formatNumber(callWall, 0)}</span>
               </div>
               <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center">
-                <span className="text-[#00C896] font-bold text-[9px]">PUT WALL (SUPP):</span>
-                <span className="font-bold text-[#E6E8EB] air-data text-[12px]">{formatNumber(putWall, 0)}</span>
+                <span className="text-[#00C896] font-bold text-[9.5px]">PUT WALL (SUPP):</span>
+                <span className="font-bold text-[#E6E8EB] air-data text-[13px]">{formatNumber(putWall, 0)}</span>
               </div>
               <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center">
-                <span className="text-[#E59700] font-bold text-[9px]">MAX PAIN PIN:</span>
-                <span className="font-bold text-[#E59700] air-data text-[12px]">{formatNumber(maxPain, 0)}</span>
+                <span className="text-[#E59700] font-bold text-[9.5px]">MAX PAIN PIN:</span>
+                <span className="font-bold text-[#E59700] air-data text-[13px]">{formatNumber(maxPain, 0)}</span>
               </div>
             </div>
 
@@ -359,7 +359,7 @@ export function OptionsWorkspace() {
               </div>
               <div className="flex justify-between py-0.5 border-t border-[#191D23]/60 pt-1">
                 <span className="text-[#707987]">Range Bracket:</span>
-                <span className="font-bold text-[#38BDF8] air-data text-[11.5px]">{formatNumber(putWall, 0)} – {formatNumber(callWall, 0)}</span>
+                <span className="font-bold text-[#38BDF8] air-data text-[12.5px]">{formatNumber(putWall, 0)} – {formatNumber(callWall, 0)}</span>
               </div>
             </div>
           </div>
@@ -390,9 +390,9 @@ export function OptionsWorkspace() {
                 <span>VOLATILITY STRUCTURE</span>
                 <span className="text-[#00C896] font-bold">{ivState}</span>
               </div>
-              <div className="flex justify-between py-0.5">
+              <div className="flex justify-between items-baseline py-0.5">
                 <span className="text-[#707987]">ATM Implied Vol (IV):</span>
-                <span className="font-bold text-[#38BDF8] air-data text-[13px]">{atmIv != null ? `${formatNumber(atmIv, 2)}%` : "UNAVAILABLE"}</span>
+                <span className="font-bold text-[#38BDF8] air-data text-[15px]">{atmIv != null ? `${formatNumber(atmIv, 2)}%` : "UNAVAILABLE"}</span>
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">IV Percentile / Rank:</span>
@@ -400,62 +400,73 @@ export function OptionsWorkspace() {
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">RBI Base Risk-Free Rate:</span>
-                <span className="font-bold text-[#E6E8EB] air-data">6.50%</span>
+                <span className="font-bold text-[#E6E8EB] air-data text-[11.5px]">6.50%</span>
               </div>
             </div>
 
-            {/* B. Selected Strike Inspector */}
-            <div className="border-t border-[#191D23] pt-2 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] uppercase font-bold text-[#38BDF8]">
-                  SELECTED STRIKE: {activeSelectedStrike} {activeSelectedStrike === atmStrike ? "(ATM)" : ""}
-                </span>
-                <span className="text-[9px] text-[#E6E8EB] font-semibold air-data">
-                  {distFromSpot != null ? `${signedStr(distFromSpot, 0)} pts (${signedStr(distFromSpotPct, 2, "%")})` : ""}
-                </span>
+            {/* B. Selected Strike Inspector (Primary Focal Field) */}
+            <div className="border-t border-[#191D23] pt-2 space-y-2">
+              <div className="bg-[#0E1013] p-2.5 rounded border border-[#38BDF8]/40 space-y-1">
+                <div className="flex justify-between items-center text-[9px] uppercase font-bold text-[#707987]">
+                  <span>SELECTED STRIKE:</span>
+                  <span className="text-[#38BDF8] font-bold">
+                    {activeSelectedStrike === atmStrike ? "ATM ANCHOR" : "CONTRACT FOCUS"}
+                  </span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <div className="text-[20px] font-black text-[#38BDF8] air-data leading-none">
+                    {formatNumber(activeSelectedStrike, 0)}{" "}
+                    {activeSelectedStrike === atmStrike && (
+                      <span className="text-[12px] text-[#38BDF8]/80 font-bold">(ATM)</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-[#E6E8EB] font-bold air-data">
+                    {distFromSpot != null ? `${signedStr(distFromSpot, 0)} pts (${signedStr(distFromSpotPct, 2, "%")})` : ""}
+                  </div>
+                </div>
               </div>
 
               {/* Dual CE / PE Breakdown Boxes */}
-              <div className="grid grid-cols-2 gap-1.5 text-[9.5px]">
+              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
                 {/* Call Side */}
-                <div className="bg-[#0E1013] p-2 rounded border border-[#E5484D]/30 space-y-0.5">
-                  <div className="font-bold text-[#E5484D] border-b border-[#191D23] pb-0.5">CALL (CE)</div>
-                  <div className="flex justify-between">
+                <div className="bg-[#0E1013] p-2 rounded border border-[#E5484D]/40 space-y-1">
+                  <div className="font-bold text-[#E5484D] border-b border-[#191D23] pb-0.5 text-[10.5px]">CALL (CE)</div>
+                  <div className="flex justify-between items-baseline">
                     <span className="text-[#707987]">LTP:</span>
-                    <span className="font-bold text-[#E6E8EB] air-data text-[11px]">{ceLtp != null ? `₹${formatNumber(Number(ceLtp), 2)}` : "—"}</span>
+                    <span className="font-bold text-[#E6E8EB] air-data text-[13px]">{ceLtp != null ? `₹${formatNumber(Number(ceLtp), 2)}` : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">OI:</span>
-                    <span className="font-bold text-[#E6E8EB] air-data">{ceOi != null ? `${formatNumber(Number(ceOi) / 100000, 2)} L` : "—"}</span>
+                    <span className="font-bold text-[#E6E8EB] air-data text-[11.5px]">{ceOi != null ? `${formatNumber(Number(ceOi) / 100000, 2)} L` : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">ΔOI:</span>
-                    <span className="font-bold text-[#00C896] air-data">{ceChg != null ? signedStr(Number(ceChg) / 100000, 2, " L") : "—"}</span>
+                    <span className="font-bold text-[#00C896] air-data text-[11.5px]">{ceChg != null ? signedStr(Number(ceChg) / 100000, 2, " L") : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">IV:</span>
-                    <span className="font-bold text-[#38BDF8] air-data">{ceIv != null ? `${formatNumber(Number(ceIv), 1)}%` : "—"}</span>
+                    <span className="font-bold text-[#38BDF8] air-data text-[11.5px]">{ceIv != null ? `${formatNumber(Number(ceIv), 1)}%` : "—"}</span>
                   </div>
                 </div>
 
                 {/* Put Side */}
-                <div className="bg-[#0E1013] p-2 rounded border border-[#00C896]/30 space-y-0.5">
-                  <div className="font-bold text-[#00C896] border-b border-[#191D23] pb-0.5">PUT (PE)</div>
-                  <div className="flex justify-between">
+                <div className="bg-[#0E1013] p-2 rounded border border-[#00C896]/40 space-y-1">
+                  <div className="font-bold text-[#00C896] border-b border-[#191D23] pb-0.5 text-[10.5px]">PUT (PE)</div>
+                  <div className="flex justify-between items-baseline">
                     <span className="text-[#707987]">LTP:</span>
-                    <span className="font-bold text-[#E6E8EB] air-data text-[11px]">{peLtp != null ? `₹${formatNumber(Number(peLtp), 2)}` : "—"}</span>
+                    <span className="font-bold text-[#E6E8EB] air-data text-[13px]">{peLtp != null ? `₹${formatNumber(Number(peLtp), 2)}` : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">OI:</span>
-                    <span className="font-bold text-[#E6E8EB] air-data">{peOi != null ? `${formatNumber(Number(peOi) / 100000, 2)} L` : "—"}</span>
+                    <span className="font-bold text-[#E6E8EB] air-data text-[11.5px]">{peOi != null ? `${formatNumber(Number(peOi) / 100000, 2)} L` : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">ΔOI:</span>
-                    <span className="font-bold text-[#00C896] air-data">{peChg != null ? signedStr(Number(peChg) / 100000, 2, " L") : "—"}</span>
+                    <span className="font-bold text-[#00C896] air-data text-[11.5px]">{peChg != null ? signedStr(Number(peChg) / 100000, 2, " L") : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">IV:</span>
-                    <span className="font-bold text-[#38BDF8] air-data">{peIv != null ? `${formatNumber(Number(peIv), 1)}%` : "—"}</span>
+                    <span className="font-bold text-[#38BDF8] air-data text-[11.5px]">{peIv != null ? `${formatNumber(Number(peIv), 1)}%` : "—"}</span>
                   </div>
                 </div>
               </div>
@@ -464,8 +475,8 @@ export function OptionsWorkspace() {
             {/* C. Greeks Model Verification Section */}
             <div className="border-t border-[#191D23] pt-2 space-y-1">
               <div className="text-[8.5px] uppercase font-bold text-[#707987]">BLACK-SCHOLES GREEKS</div>
-              <div className="bg-[#0E1013] p-2 rounded border border-[#191D23] text-[9px] text-[#707987] leading-tight space-y-0.5">
-                <div className="text-[#E59700] font-bold">GREEKS UNAVAILABLE</div>
+              <div className="bg-[#0E1013] p-2 rounded border border-[#191D23] text-[9.5px] text-[#707987] leading-tight space-y-0.5">
+                <div className="text-[#E59700] font-bold text-[10px]">GREEKS UNAVAILABLE</div>
                 <div>Reason: Insufficient model inputs / canonical calculation unavailable for exact timestamp. No fabricated zeros displayed.</div>
               </div>
             </div>
@@ -480,7 +491,7 @@ export function OptionsWorkspace() {
         {/* ── WHAT CHANGED ── */}
         <Surface className="overflow-hidden flex flex-col justify-between h-auto">
           <SectionHeader title="WHAT CHANGED (DERIVATIVES EVIDENCE)" eyebrow="INTRA-SESSION DELTA" accent="cyan" />
-          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[10px]">
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[10.5px]">
             {whatChangedItems.length > 0 ? (
               <div className="space-y-1.5">
                 {whatChangedItems.map((item, idx) => (
@@ -492,7 +503,7 @@ export function OptionsWorkspace() {
               </div>
             ) : (
               <div className="bg-[#0E1013] p-2.5 rounded border border-[#191D23] text-[#707987] space-y-0.5">
-                <div className="font-bold text-[#38BDF8] text-[10.5px]">INSUFFICIENT HISTORICAL SNAPSHOTS</div>
+                <div className="font-bold text-[#38BDF8] text-[11px]">INSUFFICIENT HISTORICAL SNAPSHOTS</div>
                 <div>Live session baseline established. Observing intra-session derivatives shifts as new sequence packets arrive.</div>
               </div>
             )}
@@ -512,14 +523,14 @@ export function OptionsWorkspace() {
               {/* Put Support */}
               <div className="bg-[#0E1013] p-2 rounded border border-[#00C896]/30">
                 <div className="text-[8.5px] uppercase font-bold text-[#00C896]">PUT SUPPORT</div>
-                <div className="font-bold text-[#00C896] text-[15px] mt-0.5 air-data">{formatNumber(putWall, 0)}</div>
+                <div className="font-bold text-[#00C896] text-[16px] mt-0.5 air-data font-black">{formatNumber(putWall, 0)}</div>
                 <div className="text-[8.5px] text-[#707987] font-semibold">{spot && putWall ? signedStr(putWall - spot, 0) : "—"} pts</div>
               </div>
 
               {/* Spot / ATM */}
               <div className="bg-[#0E1013] p-2 rounded border border-[#38BDF8]/40">
                 <div className="text-[8.5px] uppercase font-bold text-[#38BDF8]">SPOT / ATM</div>
-                <div className="font-bold text-[#E6E8EB] text-[15px] mt-0.5 air-data">
+                <div className="font-bold text-[#E6E8EB] text-[16px] mt-0.5 air-data font-black">
                   {spot != null ? formatNumber(spot, 0) : "—"} <span className="text-[#707987] text-[11px]">/ {formatNumber(atmStrike, 0)}</span>
                 </div>
                 <div className="text-[8.5px] text-[#E59700] font-semibold">Max Pain: {formatNumber(maxPain, 0)}</div>
@@ -528,13 +539,13 @@ export function OptionsWorkspace() {
               {/* Call Resistance */}
               <div className="bg-[#0E1013] p-2 rounded border border-[#E5484D]/30">
                 <div className="text-[8.5px] uppercase font-bold text-[#E5484D]">CALL RESISTANCE</div>
-                <div className="font-bold text-[#E5484D] text-[15px] mt-0.5 air-data">{formatNumber(callWall, 0)}</div>
+                <div className="font-bold text-[#E5484D] text-[16px] mt-0.5 air-data font-black">{formatNumber(callWall, 0)}</div>
                 <div className="text-[8.5px] text-[#707987] font-semibold">{spot && callWall ? signedStr(callWall - spot, 0) : "—"} pts</div>
               </div>
             </div>
 
             {/* Structure Summary Strip */}
-            <div className="bg-[#0E1013] p-2 rounded border border-[#191D23] flex justify-between items-center text-[9.5px]">
+            <div className="bg-[#0E1013] p-2 rounded border border-[#191D23] flex justify-between items-center text-[10px]">
               <span>PCR: <strong className="text-[#00C896]">{formatNumber(pcr, 2)}</strong></span>
               <span>OI Skew: <strong className="text-[#00C896]">{oiSkew}</strong></span>
               <span>Bias: <strong className={derivativesBias === "BULLISH" ? "text-[#00C896]" : derivativesBias === "BEARISH" ? "text-[#E5484D]" : "text-[#E59700]"}>{derivativesBias}</strong></span>
