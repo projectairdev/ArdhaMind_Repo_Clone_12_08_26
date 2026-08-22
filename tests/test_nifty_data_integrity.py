@@ -255,3 +255,45 @@ def test_is_staging_environment_fail_closed_contract():
     assert is_staging_env(direct_ip_context["env"]) is False
 
 
+def test_preview_dropdown_selector_contract():
+    """Verify NiftyLiveWorkspace.tsx implements the compact preview dropdown instead of button group."""
+    with open("src/frontend/components/NiftyLiveWorkspace.tsx", "r", encoding="utf-8") as f:
+        content = f.read()
+
+    assert "<select" in content, "Must use compact select element for preview dropdown"
+    assert 'value="AUTO"' in content
+    assert 'value="PRE"' in content
+    assert 'value="LIVE"' in content
+    assert 'value="POST"' in content
+    assert "STAGING SESSION PREVIEW" in content
+
+
+def test_movers_and_sectors_drawer_contract():
+    """Verify NiftyLiveWorkspace.tsx implements dedicated inspection drawer for Gainers, Losers, and Sectors."""
+    with open("src/frontend/components/NiftyLiveWorkspace.tsx", "r", encoding="utf-8") as f:
+        content = f.read()
+
+    assert "MoversSectorsDrawer" in content, "Must implement MoversSectorsDrawer component"
+    assert 'setDrawerMode("GAINERS")' in content, "Must wire Gainers VIEW ALL handler"
+    assert 'setDrawerMode("LOSERS")' in content, "Must wire Losers VIEW ALL handler"
+    assert 'setDrawerMode("SECTORS")' in content, "Must wire Sector Rotation VIEW ALL handler"
+    assert "Escape" in content, "Must handle Escape key to close drawer"
+
+
+def test_global_market_cues_and_availability_restructure():
+    """Verify Global Market Cues has primary benchmark table and bottom Market Availability."""
+    with open("src/frontend/components/NiftyLiveWorkspace.tsx", "r", encoding="utf-8") as f:
+        content = f.read()
+
+    assert "GLOBAL MARKET CUES" in content
+    assert "MARKET AVAILABILITY" in content
+    assert "GLOBAL_MARKET_CENTERS" in content
+    assert "Tokyo" in content
+    assert "Shanghai" in content
+    assert "Hong Kong" in content
+    assert "Mumbai" in content
+    assert "Frankfurt" in content
+    assert "London" in content
+
+
+

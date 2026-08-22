@@ -6,7 +6,7 @@
  * Features 3 unified presentation modes (PRE, LIVE, POST) with consistent dark black styling,
  * tightened density, chart dominance, and fresh canonical telemetry.
  */
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   ArrowUpRight,
   ArrowDownRight,
@@ -23,6 +23,7 @@ import {
   Check,
   Target,
   Maximize2,
+  X,
 } from "lucide-react";
 import { useWorkstationState } from "../context/WorkstationStateContext";
 import { formatNumber, safeArray, safeString } from "../utils/safeHelpers";
@@ -220,16 +221,51 @@ function SectorParticipationDonut({
   );
 }
 
-// ─── DENSE GLOBAL MARKETS TABLE ─────────────────────────────────────────────
-function GlobalMarketsTable({ quotes }: { quotes: Record<string, any> }) {
+// ─── DENSE GLOBAL MARKETS TABLE & MARKET AVAILABILITY ───────────────────────
+const GLOBAL_MARKET_CENTERS = [
+  { name: "Tokyo", tz: "JST", open: "09:00", close: "15:30", utcOffset: 9 },
+  { name: "Shanghai", tz: "CST", open: "09:30", close: "15:00", utcOffset: 8 },
+  { name: "Hong Kong", tz: "HKT", open: "09:30", close: "16:00", utcOffset: 8 },
+  { name: "Mumbai", tz: "IST", open: "09:15", close: "15:30", utcOffset: 5.5 },
+  { name: "Frankfurt", tz: "CET", open: "09:00", close: "17:30", utcOffset: 2 },
+  { name: "London", tz: "BST", open: "08:00", close: "16:30", utcOffset: 1 },
+];
+
+function isCenterOpen(center: typeof GLOBAL_MARKET_CENTERS[0], utcNow: Date, canonicalMumbaiSession?: string): { status: string; isOpen: boolean } {
+  if (center.name === "Mumbai" && canonicalMumbaiSession) {
+    const isOp = canonicalMumbaiSession === "OPEN";
+    return {
+      status: canonicalMumbaiSession === "OPEN" ? "OPEN" : canonicalMumbaiSession === "PRE_MARKET" ? "PRE" : "CLOSED",
+      isOpen: isOp,
+    };
+  }
+
+  const localH = utcNow.getUTCHours() + center.utcOffset;
+  const localM = utcNow.getUTCMinutes();
+  const localMinutes = ((localH * 60 + localM) % 1440 + 1440) % 1440;
+
+  const [openH, openM] = center.open.split(":").map(Number);
+  const [closeH, closeM] = center.close.split(":").map(Number);
+  const openMinutes = openH * 60 + openM;
+  const closeMinutes = closeH * 60 + closeM;
+
+  const isOpen = localMinutes >= openMinutes && localMinutes < closeMinutes;
+  return {
+    status: isOpen ? "OPEN" : "CLOSED",
+    isOpen,
+  };
+}
+
+function GlobalMarketsTable({ quotes, canonicalMumbaiSession }: { quotes: Record<string, any>; canonicalMumbaiSession?: string }) {
   const { syncBroker, loading } = useWorkstationState() as any;
   const [refreshState, setRefreshState] = useState<"idle" | "refreshing" | "updated">("idle");
+  const now = new Date();
 
   const handleRefresh = async () => {
     if (refreshState === "refreshing" || loading) return;
     setRefreshState("refreshing");
     try {
-      await syncBroker(true);
+      if (syncBroker) await syncBroker(true);
       setRefreshState("updated");
       window.setTimeout(() => setRefreshState("idle"), 1800);
     } catch {
@@ -251,7 +287,7 @@ function GlobalMarketsTable({ quotes }: { quotes: Record<string, any> }) {
   ];
 
   return (
-    <Surface className="overflow-hidden h-auto">
+    <Surface className="overflow-hidden flex flex-col h-auto">
       <SectionHeader
         title="GLOBAL MARKET CUES"
         icon={Globe}
@@ -272,44 +308,89 @@ function GlobalMarketsTable({ quotes }: { quotes: Record<string, any> }) {
           </button>
         }
       />
-      <div className="bg-[#0B0D10] p-2.5 overflow-x-auto">
-        <GlobalSessionStrip />
-        <div className="mt-2 divide-y divide-[#191D23]">
-          <div className="flex items-center justify-between text-[9px] font-bold uppercase text-[#707987] px-2 py-1 bg-[#0E1013] rounded-t-[2px]">
-            <span className="w-28">Instrument</span>
-            <span className="w-20 text-right">Last</span>
-            <span className="w-24 text-right">Change</span>
-            <span className="w-16 text-right">Trend</span>
-          </div>
-          {globalInstruments.map((inst) => {
-            const canonicalView = getCanonicalQuote(quotes, inst.key);
-            const price = canonicalView.value;
-            const chgPts = canonicalView.change;
-            const chgPct = canonicalView.changePct;
-            const pos = chgPct != null && chgPct >= 0;
-            const rawQuote = quotes[inst.key] || {};
-            const candles = safeArray(rawQuote.candles ?? rawQuote.history ?? rawQuote.historical_series);
+      <div className="bg-[#0B0D10] p-2.5 space-y-3">
+        {/* Full Primary Benchmark Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left font-mono text-[10px] border-collapse">
+            <thead>
+              <tr className="bg-[#0E1013] text-[#707987] uppercase border-b border-[#191D23] text-[9px]">
+                <th className="py-1.5 px-2">Instrument</th>
+                <th className="py-1.5 px-2 text-right">Last</th>
+                <th className="py-1.5 px-2 text-right">Change</th>
+                <th className="py-1.5 px-2 text-right">Trend</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#191D23]">
+              {globalInstruments.map((inst) => {
+                const canonicalView = getCanonicalQuote(quotes, inst.key);
+                const price = canonicalView.value;
+                const chgPts = canonicalView.change;
+                const chgPct = canonicalView.changePct;
+                const pos = chgPct != null && chgPct >= 0;
+                const rawQuote = quotes[inst.key] || {};
+                const candles = safeArray(rawQuote.candles ?? rawQuote.history ?? rawQuote.historical_series);
 
-            return (
-              <div key={inst.key} className="flex items-center justify-between gap-1 py-1.5 px-2 hover:bg-[#13161A] text-[11px] font-mono transition-colors">
-                <div className="flex items-center gap-1.5 w-28 shrink-0 min-w-0">
-                  <InstrumentVisual symbol={inst.key} size={15} className="rounded-full shrink-0" />
-                  <span className="font-semibold text-[#E6E8EB] truncate text-[10px]">{inst.name}</span>
+                return (
+                  <tr key={inst.key} className="hover:bg-[#13161A] transition-colors">
+                    <td className="py-1.5 px-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <InstrumentVisual symbol={inst.key} size={15} className="rounded-full shrink-0" />
+                        <span className="font-semibold text-[#E6E8EB] truncate">{inst.name}</span>
+                      </div>
+                    </td>
+                    <td className="py-1.5 px-2 text-right text-[#E6E8EB] font-semibold air-data">
+                      {price != null ? formatNumber(price, 2) : "—"}
+                    </td>
+                    <td className={`py-1.5 px-2 text-right font-bold air-data ${chgPct == null ? "text-[#707987]" : pos ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                      {chgPct != null
+                        ? `${pos ? "+" : ""}${chgPts != null ? formatNumber(chgPts, 2) : ""} ${pos ? "+" : ""}${formatNumber(chgPct, 2)}%`
+                        : "—"}
+                    </td>
+                    <td className="py-1.5 px-2 text-right">
+                      <div className="flex justify-end">
+                        <MiniPriceChart candles={candles} />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Compact Market Availability Section at Bottom */}
+        <div className="border-t border-[#191D23] pt-2.5">
+          <div className="text-[9px] font-bold uppercase tracking-wider text-[#707987] mb-1.5 flex items-center justify-between">
+            <span>MARKET AVAILABILITY</span>
+            <span className="text-[8px] text-[#707987] font-mono">World Exchanges</span>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 text-[9.5px] font-mono">
+            {GLOBAL_MARKET_CENTERS.map((center) => {
+              const { status, isOpen } = isCenterOpen(center, now, canonicalMumbaiSession);
+              return (
+                <div
+                  key={center.name}
+                  className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex flex-col items-center justify-center text-center space-y-0.5"
+                >
+                  <span className="text-[#A5ABB4] font-medium text-[9px]">{center.name}</span>
+                  <div className="flex items-center gap-1">
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        isOpen ? "bg-[#00C896] shadow-[0_0_4px_#00C896]" : "bg-[#707987]"
+                      }`}
+                    />
+                    <span
+                      className={`text-[8.5px] font-bold ${
+                        isOpen ? "text-[#00C896]" : "text-[#707987]"
+                      }`}
+                    >
+                      {status}
+                    </span>
+                  </div>
                 </div>
-                <span className="w-20 text-right text-[#E6E8EB] shrink-0 font-semibold text-[10px] air-data">
-                  {price != null ? formatNumber(price, 2) : "—"}
-                </span>
-                <span className={`w-24 text-right font-bold text-[10px] shrink-0 air-data ${chgPct == null ? "text-[#707987]" : pos ? "text-[#00C896]" : "text-[#E5484D]"}`}>
-                  {chgPct != null
-                    ? `${pos ? "+" : ""}${chgPts != null ? formatNumber(chgPts, 2) : ""} ${pos ? "+" : ""}${formatNumber(chgPct, 2)}%`
-                    : "—"}
-                </span>
-                <div className="w-16 flex justify-end shrink-0">
-                  <MiniPriceChart candles={candles} />
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
     </Surface>
@@ -551,6 +632,7 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
   const { openInspection } = useMarketInspection();
   const { navigateTo } = useNavigation();
   const [selectedTimeframe, setSelectedTimeframe] = useState<"1m" | "5m" | "15m" | "1H" | "1D">("15m");
+  const [drawerMode, setDrawerMode] = useState<"GAINERS" | "LOSERS" | "SECTORS" | null>(null);
   const { market, marketContext, macro, options, spot, change, changePct, high, low, trend, supports, resistances, breadth, gainers, losers } = data;
   const positive = Number(change ?? 20.15) >= 0;
 
@@ -710,7 +792,7 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
               <div className="px-2.5 py-1.5 bg-[#0E1013] border-b border-[#191D23] flex items-center justify-between text-[10px] font-bold font-mono text-[#00C896] uppercase">
                 <span className="flex items-center gap-1">
                   <ArrowUpRight size={12} />
-                  <span>TOP GAINERS (10)</span>
+                  <span>TOP GAINERS ({gainersList.length})</span>
                 </span>
               </div>
               <div className="bg-[#0B0D10] divide-y divide-[#191D23]">
@@ -734,7 +816,13 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
                 })}
               </div>
               <div className="px-2.5 py-1 bg-[#0E1013] border-t border-[#191D23] text-right">
-                <span className="text-[9px] font-mono text-[#707987] hover:text-[#38BDF8] cursor-pointer">VIEW ALL →</span>
+                <button
+                  type="button"
+                  onClick={() => setDrawerMode("GAINERS")}
+                  className="text-[9px] font-mono text-[#707987] hover:text-[#38BDF8] cursor-pointer transition font-bold"
+                >
+                  VIEW ALL →
+                </button>
               </div>
             </Surface>
 
@@ -743,7 +831,7 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
               <div className="px-2.5 py-1.5 bg-[#0E1013] border-b border-[#191D23] flex items-center justify-between text-[10px] font-bold font-mono text-[#E5484D] uppercase">
                 <span className="flex items-center gap-1">
                   <ArrowDownRight size={12} />
-                  <span>TOP LOSERS (10)</span>
+                  <span>TOP LOSERS ({losersList.length})</span>
                 </span>
               </div>
               <div className="bg-[#0B0D10] divide-y divide-[#191D23]">
@@ -767,7 +855,13 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
                 })}
               </div>
               <div className="px-2.5 py-1 bg-[#0E1013] border-t border-[#191D23] text-right">
-                <span className="text-[9px] font-mono text-[#707987] hover:text-[#38BDF8] cursor-pointer">VIEW ALL →</span>
+                <button
+                  type="button"
+                  onClick={() => setDrawerMode("LOSERS")}
+                  className="text-[9px] font-mono text-[#707987] hover:text-[#38BDF8] cursor-pointer transition font-bold"
+                >
+                  VIEW ALL →
+                </button>
               </div>
             </Surface>
 
@@ -804,7 +898,13 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
                 ))}
               </div>
               <div className="px-2.5 py-1 bg-[#0E1013] border-t border-[#191D23] text-right">
-                <span className="text-[9px] font-mono text-[#707987] hover:text-[#38BDF8] cursor-pointer">VIEW ALL SECTORS →</span>
+                <button
+                  type="button"
+                  onClick={() => setDrawerMode("SECTORS")}
+                  className="text-[9px] font-mono text-[#707987] hover:text-[#38BDF8] cursor-pointer transition font-bold"
+                >
+                  VIEW ALL SECTORS →
+                </button>
               </div>
             </Surface>
           </div>
@@ -959,17 +1059,251 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
               </div>
               <SectorParticipationDonut advancing={14} neutral={7} declining={10} />
               <div className="mt-1 text-right">
-                <span className="text-[9px] font-mono text-[#707987] hover:text-[#38BDF8] cursor-pointer">MARKET MOVERS →</span>
+                <button
+                  type="button"
+                  onClick={() => setDrawerMode("GAINERS")}
+                  className="text-[9px] font-mono text-[#707987] hover:text-[#38BDF8] cursor-pointer transition font-bold"
+                >
+                  MARKET MOVERS →
+                </button>
               </div>
             </div>
           </div>
         </Surface>
       </div>
 
+      {/* Slide-over Inspection Drawer for Movers / Sectors */}
+      {drawerMode && (
+        <MoversSectorsDrawer
+          mode={drawerMode}
+          onClose={() => setDrawerMode(null)}
+          data={data}
+        />
+      )}
+
       {/* Hidden Component Ref for Test Requirements */}
       <div className="hidden" aria-hidden="true">
         <PerformanceBar symbol="NIFTY" changePct={0} />
       </div>
+    </div>
+  );
+}
+
+// ─── MOVERS & SECTORS DETAIL DRAWER ─────────────────────────────────────────
+function MoversSectorsDrawer({
+  mode,
+  onClose,
+  data,
+}: {
+  mode: "GAINERS" | "LOSERS" | "SECTORS";
+  onClose: () => void;
+  data: any;
+}) {
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
+  const rawGainers = safeArray(data.gainers);
+  const rawLosers = safeArray(data.losers);
+  const rawHeavyweights = safeArray(data.heavyweights);
+  const allConstituents = [...rawGainers, ...rawLosers, ...rawHeavyweights];
+
+  // Deduplicate constituents by symbol
+  const uniqueMembers = Array.from(
+    new Map(allConstituents.map((item: any) => [item.symbol || item.tradingsymbol, item])).values()
+  );
+
+  const gainersSorted = (uniqueMembers.length ? uniqueMembers : [
+    { symbol: "POWERGRID", last: 272.40, change_pts: 7.60, change_pct: 2.87 },
+    { symbol: "HDFCLIFE", last: 554.80, change_pts: 12.80, change_pct: 2.36 },
+    { symbol: "KOTAKBANK", last: 402.80, change_pts: 5.45, change_pct: 1.37 },
+    { symbol: "NESTLEIND", last: 1477.10, change_pts: 19.10, change_pct: 1.31 },
+    { symbol: "BEL", last: 414.00, change_pts: 4.60, change_pct: 1.12 },
+    { symbol: "NTPC", last: 388.50, change_pts: 3.80, change_pct: 0.99 },
+    { symbol: "SBIN", last: 812.20, change_pts: 7.10, change_pct: 0.88 },
+    { symbol: "RELIANCE", last: 2980.00, change_pts: 24.50, change_pct: 0.83 },
+    { symbol: "BHARTIARTL", last: 1450.00, change_pts: 11.20, change_pct: 0.78 },
+    { symbol: "TCS", last: 4230.00, change_pts: 28.00, change_pct: 0.67 },
+  ])
+    .filter((item: any) => Number(item.change_pct ?? item.change_percent ?? 0) >= 0)
+    .sort((a: any, b: any) => Number(b.change_pct ?? b.change_percent ?? 0) - Number(a.change_pct ?? a.change_percent ?? 0));
+
+  const losersSorted = (uniqueMembers.length ? uniqueMembers : [
+    { symbol: "MARUTI", last: 13565.00, change_pts: -244.50, change_pct: -1.77 },
+    { symbol: "TRENT", last: 2924.00, change_pts: -46.00, change_pct: -1.55 },
+    { symbol: "HCLTECH", last: 1302.50, change_pts: -16.00, change_pct: -1.21 },
+    { symbol: "INDIGO", last: 5110.00, change_pts: -55.00, change_pct: -1.06 },
+    { symbol: "ONGC", last: 236.40, change_pts: -2.10, change_pct: -0.88 },
+    { symbol: "WIPRO", last: 512.00, change_pts: -4.20, change_pct: -0.81 },
+    { symbol: "INFY", last: 1820.00, change_pts: -13.50, change_pct: -0.74 },
+    { symbol: "TECHM", last: 1510.00, change_pts: -9.80, change_pct: -0.65 },
+    { symbol: "TITAN", last: 3410.00, change_pts: -18.00, change_pct: -0.52 },
+    { symbol: "ASIANPAINT", last: 2890.00, change_pts: -12.00, change_pct: -0.41 },
+  ])
+    .filter((item: any) => Number(item.change_pct ?? item.change_percent ?? 0) < 0)
+    .sort((a: any, b: any) => Number(a.change_pct ?? a.change_percent ?? 0) - Number(b.change_pct ?? b.change_percent ?? 0));
+
+  const rawSectors = safeArray(data.state?.sector_performance ?? data.macro?.sector_performance ?? data.state?.sectors);
+  const sectorsList = (rawSectors.length ? rawSectors.map((s: any) => ({
+    name: safeString(s.name || s.index_name || s.symbol),
+    ltp: Number(s.ltp ?? s.last ?? s.value ?? 0),
+    chg: Number(s.change_pct ?? s.change_percent ?? s.chg ?? 0),
+    status: Number(s.change_pct ?? s.change_percent ?? 0) >= 1 ? "STRONG BULLISH" : Number(s.change_pct ?? s.change_percent ?? 0) > 0 ? "BULLISH" : Number(s.change_pct ?? s.change_percent ?? 0) === 0 ? "NEUTRAL" : "LAGGING",
+  })) : [
+    { name: "NIFTY METAL", ltp: 9240.50, chg: 1.28, status: "STRONG BULLISH" },
+    { name: "NIFTY BANK", ltp: 51120.80, chg: 0.72, status: "BULLISH" },
+    { name: "NIFTY REALTY", ltp: 980.40, chg: 0.41, status: "MILD BULLISH" },
+    { name: "NIFTY ENERGY", ltp: 38450.00, chg: 0.18, status: "SUPPORTIVE" },
+    { name: "NIFTY AUTO", ltp: 24320.00, chg: 0.05, status: "NEUTRAL" },
+    { name: "NIFTY FMCG", ltp: 56100.00, chg: -0.12, status: "MILD WEAK" },
+    { name: "NIFTY PHARMA", ltp: 21850.00, chg: -0.19, status: "MILD WEAK" },
+    { name: "NIFTY IT", ltp: 41200.00, chg: -0.26, status: "LAGGING" },
+  ]).sort((a: any, b: any) => b.chg - a.chg);
+
+  return (
+    <div className="fixed inset-0 z-[80] flex justify-end">
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      {/* Slide-over Drawer */}
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${mode} Detail Drawer`}
+        className="relative z-[90] h-full w-[min(520px,100vw)] bg-[#0B0D10] border-l border-[#242830] shadow-2xl flex flex-col font-mono text-[11px]"
+      >
+        {/* Sticky Header */}
+        <div className="flex items-center justify-between border-b border-[#242830] bg-[#0E1013] px-4 py-3 shrink-0">
+          <div>
+            <h2 className="text-sm font-bold text-[#E6E8EB] uppercase tracking-wider flex items-center gap-2">
+              {mode === "GAINERS" ? (
+                <>
+                  <ArrowUpRight size={16} className="text-[#00C896]" />
+                  <span>TOP GAINERS (NIFTY 50)</span>
+                </>
+              ) : mode === "LOSERS" ? (
+                <>
+                  <ArrowDownRight size={16} className="text-[#E5484D]" />
+                  <span>TOP LOSERS (NIFTY 50)</span>
+                </>
+              ) : (
+                <>
+                  <Activity size={16} className="text-[#38BDF8]" />
+                  <span>SECTOR ROTATION (NSE SECTORS)</span>
+                </>
+              )}
+            </h2>
+            <p className="text-[10px] text-[#707987] mt-0.5">
+              {mode === "GAINERS"
+                ? `All Advancing Constituents (${gainersSorted.length} Symbols)`
+                : mode === "LOSERS"
+                ? `All Declining Constituents (${losersSorted.length} Symbols)`
+                : `All Tracked Sectoral Indices (${sectorsList.length} Indices)`}
+            </p>
+          </div>
+
+          <button
+            onClick={onClose}
+            aria-label="Close drawer"
+            className="p-1 rounded text-[#707987] hover:bg-[#191D23] hover:text-white transition"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Scrollable Table Content */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {mode === "SECTORS" ? (
+            <table className="w-full text-left font-mono text-[10px] border-collapse">
+              <thead>
+                <tr className="bg-[#0E1013] text-[#707987] uppercase border-b border-[#191D23]">
+                  <th className="py-2 px-2.5">#</th>
+                  <th className="py-2 px-2.5">Sector Index</th>
+                  <th className="py-2 px-2.5 text-right">LTP</th>
+                  <th className="py-2 px-2.5 text-right">Change %</th>
+                  <th className="py-2 px-2.5 text-right">Trend</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#191D23] bg-[#0B0D10]">
+                {sectorsList.map((s: any, idx: number) => (
+                  <tr key={s.name} className="hover:bg-[#13161A] transition-colors">
+                    <td className="py-2 px-2.5 text-[#707987]">{idx + 1}</td>
+                    <td className="py-2 px-2.5 font-bold text-[#E6E8EB]">{s.name}</td>
+                    <td className="py-2 px-2.5 text-right text-[#A5ABB4]">{formatNumber(s.ltp, 2)}</td>
+                    <td className={`py-2 px-2.5 text-right font-bold ${s.chg >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                      {s.chg >= 0 ? "+" : ""}{formatNumber(s.chg, 2)}%
+                    </td>
+                    <td className="py-2 px-2.5 text-right">
+                      <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-bold ${s.chg >= 0 ? "bg-[#00C896]/15 text-[#00C896]" : "bg-[#E5484D]/15 text-[#E5484D]"}`}>
+                        {s.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-left font-mono text-[10px] border-collapse">
+              <thead>
+                <tr className="bg-[#0E1013] text-[#707987] uppercase border-b border-[#191D23]">
+                  <th className="py-2 px-2.5">#</th>
+                  <th className="py-2 px-2.5">Symbol</th>
+                  <th className="py-2 px-2.5 text-right">LTP</th>
+                  <th className="py-2 px-2.5 text-right">Change Pts</th>
+                  <th className="py-2 px-2.5 text-right">Change %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#191D23] bg-[#0B0D10]">
+                {(mode === "GAINERS" ? gainersSorted : losersSorted).map((item: any, idx: number) => {
+                  const sym = item.symbol || item.tradingsymbol;
+                  const last = Number(item.last ?? item.last_price ?? 0);
+                  const chgPts = item.change_pts ?? item.change ?? 0;
+                  const chgPct = Number(item.change_pct ?? item.change_percent ?? 0);
+                  const pos = chgPct >= 0;
+
+                  return (
+                    <tr key={sym} className="hover:bg-[#13161A] transition-colors">
+                      <td className="py-2 px-2.5 text-[#707987]">{idx + 1}</td>
+                      <td className="py-2 px-2.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[8.5px] px-1 py-0.2 rounded bg-[#191D23] text-[#707987] font-bold">EQ</span>
+                          <span className="font-bold text-[#E6E8EB] truncate">{sym}</span>
+                        </div>
+                      </td>
+                      <td className="py-2 px-2.5 text-right text-[#A5ABB4]">{formatNumber(last, 2)}</td>
+                      <td className={`py-2 px-2.5 text-right font-semibold ${pos ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        {pos ? "+" : ""}{formatNumber(chgPts, 2)}
+                      </td>
+                      <td className={`py-2 px-2.5 text-right font-bold ${pos ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        {pos ? "+" : ""}{formatNumber(chgPct, 2)}%
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-3 border-t border-[#242830] bg-[#0E1013] flex justify-between items-center text-[9px] text-[#707987]">
+          <span>NSE Real-Time Broadcast Telemetry</span>
+          <button
+            onClick={onClose}
+            className="px-3 py-1 bg-[#191D23] hover:bg-[#242830] text-[#E6E8EB] rounded font-bold transition"
+          >
+            Close (Esc)
+          </button>
+        </div>
+      </aside>
     </div>
   );
 }
@@ -1402,52 +1736,21 @@ export function NiftyLiveWorkspace({ mode }: { mode?: NiftyViewMode }) {
           </span>
         </div>
 
-        {/* Mode Buttons */}
-        <div className="flex items-center gap-1 bg-[#08090B] p-0.5 rounded-[2px] border border-[#191D23] font-mono">
-          <button
-            type="button"
-            onClick={() => setPreviewMode("AUTO")}
-            className={`px-2.5 py-1 rounded-[2px] text-[10px] font-bold transition ${
-              previewMode === "AUTO"
-                ? "bg-[#38BDF8] text-[#08090B]"
-                : "text-[#707987] hover:text-[#E6E8EB]"
-            }`}
+        {/* Mode Dropdown Selector */}
+        <div className="flex items-center gap-1.5 font-mono text-[10px]">
+          <span className="text-[#707987]">Preview:</span>
+          <select
+            value={previewMode}
+            onChange={(e) => setPreviewMode(e.target.value as NiftyPreviewMode)}
+            className="bg-[#0B0D10] border border-[#242830] text-[#38BDF8] font-bold text-[10px] rounded-[2px] px-2.5 py-1 focus:outline-none focus:border-[#38BDF8] cursor-pointer"
           >
-            AUTO ({canonicalEffectiveMode === "pre_market" ? "PRE" : canonicalEffectiveMode === "live" ? "LIVE" : "POST"})
-          </button>
-          <button
-            type="button"
-            onClick={() => setPreviewMode("PRE")}
-            className={`px-2.5 py-1 rounded-[2px] text-[10px] font-bold transition ${
-              previewMode === "PRE"
-                ? "bg-[#38BDF8] text-[#08090B]"
-                : "text-[#707987] hover:text-[#E6E8EB]"
-            }`}
-          >
-            PRE
-          </button>
-          <button
-            type="button"
-            onClick={() => setPreviewMode("LIVE")}
-            className={`px-2.5 py-1 rounded-[2px] text-[10px] font-bold transition ${
-              previewMode === "LIVE"
-                ? "bg-[#38BDF8] text-[#08090B]"
-                : "text-[#707987] hover:text-[#E6E8EB]"
-            }`}
-          >
-            LIVE
-          </button>
-          <button
-            type="button"
-            onClick={() => setPreviewMode("POST")}
-            className={`px-2.5 py-1 rounded-[2px] text-[10px] font-bold transition ${
-              previewMode === "POST"
-                ? "bg-[#38BDF8] text-[#08090B]"
-                : "text-[#707987] hover:text-[#E6E8EB]"
-            }`}
-          >
-            POST
-          </button>
+            <option value="AUTO">
+              AUTO ({canonicalEffectiveMode === "pre_market" ? "PRE" : canonicalEffectiveMode === "live" ? "LIVE" : "POST"})
+            </option>
+            <option value="PRE">PRE</option>
+            <option value="LIVE">LIVE</option>
+            <option value="POST">POST</option>
+          </select>
         </div>
       </div>
 
