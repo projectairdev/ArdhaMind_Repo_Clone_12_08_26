@@ -182,19 +182,21 @@ class GoogleNewsRSSProvider(BaseNewsProvider):
             if not clean_headline or not clean_source or not pub_date:
                 continue
 
-            # Google News `when:Nd` bounded-window verification model:
-            # When a query has a tight recency filter (when:2d or when:3d), the aggregator's
-            # pubDate is bounded evidence that the article appeared within that window.
-            # This isn't as strong as a verified publisher timestamp, but it is a structural
-            # guarantee from the search engine — we label it GOOGLE_DISCOVERY_BOUNDED
-            # so the temporal integrity engine can apply reduced-confidence current-eligibility
-            # rather than treating it as completely unverified.
+            # Google News `when:Nd` bounded-window discovery model (Model B):
+            # When a query has a tight recency filter (when:2d or when:3d), the query
+            # provides bounded discovery evidence, NOT verified publisher publication time.
+            # Therefore timestamp_verified remains False (preserves timestamp truth),
+            # while discovery_bound_verified is set to True to allow conditional current-eligibility.
             if when_days is not None and when_days <= 3:
                 ts_source = "GOOGLE_DISCOVERY_BOUNDED"
-                ts_verified = True
+                ts_verified = False
+                disc_bound_ver = True
+                disc_bound_hrs = int(when_days * 24)
             else:
                 ts_source = "AGGREGATOR_DISCOVERY"
                 ts_verified = False
+                disc_bound_ver = False
+                disc_bound_hrs = None
 
             items.append({
                 "headline": clean_headline,
@@ -215,6 +217,9 @@ class GoogleNewsRSSProvider(BaseNewsProvider):
                 "received_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "timestamp_source": ts_source,
                 "timestamp_verified": ts_verified,
+                "publication_timestamp_verified": False,
+                "discovery_bound_verified": disc_bound_ver,
+                "discovery_bound_hours": disc_bound_hrs,
                 "verification_status": "unverified"
             })
         return items

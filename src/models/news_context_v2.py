@@ -93,6 +93,9 @@ class NewsItem:
     cache_restored: bool = False
     age_minutes: Optional[float] = None
     timestamp_verified: bool = False
+    publication_timestamp_verified: bool = False
+    discovery_bound_verified: bool = False
+    discovery_bound_hours: Optional[int] = None
     discovered_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:

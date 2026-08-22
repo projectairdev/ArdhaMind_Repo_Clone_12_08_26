@@ -81,26 +81,33 @@ class TestGoogleDiscoveryBoundedModel:
         from src.news_engine.temporal_integrity import assess_publication_time
         assessment = assess_publication_time(
             "Fri, 21 Aug 2026 09:00:00 GMT", _now(),
-            timestamp_source="GOOGLE_DISCOVERY_BOUNDED", timestamp_verified=True,
+            timestamp_source="GOOGLE_DISCOVERY_BOUNDED",
+            discovery_bound_verified=True, discovery_bound_hours=48,
         )
-        assert assessment.temporal_class == "CURRENT"
+        assert assessment.temporal_class == "BOUNDED_DISCOVERY_CURRENT"
         assert assessment.current_eligible is True
-        assert assessment.timestamp_verified is True
+        assert assessment.timestamp_verified is False
+        assert assessment.publication_timestamp_verified is False
+        assert assessment.discovery_bound_verified is True
 
     def test_when2d_yesterday_pubdate_is_recent(self):
         from src.news_engine.temporal_integrity import assess_publication_time
         assessment = assess_publication_time(
             "Thu, 20 Aug 2026 09:00:00 GMT", _now(),
-            timestamp_source="GOOGLE_DISCOVERY_BOUNDED", timestamp_verified=True,
+            timestamp_source="GOOGLE_DISCOVERY_BOUNDED",
+            discovery_bound_verified=True, discovery_bound_hours=48,
         )
-        assert assessment.temporal_class == "RECENT"
+        assert assessment.temporal_class == "BOUNDED_DISCOVERY_RECENT"
         assert assessment.current_eligible is True
+        assert assessment.timestamp_verified is False
+        assert assessment.discovery_bound_verified is True
 
     def test_bounded_confidence_is_medium(self):
         from src.news_engine.temporal_integrity import assess_publication_time
         assessment = assess_publication_time(
             "Fri, 21 Aug 2026 09:00:00 GMT", _now(),
-            timestamp_source="GOOGLE_DISCOVERY_BOUNDED", timestamp_verified=True,
+            timestamp_source="GOOGLE_DISCOVERY_BOUNDED",
+            discovery_bound_verified=True, discovery_bound_hours=48,
         )
         assert assessment.timestamp_confidence == "MEDIUM", (
             "Bounded-discovery items must be MEDIUM confidence"
@@ -110,7 +117,8 @@ class TestGoogleDiscoveryBoundedModel:
         from src.news_engine.temporal_integrity import assess_publication_time
         assessment = assess_publication_time(
             "Mon, 17 Aug 2026 09:00:00 GMT", _now(),
-            timestamp_source="GOOGLE_DISCOVERY_BOUNDED", timestamp_verified=True,
+            timestamp_source="GOOGLE_DISCOVERY_BOUNDED",
+            discovery_bound_verified=True, discovery_bound_hours=48,
         )
         assert assessment.temporal_class == "STALE"
         assert assessment.current_eligible is False
@@ -232,7 +240,9 @@ class TestPublisherDomainCapture:
             assert it.get("timestamp_source") == "GOOGLE_DISCOVERY_BOUNDED", (
                 f"when:2d items must have GOOGLE_DISCOVERY_BOUNDED; got: {it.get('timestamp_source')}"
             )
-            assert it.get("timestamp_verified") is True
+            # Under Model B, timestamp_verified is False (truthful) and discovery_bound_verified is True
+            assert it.get("timestamp_verified") is False
+            assert it.get("discovery_bound_verified") is True
 
     def test_when7d_fixture_not_bounded(self):
         from src.news_engine.google_news_rss_provider import GoogleNewsRSSProvider
@@ -247,6 +257,7 @@ class TestPublisherDomainCapture:
                 f"when:7d items must have AGGREGATOR_DISCOVERY; got: {it.get('timestamp_source')}"
             )
             assert it.get("timestamp_verified") is False
+            assert it.get("discovery_bound_verified") is False
 
     def test_publisher_domain_strips_www(self):
         from src.news_engine.google_news_rss_provider import GoogleNewsRSSProvider
@@ -312,7 +323,10 @@ class TestPipelineBoundedIntegration:
             "when:2d bounded item from today must appear in current (non-historical) items"
         )
         current_item = result.items[0]
-        assert current_item.timestamp_verified is True
+        # In Model B, timestamp_verified is False and discovery_bound_verified is True
+        assert current_item.timestamp_verified is False
+        assert current_item.discovery_bound_verified is True
+        assert current_item.canonical_eligible is True
 
     def test_when7d_item_not_current_eligible(self):
         from src.news_engine.google_news_rss_provider import GoogleNewsRSSProvider

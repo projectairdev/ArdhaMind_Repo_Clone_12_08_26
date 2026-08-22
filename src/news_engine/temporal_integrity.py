@@ -26,6 +26,9 @@ class TemporalAssessment:
     current_eligible: bool
     allowed_window_hours: int
     timestamp_verified: bool = False
+    publication_timestamp_verified: bool = False
+    discovery_bound_verified: bool = False
+    discovery_bound_hours: Optional[int] = None
     reason: str = ""
 
 
@@ -98,45 +101,69 @@ def live_window(now: datetime, explicit_last_close: Optional[datetime] = None) -
 def assess_publication_time(value: Any, now: datetime,
                             explicit_last_close: Optional[datetime] = None,
                             timestamp_source: str = "published_at",
-                            timestamp_verified: bool = True) -> TemporalAssessment:
+                            timestamp_verified: Optional[bool] = None,
+                            discovery_bound_verified: bool = False,
+                            discovery_bound_hours: Optional[int] = None) -> TemporalAssessment:
     now_utc = now.astimezone(timezone.utc)
     window, _ = live_window(now_utc, explicit_last_close)
     observed = strict_publication_timestamp(value)
+
+    # Determine explicit verification status
+    if timestamp_verified is None:
+        if timestamp_source == "OFFICIAL_FEED":
+            timestamp_verified = True
+        elif timestamp_source in {"GOOGLE_DISCOVERY_BOUNDED", "AGGREGATOR_DISCOVERY"}:
+            timestamp_verified = False
+        else:
+            timestamp_verified = True
+
+    is_bounded = (timestamp_source == "GOOGLE_DISCOVERY_BOUNDED" or discovery_bound_verified)
+
     if observed is None:
         return TemporalAssessment(None, "INVALID_TIMESTAMP", "INVALID", timestamp_source, "NONE", None,
-                                  False, int(window.total_seconds() // 3600), timestamp_verified=False,
+                                  False, int(window.total_seconds() // 3600),
+                                  timestamp_verified=False, publication_timestamp_verified=False,
+                                  discovery_bound_verified=False, discovery_bound_hours=None,
                                   reason="missing_malformed_or_timezone_naive")
     delta = now_utc - observed
     if delta < -FUTURE_SKEW_TOLERANCE:
         return TemporalAssessment(observed, "INVALID_TIMESTAMP", "INVALID_FUTURE", timestamp_source, "HIGH",
                                   int(delta.total_seconds()), False, int(window.total_seconds() // 3600),
-                                  timestamp_verified=False,
+                                  timestamp_verified=False, publication_timestamp_verified=False,
+                                  discovery_bound_verified=False, discovery_bound_hours=None,
                                   reason="publication_timestamp_beyond_clock_skew_tolerance")
     age = max(0, int(delta.total_seconds()))
 
-    # GOOGLE_DISCOVERY_BOUNDED: The Google News when:Nd filter provides a bounded-staleness
-    # guarantee that the article was discoverable within N days of this crawl.
-    # This is not the same as a verified publisher publication timestamp, but it does bound
-    # the maximum age. We treat such items as DISCOVERY_BOUNDED with reduced confidence.
-    # They may be eligible for live ranking if age is within the tight window (when:2d / when:3d).
-    if timestamp_source == "GOOGLE_DISCOVERY_BOUNDED" and timestamp_verified:
-        # Use the aggregator pubDate as an upper-bound staleness signal.
-        # Articles with when:2d queries arriving within 24h are treated as provisionally current.
+    # 1. BOUNDED DISCOVERY MODEL (Model B):
+    # Google News when:Nd filter provides discovery-bound evidence, NOT verified publication timestamp.
+    # Therefore publication_timestamp_verified=False, timestamp_verified=False,
+    # discovery_bound_verified=True, confidence=MEDIUM.
+    # Current-eligibility is granted conditionally for live market awareness.
+    if is_bounded and not timestamp_verified:
+        bound_hrs = discovery_bound_hours or 48
         if age <= 24 * 3600:
-            temporal_class = "CURRENT"
-        elif age <= 3 * 86400:
-            temporal_class = "RECENT"
-        else:
+            temporal_class = "BOUNDED_DISCOVERY_CURRENT"
+        elif age <= bound_hrs * 3600:
+            temporal_class = "BOUNDED_DISCOVERY_RECENT"
+        elif age <= 7 * 86400:
             temporal_class = "STALE"
+        else:
+            temporal_class = "HISTORICAL"
+        is_eligible = temporal_class in {"BOUNDED_DISCOVERY_CURRENT", "BOUNDED_DISCOVERY_RECENT"}
         return TemporalAssessment(
-            observed, temporal_class, "BOUNDED", timestamp_source, "MEDIUM", age,
-            temporal_class in {"CURRENT", "RECENT"},
+            observed, temporal_class, "BOUNDED_DISCOVERY", timestamp_source, "MEDIUM", age,
+            is_eligible,
             int(window.total_seconds() // 3600),
-            timestamp_verified=True,
-            reason="google_discovery_when_filter_bounded_staleness",
+            timestamp_verified=False,
+            publication_timestamp_verified=False,
+            discovery_bound_verified=True,
+            discovery_bound_hours=bound_hrs,
+            reason="google_discovery_bounded_unverified_pubdate",
         )
 
-    # Strict unverified aggregator discovery: discovery-only, never current-eligible
+    # 2. UNVERIFIED AGGREGATOR DISCOVERY:
+    # Pure aggregator feed without bounded query window (e.g. when:7d or unconstrained).
+    # Never current-eligible.
     if not timestamp_verified:
         temporal_class = "DISCOVERY_RECENT" if age <= 24 * 3600 else "DISCOVERY_OLDER"
         return TemporalAssessment(
@@ -144,9 +171,15 @@ def assess_publication_time(value: Any, now: datetime,
             current_eligible=False,
             allowed_window_hours=int(window.total_seconds() // 3600),
             timestamp_verified=False,
+            publication_timestamp_verified=False,
+            discovery_bound_verified=False,
+            discovery_bound_hours=None,
             reason="aggregator_discovery_timestamp_unverified",
         )
 
+    # 3. VERIFIED PUBLISHER / OFFICIAL TIMESTAMP:
+    # Authoritative source (SEBI, RBI, Federal Reserve, ECB, or verified publisher RSS).
+    # publication_timestamp_verified=True, timestamp_verified=True, confidence=HIGH.
     if age <= 24 * 3600:
         temporal_class = "CURRENT"
     elif delta <= window:
@@ -157,4 +190,8 @@ def assess_publication_time(value: Any, now: datetime,
         temporal_class = "HISTORICAL"
     return TemporalAssessment(observed, temporal_class, "VALID", timestamp_source, "HIGH", age,
                               temporal_class in {"CURRENT", "RECENT"}, int(window.total_seconds() // 3600),
-                              timestamp_verified=True)
+                              timestamp_verified=True,
+                              publication_timestamp_verified=True,
+                              discovery_bound_verified=False,
+                              discovery_bound_hours=None,
+                              reason="authoritative_publication_timestamp_verified")
