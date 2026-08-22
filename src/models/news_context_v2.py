@@ -92,6 +92,8 @@ class NewsItem:
     workspace_eligible: bool = True
     cache_restored: bool = False
     age_minutes: Optional[float] = None
+    timestamp_verified: bool = False
+    discovered_at: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

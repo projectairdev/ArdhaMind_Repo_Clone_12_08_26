@@ -44,17 +44,23 @@ class NewsDeduplicator:
         published_at: str = "",
     ) -> str:
         """
-        Generates a deterministic stable ID from all four identity dimensions:
-          - normalized source name
-          - normalized (tracking-stripped) URL
-          - normalized headline
-          - publication time
+        Generates a deterministic stable ID.
+        - For aggregator articles (Google News redirect URLs or missing direct URLs):
+          ID is based strictly on normalized publisher + normalized headline.
+        - For direct publisher URLs (RBI, SEBI, PIB, direct article URLs):
+          ID is based on normalized publisher + normalized canonical URL.
+        Crawl/discovery timestamps are explicitly excluded so recrawls map to the same canonical ID.
         """
-        norm_url = normalize_url(url.strip()) if url.strip() else ""
         norm_headline = NewsDeduplicator._normalize_headline(headline)
         norm_source = source_name.strip().lower()
-        pub = published_at.strip() if published_at else ""
-        combined = f"{norm_source}:{norm_url}:{norm_headline}:{pub}"
+        norm_url = normalize_url(url.strip()) if url.strip() else ""
+
+        # If URL is a Google News redirect or empty, compute stable ID strictly from publisher + headline
+        if not norm_url or "news.google.com" in norm_url:
+            combined = f"agg:{norm_source}:{norm_headline}"
+        else:
+            combined = f"pub:{norm_source}:{norm_url}"
+
         return hashlib.md5(combined.encode("utf-8")).hexdigest()
 
     @staticmethod

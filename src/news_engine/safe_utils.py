@@ -91,6 +91,7 @@ _TRACKING_PARAMS = frozenset({
     "fbclid", "gclid", "gclsrc", "dclid", "mc_eid", "oly_enc_id",
     "_openstat", "vero_id", "ref", "referrer", "source",
     "icid", "cmpid", "cid", "msclkid", "zanpid", "origin", "via",
+    "from", "oc", "rss",
 })
 
 

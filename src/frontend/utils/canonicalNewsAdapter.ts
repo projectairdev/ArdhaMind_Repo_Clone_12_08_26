@@ -299,9 +299,20 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
       : "AGGREGATED_MEDIA";
 
     // Centralized IST Date / Time Normalization
+    const isTimestampVerified = Boolean(
+      item.timestamp_verified ?? (isOfficial || item.verification_status === "confirmed")
+    );
+    const timestampSource = String(
+      item.timestamp_source || (isOfficial ? "OFFICIAL_FEED" : "published_at")
+    );
     const publishedAtStr = item.published_at || item.publishedAt || item.source_timestamp || item.time || null;
-    const observedAtStr = item.observed_at || item.observedAt || item.ingested_at || null;
-    const timeFormatted: FormattedNewsTime = formatNewsTimestamp(publishedAtStr, observedAtStr);
+    const observedAtStr = item.observed_at || item.observedAt || item.discovered_at || item.ingested_at || null;
+    const timeFormatted: FormattedNewsTime = formatNewsTimestamp(
+      publishedAtStr,
+      observedAtStr,
+      isTimestampVerified,
+      timestampSource
+    );
 
     const rawCategory = safeString(item.category || item.category_code).toUpperCase();
     const category: CanonicalCategory =

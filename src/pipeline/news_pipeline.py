@@ -172,8 +172,13 @@ class NewsPipeline:
         )
         temporal = story["_temporal_assessment"]
         age, recency_state, decay = recency(story["published_at"], now)
+        # If timestamp is unverified discovery, cap recency bonus so it cannot outrank verified current news
+        effective_decay = decay if temporal.timestamp_verified else min(decay, 0.25)
         impact_rank = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}[relevance["impact_level"]]
-        priority = round(relevance["nifty_relevance_score"] * 10 + impact_rank * 8 + authority_rank(tier) * 3 + decay * 10, 2)
+        priority = round(relevance["nifty_relevance_score"] * 10 + impact_rank * 8 + authority_rank(tier) * 3 + effective_decay * 10, 2)
+        if not temporal.timestamp_verified:
+            priority = max(0.0, priority - 10.0)
+
         symbols = list(dict.fromkeys([*(story.get("related_symbols") or []), *relevance["related_symbols"]]))
         normalized_timestamp = temporal.published_at_utc.isoformat().replace("+00:00", "Z") if temporal.published_at_utc else ""
         return NewsItem(
@@ -207,6 +212,8 @@ class NewsPipeline:
             canonical_eligible=temporal.current_eligible, workspace_eligible=temporal.current_eligible,
             cache_restored=bool(story.get("_cache_restored")),
             age_minutes=round(temporal.age_seconds / 60, 2) if temporal.age_seconds is not None else None,
+            timestamp_verified=temporal.timestamp_verified,
+            discovered_at=str(story.get("discovered_at") or story.get("received_at") or ""),
         )
 
     def run(self, current_time: Optional[str] = None) -> NewsContext:
@@ -253,7 +260,11 @@ class NewsPipeline:
 
         normalized = [item for item in (self._normalize_story(story) for story in raw_stories) if item is not None]
         for story in normalized:
-            story["_temporal_assessment"] = assess_publication_time(story.get("published_at"), now)
+            ts_src = str(story.get("timestamp_source") or "published_at")
+            ts_ver = bool(story.get("timestamp_verified", story.get("source_type") == "official"))
+            story["_temporal_assessment"] = assess_publication_time(
+                story.get("published_at"), now, timestamp_source=ts_src, timestamp_verified=ts_ver
+            )
         eligible_stories = [story for story in normalized if story["_temporal_assessment"].current_eligible]
         historical_stories = [story for story in normalized if not story["_temporal_assessment"].current_eligible]
         unique_current = NewsDeduplicator.deduplicate(eligible_stories)

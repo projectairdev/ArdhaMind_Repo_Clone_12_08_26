@@ -165,7 +165,10 @@ class GoogleNewsRSSProvider(BaseNewsProvider):
                 "discovery_stream": discovery_stream,
                 "language": "en",
                 "published_at": pub_date,
+                "discovered_at": pub_date,
                 "received_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "timestamp_source": "AGGREGATOR_DISCOVERY",
+                "timestamp_verified": False,
                 "verification_status": "unverified"
             })
         return items

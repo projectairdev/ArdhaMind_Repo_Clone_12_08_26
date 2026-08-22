@@ -65,25 +65,131 @@ def recency(value: str, now: datetime | None = None) -> Tuple[int, str, float]:
     return age, "STALE", 0.1
 
 
+CONSTITUENT_ALIASES: Dict[str, list[str]] = {
+    "ADANIPORTS": ["adani ports", "adani port", "adani ports and sez", "adani ports & sez"],
+    "ADANIENT": ["adani enterprises"],
+    "ASIANPAINT": ["asian paints", "asian paint"],
+    "AXISBANK": ["axis bank", "axisbank"],
+    "BAJAJ-AUTO": ["bajaj auto"],
+    "BAJFINANCE": ["bajaj finance"],
+    "BAJAJFINSV": ["bajaj finserv"],
+    "BEL": ["bharat electronics"],
+    "BPCL": ["bharat petroleum"],
+    "BHARTIARTL": ["bharti airtel", "airtel"],
+    "BRITANNIA": ["britannia industries", "britannia"],
+    "CIPLA": ["cipla"],
+    "COALINDIA": ["coal india"],
+    "DIVISLAB": ["divis laboratories", "divi's laboratories", "divis lab"],
+    "DRREDDY": ["dr reddy", "dr. reddy", "dr reddys"],
+    "EICHERMOT": ["eicher motors", "royal enfield"],
+    "GRASIM": ["grasim industries", "grasim"],
+    "HCLTECH": ["hcl technologies", "hcl tech"],
+    "HDFCBANK": ["hdfc bank", "hdfcbank"],
+    "HDFCLIFE": ["hdfc life"],
+    "HEROMOTOCO": ["hero motocorp", "hero honda"],
+    "HINDALCO": ["hindalco industries", "hindalco"],
+    "HINDUNILVR": ["hindustan unilever", "unilever india", "hul"],
+    "ICICIBANK": ["icici bank", "icicibank"],
+    "INDUSINDBK": ["indusind bank"],
+    "INFY": ["infosys", "infy"],
+    "ITC": ["itc limited", "itc ltd", "itc"],
+    "JIOFIN": ["jio financial services", "jio financial"],
+    "JSWSTEEL": ["jsw steel"],
+    "KOTAKBANK": ["kotak mahindra bank", "kotak bank"],
+    "LT": ["larsen & toubro", "larsen and toubro", "l&t"],
+    "M&M": ["mahindra & mahindra", "mahindra and mahindra", "mahindra motors"],
+    "MARUTI": ["maruti suzuki", "maruti"],
+    "NESTLEIND": ["nestle india"],
+    "NTPC": ["ntpc limited", "ntpc"],
+    "ONGC": ["oil and natural gas corporation", "ongc"],
+    "POWERGRID": ["power grid corporation", "power grid"],
+    "RELIANCE": ["reliance industries", "ril", "reliance ind"],
+    "SBILIFE": ["sbi life"],
+    "SBIN": ["state bank of india", "sbi", "sbin"],
+    "SHRIRAMFIN": ["shriram finance"],
+    "SUNPHARMA": ["sun pharma", "sun pharmaceutical"],
+    "TATACONSUM": ["tata consumer products", "tata consumer"],
+    "TATAMOTORS": ["tata motors"],
+    "TATASTEEL": ["tata steel"],
+    "TCS": ["tata consultancy services", "tcs"],
+    "TECHM": ["tech mahindra"],
+    "TITAN": ["titan company", "titan"],
+    "TRENT": ["trent limited", "trent"],
+    "ULTRACEMCO": ["ultratech cement", "ultratech"],
+    "WIPRO": ["wipro limited", "wipro"],
+}
+
+GENERIC_COMPANY_STOPWORDS = {
+    "economic", "consumer", "products", "services", "finance", "financial",
+    "power", "enterprises", "industries", "holdings", "motor", "motors",
+    "bank", "banking", "life", "general", "petroleum", "energy", "limited",
+    "ltd", "india", "group", "ports", "zone", "special", "corporation",
+    "corp", "company", "co", "national", "state", "bharat", "indian",
+    "international", "capital", "technologies", "tech", "infrastructure",
+    "infra", "pharma", "pharmaceuticals", "chemical", "chemicals", "steel",
+    "cement", "metals", "auto", "automobile", "insurance", "housing", "gas",
+    "oil", "mines", "mining", "securities", "mutual", "fund", "trust"
+}
+
+PUBLISHER_STRIP_REGEX = re.compile(
+    r"\b(the economic times|economic times|times of india|hindustan times|moneycontrol|"
+    r"livemint|mint|business standard|financial express|reuters|bloomberg|cnbc|firstpost|"
+    r"ndtv|zeebiz|investing\.com|open magazine|samco|univest|rediff|news on air|the hindu|"
+    r"indian express|fortune india|business today|financial times|wall street journal|wsj)\b",
+    re.IGNORECASE,
+)
+
+
 class NiftyRelevanceEngineV2:
-    RULE_VERSION = "2.0.0"
+    RULE_VERSION = "2.1.0"
 
     @classmethod
     def assess(cls, headline: str, content: str, category: str, stream: str,
                source_tier: str, nifty_universe: Dict[str, str] | None = None) -> Dict[str, Any]:
-        text = f"{headline} {content}".lower()
+        # Strip publisher signatures and metadata to avoid matching publisher name against companies
+        raw_text = f"{headline} {content}"
+        clean_text = PUBLISHER_STRIP_REGEX.sub(" ", raw_text).lower()
+        clean_headline = PUBLISHER_STRIP_REGEX.sub(" ", headline).lower()
+        text = clean_text
+
         universe = nifty_universe or {}
-        symbols = []
+        symbols: list[str] = []
+
+        # 1. High-precision constituent matching
         for symbol, company in universe.items():
-            company_name_low = company.lower()
-            company_key = re.sub(r"\b(limited|ltd)\b", "", company_name_low).strip()
+            sym_clean = symbol.upper()
             sym_low = symbol.lower()
-            if (
-                re.search(rf"\b{re.escape(sym_low)}\b", text)
-                or (len(company_key) >= 3 and company_key in text)
-                or (company_name_low and any(part in text for part in company_name_low.split() if len(part) >= 4 and part not in ("limited", "ltd", "india")))
-            ):
-                symbols.append(symbol)
+
+            # Rule A: Exact NSE ticker symbol with word boundary (e.g. \bHDFCBANK\b, \bINFY\b, \bTCS\b)
+            if len(sym_clean) >= 3 and re.search(rf"\b{re.escape(sym_low)}\b", clean_text):
+                symbols.append(sym_clean)
+                continue
+
+            # Rule B: Canonical high-confidence aliases
+            aliases = CONSTITUENT_ALIASES.get(sym_clean, [])
+            matched_alias = False
+            for alias in aliases:
+                if re.search(rf"\b{re.escape(alias)}\b", clean_text):
+                    symbols.append(sym_clean)
+                    matched_alias = True
+                    break
+            if matched_alias:
+                continue
+
+            # Rule C: Meaningful multi-word company phrase (never single stopwords)
+            company_name_low = company.lower()
+            company_cleaned = re.sub(r"\b(limited|ltd|corporation|corp|company|co|the|india)\b", "", company_name_low).strip()
+            parts = [p for p in company_cleaned.split() if p not in GENERIC_COMPANY_STOPWORDS and len(p) >= 4]
+            if len(parts) >= 2:
+                phrase = " ".join(parts)
+                if phrase in clean_text:
+                    symbols.append(sym_clean)
+            elif len(parts) == 1 and len(parts[0]) >= 6:
+                # Single distinctive brand name (e.g., "Infosys", "Britannia", "Hindalco")
+                if re.search(rf"\b{re.escape(parts[0])}\b", clean_text):
+                    symbols.append(sym_clean)
+
+        symbols = list(dict.fromkeys(symbols))
 
         countries = []
         country_terms = {

@@ -25,6 +25,7 @@ class TemporalAssessment:
     age_seconds: Optional[int]
     current_eligible: bool
     allowed_window_hours: int
+    timestamp_verified: bool = False
     reason: str = ""
 
 
@@ -79,19 +80,36 @@ def live_window(now: datetime, explicit_last_close: Optional[datetime] = None) -
 
 
 def assess_publication_time(value: Any, now: datetime,
-                            explicit_last_close: Optional[datetime] = None) -> TemporalAssessment:
+                            explicit_last_close: Optional[datetime] = None,
+                            timestamp_source: str = "published_at",
+                            timestamp_verified: bool = True) -> TemporalAssessment:
     now_utc = now.astimezone(timezone.utc)
     window, _ = live_window(now_utc, explicit_last_close)
     observed = strict_publication_timestamp(value)
     if observed is None:
-        return TemporalAssessment(None, "INVALID_TIMESTAMP", "INVALID", "published_at", "NONE", None,
-                                  False, int(window.total_seconds() // 3600), "missing_malformed_or_timezone_naive")
+        return TemporalAssessment(None, "INVALID_TIMESTAMP", "INVALID", timestamp_source, "NONE", None,
+                                  False, int(window.total_seconds() // 3600), timestamp_verified=False,
+                                  reason="missing_malformed_or_timezone_naive")
     delta = now_utc - observed
     if delta < -FUTURE_SKEW_TOLERANCE:
-        return TemporalAssessment(observed, "INVALID_TIMESTAMP", "INVALID_FUTURE", "published_at", "HIGH",
+        return TemporalAssessment(observed, "INVALID_TIMESTAMP", "INVALID_FUTURE", timestamp_source, "HIGH",
                                   int(delta.total_seconds()), False, int(window.total_seconds() // 3600),
-                                  "publication_timestamp_beyond_clock_skew_tolerance")
+                                  timestamp_verified=False,
+                                  reason="publication_timestamp_beyond_clock_skew_tolerance")
     age = max(0, int(delta.total_seconds()))
+
+    # If timestamp is from an aggregator discovery without verified publisher date,
+    # mark as unverified discovery (discovery-only / background)
+    if not timestamp_verified:
+        temporal_class = "DISCOVERY_RECENT" if age <= 24 * 3600 else "DISCOVERY_OLDER"
+        return TemporalAssessment(
+            observed, temporal_class, "UNVERIFIED", timestamp_source, "LOW", age,
+            current_eligible=False,
+            allowed_window_hours=int(window.total_seconds() // 3600),
+            timestamp_verified=False,
+            reason="aggregator_discovery_timestamp_unverified",
+        )
+
     if age <= 24 * 3600:
         temporal_class = "CURRENT"
     elif delta <= window:
@@ -100,5 +118,6 @@ def assess_publication_time(value: Any, now: datetime,
         temporal_class = "STALE"
     else:
         temporal_class = "HISTORICAL"
-    return TemporalAssessment(observed, temporal_class, "VALID", "published_at", "HIGH", age,
-                              temporal_class in {"CURRENT", "RECENT"}, int(window.total_seconds() // 3600))
+    return TemporalAssessment(observed, temporal_class, "VALID", timestamp_source, "HIGH", age,
+                              temporal_class in {"CURRENT", "RECENT"}, int(window.total_seconds() // 3600),
+                              timestamp_verified=True)

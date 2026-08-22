@@ -7,16 +7,19 @@
 export interface FormattedNewsTime {
   publishedAtUtc: string | null;
   publishedAtIst: string;
-  displayRowTime: string;      // e.g. "Today · 11:33 PM IST", "Yesterday · 11:33 PM IST", "15 Aug · 11:33 PM IST", "15 Aug 2025 · 11:33 PM IST"
+  displayRowTime: string;      // e.g. "Today · 11:33 PM IST", "Yesterday · 11:33 PM IST", "Discovered 11:33 PM IST"
   displayTopStoryTime: string; // e.g. "17 Aug 2026 · 11:33 PM IST"
   isToday: boolean;
   isYesterday: boolean;
   isValid: boolean;
+  isVerified: boolean;
 }
 
 export function formatNewsTimestamp(
   rawPublishedAt: string | null | undefined,
-  rawObservedAt?: string | null | undefined
+  rawObservedAt?: string | null | undefined,
+  isVerified: boolean = true,
+  timestampSource?: string | null
 ): FormattedNewsTime {
   if (!rawPublishedAt && !rawObservedAt) {
     return {
@@ -27,6 +30,7 @@ export function formatNewsTimestamp(
       isToday: false,
       isYesterday: false,
       isValid: false,
+      isVerified: false,
     };
   }
 
@@ -43,6 +47,7 @@ export function formatNewsTimestamp(
       isToday: false,
       isYesterday: false,
       isValid: false,
+      isVerified: false,
     };
   }
 
@@ -87,8 +92,9 @@ export function formatNewsTimestamp(
   const yestMonth = parseInt(yesterdayParts.month, 10);
   const yestDay = parseInt(yesterdayParts.day, 10);
 
-  const isToday = storyYear === nowYear && storyMonth === nowMonth && storyDay === nowDay;
-  const isYesterday = storyYear === yestYear && storyMonth === yestMonth && storyDay === yestDay;
+  // Only assign isToday / isYesterday if the publisher publication date is verified!
+  const isToday = isVerified && storyYear === nowYear && storyMonth === nowMonth && storyDay === nowDay;
+  const isYesterday = isVerified && storyYear === yestYear && storyMonth === yestMonth && storyDay === yestDay;
   const isSameYear = storyYear === nowYear;
 
   const clockTimeIST = new Intl.DateTimeFormat("en-IN", {
@@ -113,7 +119,10 @@ export function formatNewsTimestamp(
 
   let displayRowTime = "";
 
-  if (isToday) {
+  if (!isVerified || timestampSource === "AGGREGATOR_DISCOVERY") {
+    // Aggregator discovery without verified article publication timestamp
+    displayRowTime = `Discovered · ${clockTimeIST} IST`;
+  } else if (isToday) {
     displayRowTime = `Today · ${clockTimeIST} IST`;
   } else if (isYesterday) {
     displayRowTime = `Yesterday · ${clockTimeIST} IST`;
@@ -127,7 +136,9 @@ export function formatNewsTimestamp(
     displayRowTime = `Observed: ${clockTimeIST} IST`;
   }
 
-  const displayTopStoryTime = `${fullDateStr} · ${clockTimeIST} IST`;
+  const displayTopStoryTime = isVerified
+    ? `${fullDateStr} · ${clockTimeIST} IST`
+    : `Discovered · ${fullDateStr} · ${clockTimeIST} IST`;
 
   return {
     publishedAtUtc: dateObj.toISOString(),
@@ -137,5 +148,6 @@ export function formatNewsTimestamp(
     isToday,
     isYesterday,
     isValid: true,
+    isVerified,
   };
 }
