@@ -1483,6 +1483,29 @@ class WorkstationStateService:
         }
         opp_intel = OpportunityRegistryService.get_instance().evaluate_and_update(opp_eval_context, state_seq)
 
+        # ── TRADER DECISION SUMMARY LAYER COMPOSITION ──
+        try:
+            from src.intelligence_engine.decision_summary_composer import MarketDecisionSummaryComposer
+            summary_ctx = {
+                "market_context": section("marketContext", market_status),
+                "option_context": section("optionContext", option_status),
+                "breadth": section("marketContext", market_status).get("breadth") or {},
+                "unified_intelligence": unified,
+                "opportunities": opp_intel.get("opportunities") or [],
+                "session_date": session_date,
+                "market_state": str(market_state).upper(),
+                "market_closed": market_closed,
+                "freshness_state": market_status.value.upper(),
+                "broker_auth_state": str(broker_state).upper(),
+                "sequence": state_seq,
+                "runtime_id": cls._runtime_id,
+            }
+            decision_summary_obj = MarketDecisionSummaryComposer.compose(summary_ctx)
+            unified["decision_summary"] = decision_summary_obj.to_dict()
+        except Exception as ds_err:
+            logger.debug("[WorkstationStateService] Decision Summary composition error: %s", ds_err)
+            unified["decision_summary"] = None
+
         return CanonicalWorkstationState(
             cls.SCHEMA_VERSION, state_seq, generated, cls._runtime_id,
             {"status": "closed" if str(market_state).upper() == "MARKET_CLOSED" else str(market_state).lower(), "is_closed": market_closed},

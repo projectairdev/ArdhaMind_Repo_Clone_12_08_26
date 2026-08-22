@@ -16,6 +16,7 @@ import { buildSessionViewModels } from "../viewmodels/session/buildSessionViewMo
 import { MorningPlanView } from "./intelligence/MorningPlanView";
 import { LiveGuideView } from "./intelligence/LiveGuideView";
 import { TomorrowPlanView } from "./intelligence/TomorrowPlanView";
+import { MarketDecisionSummaryCard } from "./intelligence/MarketDecisionSummaryCard";
 import { TemporalContextStrip } from "./ui/TemporalContextStrip";
 
 export function MarketIntelligenceWorkspace() {
@@ -157,9 +158,24 @@ export function MarketIntelligenceWorkspace() {
           ACTIVE SUBVIEW RENDERING
       ───────────────────────────────────────────────────────────── */}
       <div className="pt-0.5">
-        {activeSubTab === "MORNING_PLAN" && <MorningPlanView vm={morningPlan} />}
-        {activeSubTab === "LIVE_GUIDE" && <LiveGuideView vm={liveGuide} />}
-        {activeSubTab === "TOMORROW_PLAN" && <TomorrowPlanView vm={tomorrowPlan} />}
+        {activeSubTab === "MORNING_PLAN" && (
+          <>
+            <MarketDecisionSummaryCard summary={morningPlan.decisionSummary} subTabTitle="MORNING PLAN" />
+            <MorningPlanView vm={morningPlan} />
+          </>
+        )}
+        {activeSubTab === "LIVE_GUIDE" && (
+          <>
+            <MarketDecisionSummaryCard summary={liveGuide.decisionSummary} subTabTitle="LIVE GUIDE" />
+            <LiveGuideView vm={liveGuide} />
+          </>
+        )}
+        {activeSubTab === "TOMORROW_PLAN" && (
+          <>
+            <MarketDecisionSummaryCard summary={tomorrowPlan.decisionSummary} subTabTitle="TOMORROW PLAN" />
+            <TomorrowPlanView vm={tomorrowPlan} />
+          </>
+        )}
       </div>
     </div>
   );

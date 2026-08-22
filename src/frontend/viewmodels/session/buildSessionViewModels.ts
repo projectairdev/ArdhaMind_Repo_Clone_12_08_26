@@ -1,8 +1,8 @@
-// src/frontend/viewmodels/session/buildSessionViewModels.ts
 import {
   MorningPlanViewModel,
   LiveGuideViewModel,
   TomorrowPlanViewModel,
+  MarketDecisionSummaryViewModel,
   StrategyItem,
   ValueSuggestionItem,
   StrikeSuggestionItem,
@@ -220,7 +220,11 @@ export function buildSessionViewModels(
     : "24,210 – 24,300";
   const invalidationLevelStr = immediateSupport ? `Below ${fmtInt(immediateSupport - 60)}` : "Below 24,120";
 
+  // Decision Summary extraction
+  const decisionSummary: MarketDecisionSummaryViewModel | null = (c.unified?.decision_summary || c.decision_summary || null);
+
   const morningPlan: MorningPlanViewModel = {
+    decisionSummary,
     generatedAt,
     snapshotTimestamp: "09:02 AM IST",
     isPreparing: sessionStatus === "PRE_MARKET" && spotPrice === null,
@@ -397,6 +401,7 @@ export function buildSessionViewModels(
     : "WATCH";
 
   const liveGuide: LiveGuideViewModel = {
+    decisionSummary,
     generatedAt,
     lastUpdatedTime: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
     bestActionNow: {
@@ -617,6 +622,7 @@ export function buildSessionViewModels(
   }
 
   const tomorrowPlan: TomorrowPlanViewModel = {
+    decisionSummary,
     generatedAt,
     sessionDate: "Current Session",
     nextSessionDate: "Next Trading Session",

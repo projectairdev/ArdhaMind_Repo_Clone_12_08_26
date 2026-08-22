@@ -68,7 +68,48 @@ export interface RiskContextState {
   confirmations: string[];
 }
 
+export interface FieldStatusViewModel<T = string | number | null> {
+  value: T;
+  status: "AVAILABLE" | "NOT_QUALIFIED" | "STALE" | "UNAVAILABLE" | "WAITING" | "DEGRADED" | "REQUIRES_LIVE_OPTIONS" | "WAITING_FOR_OPTIONS_CONFIRMATION" | "WAITING_FOR_TRIGGER";
+}
+
+export interface EntryConditionViewModel {
+  primary_trigger: string;
+  confirmation_conditions: string[];
+  invalidation_condition: string;
+  formatted_statement: string;
+}
+
+export interface MarketDecisionSummaryViewModel {
+  decision_id: string;
+  as_of: string;
+  session_date: string;
+  session_phase: string;
+  bias: FieldStatusViewModel<string | null>;
+  setup: FieldStatusViewModel<string | null>;
+  strike: FieldStatusViewModel<string | null>;
+  entry_condition: FieldStatusViewModel<EntryConditionViewModel | null>;
+  confidence: FieldStatusViewModel<number | null>;
+  liquidity: FieldStatusViewModel<string | null>;
+  data_quality: FieldStatusViewModel<string | null>;
+  risk: FieldStatusViewModel<string | null>;
+  status: "WAITING" | "WATCH" | "QUALIFYING" | "READY_FOR_APPROVAL" | "BLOCKED" | "INVALIDATED" | "EXPIRED" | "UNAVAILABLE" | "MARKET_CLOSED";
+  invalidation: string | null;
+  supporting_evidence: string[];
+  blocking_reasons: string[];
+  provenance: {
+    canonical_sequence?: number;
+    runtime_id?: string;
+    opportunity_id?: string;
+    strategy_id?: string;
+    liquidity_policy_version?: string;
+    evidence_sources?: string[];
+    freshness_summary?: Record<string, string>;
+  };
+}
+
 export interface MorningPlanViewModel {
+  decisionSummary?: MarketDecisionSummaryViewModel | null;
   generatedAt: string;
   snapshotTimestamp: string;
   isPreparing: boolean;
@@ -152,6 +193,7 @@ export interface MorningPlanViewModel {
 }
 
 export interface LiveGuideViewModel {
+  decisionSummary?: MarketDecisionSummaryViewModel | null;
   generatedAt: string;
   lastUpdatedTime: string;
   bestActionNow: {
@@ -231,6 +273,7 @@ export interface LiveGuideViewModel {
 }
 
 export interface TomorrowPlanViewModel {
+  decisionSummary?: MarketDecisionSummaryViewModel | null;
   generatedAt: string;
   sessionDate: string;
   nextSessionDate: string;
