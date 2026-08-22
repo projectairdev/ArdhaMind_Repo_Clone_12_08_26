@@ -1,18 +1,18 @@
 # LIGHTWEIGHT SESSION STORE EXACT SCHEMA SPECIFICATIONS
 
-**Document Version:** 1.0.0 — Authoritative Schema Contract  
+**Document Version:** 1.1.0 — Authoritative Corrected Schema Contract  
 **Language:** Python Dataclasses / JSON Schemas  
 **Target Subsystem:** `LightweightSessionStore`
 
 ---
 
-## 1. SCHEMA 1: `SessionCloseCore` (`close/YYYY-MM-DD.json` ~3.8 KB)
+## 1. SCHEMA 1: `SessionCloseCore` (`close/YYYY-MM-DD.json` ~3.8 KB — PERMANENT)
 
 ```json
 {
   "$schema": "https://ardhamind.projectair.in/schemas/session_close_core_v1.json",
   "schema_name": "SESSION_CLOSE_CORE",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "session_date": "2026-08-21",
   "session_type": "REGULAR_TRADING",
   "finalized_at": "2026-08-21T15:35:12.450Z",
@@ -78,8 +78,8 @@
   },
   "provenance": {
     "provider": "ZERODHA_KITE_RECONCILED",
+    "reconciliation_policy": "v1.0-standard",
     "reconciliation_status": "OFFICIAL_RECONCILED",
-    "data_quality_score": 100.0,
     "runtime_id": "07a1f4d7-fb86-4237-9d19-6a4fd1beaaf7"
   }
 }
@@ -87,13 +87,13 @@
 
 ---
 
-## 2. SCHEMA 2: `OptionsCloseBaseline` (`options_close/YYYY-MM-DD.json` ~2.1 KB)
+## 2. SCHEMA 2: `OptionsCloseBaseline` (`options_close/YYYY-MM-DD.json` ~2.1 KB — PERMANENT)
 
 ```json
 {
   "$schema": "https://ardhamind.projectair.in/schemas/options_close_baseline_v1.json",
   "schema_name": "OPTIONS_CLOSE_BASELINE",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "session_date": "2026-08-21",
   "expiry_date": "2026-08-28",
   "captured_at": "2026-08-21T15:31:05.120Z",
@@ -126,82 +126,70 @@
   "provenance": {
     "provider": "ZERODHA_KITE_NFO",
     "last_valid_options_at": "2026-08-21T15:29:58.800Z",
-    "is_off_hours_frozen": true
+    "finalization_quality": "COMPLETE_FINALIZED",
+    "retention_tier": "PERMANENT"
   }
 }
 ```
 
 ---
 
-## 3. SCHEMA 3: `IntradayTelemetrySeries` (`telemetry/YYYY-MM-DD.json` ~4.2 KB)
+## 3. SCHEMA 3: `CloseReconciliationPolicy` (Configuration Object)
 
 ```json
 {
-  "$schema": "https://ardhamind.projectair.in/schemas/intraday_telemetry_series_v1.json",
-  "schema_name": "INTRADAY_TELEMETRY_SERIES",
-  "schema_version": "1.0.0",
-  "session_date": "2026-08-21",
-  "bucket_interval_minutes": 15,
-  "total_buckets": 25,
-  "buckets": [
-    {
-      "index": 1,
-      "window_start": "09:15",
-      "window_end": "09:30",
-      "start_spot": 24225.45,
-      "end_spot": 24248.10,
-      "high_spot": 24255.00,
-      "low_spot": 24218.30,
-      "change_pts": 22.65,
-      "breadth_advances": 32,
-      "breadth_declines": 17,
-      "vix": 12.65,
-      "pcr": 1.05,
-      "max_pain": 24250,
-      "session_phase": "OPENING_RANGE",
-      "evidence_quality": "SUFFICIENT"
-    }
-  ]
+  "policy_version": "v1.0-standard",
+  "comparison_source": "KITE_HISTORICAL_DAY_CANDLE",
+  "max_absolute_drift_points": 5.0,
+  "max_relative_drift_bps": 2.5,
+  "source_priority": [
+    "LIVE_CANONICAL_OBSERVED",
+    "OFFICIAL_DAY_CANDLE",
+    "NSE_SETTLEMENT",
+    "LAST_VALID_FALLBACK"
+  ],
+  "allow_provider_correction": true,
+  "market_state_required": "CLOSED",
+  "validation_window_seconds": 300
 }
 ```
 
 ---
 
-## 4. SCHEMA 4: `SessionIntegrityEnvelope` (`integrity/YYYY-MM-DD.json` ~1.8 KB)
+## 4. SCHEMA 4: `SessionIntegrityEnvelope` (`integrity/YYYY-MM-DD.json` ~1.8 KB — PERMANENT)
 
 ```json
 {
   "$schema": "https://ardhamind.projectair.in/schemas/session_integrity_envelope_v1.json",
   "schema_name": "SESSION_INTEGRITY_ENVELOPE",
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "session_date": "2026-08-21",
-  "session_status": "COMPLETE",
-  "data_quality_score": 99.4,
-  "connectivity_summary": {
-    "market_feed_status_at_close": "HEALTHY",
-    "broker_status_at_close": "AUTHENTICATED",
-    "last_valid_nifty_tick_at": "2026-08-21T15:30:00.102Z",
-    "last_valid_options_at": "2026-08-21T15:29:58.800Z",
-    "last_valid_breadth_at": "2026-08-21T15:30:00.050Z",
-    "last_valid_vix_at": "2026-08-21T15:30:00.100Z",
-    "feed_gap_count": 1,
-    "total_gap_duration_seconds": 4.2,
-    "longest_gap_seconds": 4.2
-  },
-  "reconciliation_trace": {
-    "reconciliation_status": "COMPLETED_MATCH",
+  "session_type": "REGULAR_TRADING",
+  "finalization_status": "COMPLETE",
+  "completeness_status": "FULL_SESSION",
+  "broker_auth_state_at_close": "AUTHENTICATED",
+  "websocket_state_at_close": "CONNECTED",
+  "market_feed_state_at_close": "HEALTHY",
+  "last_valid_nifty_tick_at": "2026-08-21T15:30:00.102Z",
+  "last_valid_options_at": "2026-08-21T15:29:58.800Z",
+  "last_valid_breadth_at": "2026-08-21T15:30:00.050Z",
+  "last_valid_vix_at": "2026-08-21T15:30:00.100Z",
+  "feed_gap_count": 1,
+  "total_feed_gap_seconds": 4.2,
+  "longest_feed_gap_seconds": 4.2,
+  "degraded_intervals": [
+    {"from": "2026-08-21T10:42:15.120Z", "to": "2026-08-21T10:42:19.320Z", "duration_seconds": 4.2, "cause": "WS_RECONNECT_SYNC"}
+  ],
+  "unrecoverable_intervals": [],
+  "reconciliation": {
+    "reconciliation_status": "MATCHED",
+    "reconciliation_policy_version": "v1.0-standard",
     "reconciliation_completed_at": "2026-08-21T15:35:10.000Z",
-    "sources_reconciled": ["KITE_TICKER_STREAM", "KITE_REST_HISTORICAL", "NSE_SETTLEMENT"],
-    "drift_detected": false
+    "sources_used": ["KITE_TICKER_STREAM", "KITE_REST_HISTORICAL", "NSE_SETTLEMENT"],
+    "observed_close": 24252.00,
+    "provider_settled_close": 24252.00,
+    "drift_points": 0.00
   },
   "warnings": []
 }
-```
-
----
-
-## 5. SCHEMA 5: `ConnectivityEvent` (`connectivity/YYYY-MM-DD.jsonl` Line-Delimited)
-
-```json
-{"event_id":"CONN-20260821-001","session_date":"2026-08-21","event_type":"WS_DISCONNECTED","detected_at":"2026-08-21T10:42:15.120Z","last_valid_tick_at":"2026-08-21T10:42:14.800Z","socket_state":"CLOSED","broker_state":"HEALTHY","affected_domains":["NIFTY_SPOT","OPTIONS_DEPTH"],"reconnect_attempt":1,"socket_restored_at":"2026-08-21T10:42:18.950Z","first_valid_tick_at":"2026-08-21T10:42:19.320Z","gap_duration_ms":4200,"resolution":"AUTOMATIC_RECONNECTED","reconciliation_status":"HISTORICAL_CANDLES_SYNCED"}
 ```

@@ -1,6 +1,6 @@
 # SESSION FINALIZATION & LIFECYCLE STATE MACHINE DESIGN
 
-**Document Version:** 1.0.0 — Authoritative State Machine Design  
+**Document Version:** 1.1.0 — Authoritative Corrected State Machine Design  
 **Target Module:** `src/storage/session_lifecycle_manager.py`  
 **Purpose:** Precise, deterministic finalization lifecycle for AIR Ardha trading sessions.
 
@@ -29,22 +29,22 @@
             │ 15:20 IST (Pre-Close Threshold)
             ▼
  ┌──────────────────────┐
- │  PRE_CLOSE_CAPTURE   │ ──► [Snapshot live Option Chain & Derivatives Depth]
+ │  PRE_CLOSE_CAPTURE   │ ──► [Capture latest valid Option Chain & Derivatives Depth]
  └──────────┬───────────┘
-            │ 15:30 IST (Market Closes)
+            │ 15:30 IST (Continuous Trading Closes -> CLOSE_PENDING)
             ▼
  ┌──────────────────────┐
- │    CLOSE_PENDING     │ ──► [Wait for Exchange Settled Close (15:30–15:35)]
+ │    CLOSE_PENDING     │ ──► [Ingestion CONTINUES in STANDBY; wait for session resolver CLOSED]
  └──────────┬───────────┘
-            │ 15:35 IST (Reconciliation Trigger)
+            │ Session Resolver confirms CLOSED & 15:35 Reconciliation Trigger
             ▼
  ┌──────────────────────┐
- │     RECONCILING      │ ──► [Fetch Kite Historical Day Candle + Match Settled OHLC]
+ │     RECONCILING      │ ──► [Execute CloseReconciliationPolicy with Kite Historical Day Candle]
  └──────────┬───────────┘
-            │ Match Verified
+            │ Reconciliation Matches / Within Tolerance
             ▼
  ┌──────────────────────┐
- │   FINALIZED_BASE     │ ──► [Atomically write SessionCloseCore & OptionsCloseBaseline]
+ │   FINALIZED_BASE     │ ──► [Atomically write SessionCloseCore, OptionsCloseBaseline, Integrity]
  └──────────┬───────────┘
             │ 18:00+ IST (FII/DII Cash Reports Released by NSDL/NSE)
             ▼
@@ -69,16 +69,21 @@
 
 ### 2. `CLOSE_PENDING` $\rightarrow$ `RECONCILING` (15:30 – 15:35 IST)
 - **Trigger:** System time reaches 15:30 IST.
-- **Action:** Halts streaming tick ingestion; requests authoritative daily summary candle from Zerodha Kite (`kite.historical_data(..., "day")`) and exchange settlements.
-- **Reconciliation Invariant:** Compares live recorded high/low/close with official settled numbers. If drift is $\le 2.0$ points (typical closing auction adjustment), the official exchange close is adopted with provenance `"OFFICIAL_RECONCILED"`.
+- **Ingestion Rule:** Ingestion listeners and WebSocket feeds **DO NOT STOP**. They remain active in `STANDBY` mode to capture any late-settling closing auction trades or final tick packets.
+- **Action:**
+  - Session resolver validates that continuous trading has ended and official market status is `CLOSED`.
+  - At 15:35 IST, the reconciliation daemon requests the official daily summary candle from Zerodha Kite (`kite.historical_data(..., "day")`).
+- **Policy Reconciliation:** Evaluates `CloseReconciliationPolicy` comparing observed vs official values:
+  - If drift is within configured `max_absolute_drift_points` or `max_relative_drift_bps`, reconciliation status is marked `MATCHED` or `WITHIN_TOLERANCE`.
+  - If provider official settlement differs, provider official value is adopted with status `CORRECTED_FROM_PROVIDER`.
 
 ### 3. `FINALIZED_BASE` (15:35 IST)
 - **Action:**
   1. Computes mathematical structural levels (Pivot, R1-R3, S1-S3, Local ATR bands).
   2. Generates closing market breadth and regime classification.
-  3. Writes `data/session_store/close/YYYY-MM-DD.json` atomically.
-  4. Writes `data/session_store/options_close/YYYY-MM-DD.json` atomically.
-  5. Freezes `data/session_store/integrity/YYYY-MM-DD.json`.
+  3. Writes `data/session_store/close/YYYY-MM-DD.json` (**PERMANENT**).
+  4. Writes `data/session_store/options_close/YYYY-MM-DD.json` (**PERMANENT**).
+  5. Freezes `data/session_store/integrity/YYYY-MM-DD.json` (**PERMANENT**).
 - **Idempotency Rule:** The write includes an idempotency key (`CLOSE_{session_date}_GEN{generation}_{hash}`). Re-running finalization with identical generation is a strict no-op.
 
 ### 4. `ENRICHED_EOD` (18:00 – 21:00 IST)

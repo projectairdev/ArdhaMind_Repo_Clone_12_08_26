@@ -1,8 +1,8 @@
 # LIGHTWEIGHT SESSION STORAGE ARCHITECTURE SPECIFICATION
 
-**Document Version:** 1.0.0 — Authoritative Staging Architecture Design  
+**Document Version:** 1.1.0 — Authoritative Corrected Staging Architecture Design  
 **Target Component:** `LightweightSessionStore` (`src/storage/lightweight_session_store.py`)  
-**Design Status:** Approved for Design Review (Implementation Pending)  
+**Design Status:** Approved for Implementation (Design Corrections Applied)  
 **Production Isolation:** Staging Only (`/opt/ardhamind/staging`) — Production Untouched.
 
 ---
@@ -11,7 +11,7 @@
 
 AIR Ardha's legacy storage architecture writes full canonical workstation state snapshots (~40KB each) to disk every 15–30 seconds during market hours (`data/cache/session_history_{date}.json`), generating **35 MB to 45 MB per session** (>1.2 GB/month). Over 99% of this data is identical static metadata repeatedly serialized.
 
-The **Lightweight Session Storage Architecture** replaces this monolithic snapshot dump with a modular, domain-partitioned, event-driven storage subsystem. It achieves **100% functional fidelity** across all 382 dashboard data fields, decision scenarios, and AI assistant reasoning while reducing operational daily disk footprint to **~47 KB/day (a 99.89% reduction)** and reducing startup cold-start I/O from **~500ms to <5ms**.
+The **Lightweight Session Storage Architecture** replaces this monolithic snapshot dump with a modular, domain-partitioned, event-driven storage subsystem. It achieves **100% functional fidelity** across all 382 dashboard data fields, decision scenarios, and AI assistant reasoning while reducing operational daily disk footprint to **~47 KB/day (a 99.89% reduction)**, establishing permanent EOD history at **~7.7 KB/session (~1.9 MB/year)**, and reducing startup cold-start I/O from **~500ms to <5ms**.
 
 ---
 
@@ -41,6 +41,7 @@ The **Lightweight Session Storage Architecture** replaces this monolithic snapsh
 │ D. EOD Session Close    │ E. EOD Options Close     │ F. Carry-Forward & Governance     │
 │    Session Close Core   │    Options Close Baseline│    Active Catalysts & Macro Themes│
 │    (close/YYYY-MM-DD)   │    (options/YYYY-MM-DD)  │    Session Integrity Envelope     │
+│    [PERMANENT ~3.8KB]   │    [PERMANENT ~2.1KB]    │    [PERMANENT ~1.8KB]             │
 └─────────────────────────┴──────────────────────────┴───────────────────────────────────┘
                                            │
                                            ▼
@@ -74,82 +75,50 @@ The storage layer is partitioned into **7 distinct domain stores**, each with in
 
 ### 4. `SessionCloseCore` (`data/session_store/close/YYYY-MM-DD.json` ~3.8KB)
 - **Role:** Authoritative, finalized record of the completed session's market truth. Powers next-session PRE-market analysis, pivot boundaries, opening scenarios, and carry-forward levels.
-- **Write Cadence:** Written exactly once at **15:30+ EOD** upon official close reconciliation. Immutable once finalized.
-- **Retention:** **Permanent** (extremely compact ~3.8KB; 250 trading days = ~950KB/year).
+- **Write Cadence:** Written at **15:30+ EOD** upon official close reconciliation. Immutable once finalized.
+- **Retention:** **PERMANENT** (~3.8KB; 250 trading days = ~950KB/year).
 
 ### 5. `OptionsCloseBaseline` (`data/session_store/options_close/YYYY-MM-DD.json` ~2.1KB)
-- **Role:** Authoritative closing derivatives baseline. Powers Day-over-Day ΔOI, Wall shift detection, and Max Pain migration on the next morning's Options Ladder.
-- **Write Cadence:** Captured at 15:30 EOD. Guarded: off-hours empty option packets can never overwrite a valid closing baseline.
-- **Retention:** Rolling 5 trading sessions (or active expiry lifecycle).
+- **Role:** Authoritative closing derivatives baseline. Powers Day-over-Day ΔOI, Wall shift detection, and Max Pain migration on the next morning's Options Ladder and longitudinal derivatives research.
+- **Write Cadence:** Captured during pre-close window (15:20) and finalized post-close. Guarded: off-hours empty option packets can never overwrite a valid closing baseline.
+- **Retention:** **PERMANENT** (~2.1KB; 250 trading days = ~525KB/year).
 
 ### 6. `ActiveCatalystCarryForward` (`data/session_store/cache/active_catalysts.json` ~4.6KB)
 - **Role:** Tracks unresolved macroeconomic events, policy catalysts, and carry-forward market risks across session boundaries.
 - **Write Cadence:** Updated upon new high-impact news ingestion or catalyst resolution.
-- **Retention:** Active items persisted until resolved or expired; historical resolved items pruned after 5 days.
+- **Retention:** Active items persisted until resolved or expired; historical resolved items pruned after 5 sessions.
 
 ### 7. `SessionIntegrityEnvelope` (`data/session_store/integrity/YYYY-MM-DD.json` ~1.8KB)
 - **Role:** Comprehensive audit envelope recording feed continuity, broker disconnects, data quality scores, gap durations, and reconciliation status for the session.
 - **Write Cadence:** Continuously updated in memory; finalized and frozen at EOD.
-- **Retention:** **Permanent** audit ledger.
+- **Retention:** **PERMANENT** audit ledger (~1.8KB; 250 trading days = ~450KB/year).
 
 ---
 
-## 4. PUBLIC INTERFACE CONTRACT (`ILightweightSessionStore`)
+## 4. INGESTION CONTINUITY & MARKET CLOSE RECONCILIATION
 
-```python
-class ILightweightSessionStore:
-    """Public interface for the Lightweight Session Storage Subsystem."""
-    
-    # ── Hydration & Startup ──
-    def load_recovery_state(self) -> Optional[Dict[str, Any]]: ...
-    def load_candle_cache(self, timeframe: str = "5m") -> List[Dict[str, Any]]: ...
-    def load_session_close(self, session_date: str) -> Optional[SessionCloseCore]: ...
-    def load_latest_session_close(self) -> Optional[SessionCloseCore]: ...
-    def load_options_baseline(self, session_date: str) -> Optional[OptionsCloseBaseline]: ...
-    def load_active_catalysts(self) -> List[Dict[str, Any]]: ...
-    def load_telemetry_series(self, session_date: str) -> List[Dict[str, Any]]: ...
-    def load_integrity_envelope(self, session_date: str) -> Optional[SessionIntegrityEnvelope]: ...
+### Ingestion Continuity Rule
+$$\text{MARKET SESSION CLOSED} \neq \text{MARKET FEED PROCESS STOPPED}$$
+- Reaching wall-clock 15:30:00 IST triggers transition to `CLOSE_PENDING`, **not** process termination or socket disconnection.
+- WebSocket streaming and feed listeners remain active in `STANDBY` to capture closing auction settlements and late-arriving trade reports.
 
-    # ── Live Intraday Writes ──
-    def persist_recovery_state(self, state: Dict[str, Any], force: bool = False) -> None: ...
-    def append_candle(self, candle: Dict[str, Any], timeframe: str = "5m") -> None: ...
-    def sync_candles(self, candles: List[Dict[str, Any]], timeframe: str = "5m") -> None: ...
-    def record_15m_telemetry_bucket(self, bucket: Dict[str, Any]) -> None: ...
-    def record_connectivity_event(self, event: ConnectivityEvent) -> None: ...
-    def update_catalysts(self, catalysts: List[Dict[str, Any]], carry_risks: List[str]) -> None: ...
-
-    # ── EOD Finalization Lifecycle ──
-    def finalize_session(
-        self,
-        session_date: str,
-        close_core: SessionCloseCore,
-        options_baseline: OptionsCloseBaseline,
-        integrity_envelope: SessionIntegrityEnvelope,
-        idempotency_key: str
-    ) -> bool: ...
-    
-    def recover_missed_close(self, session_date: str, historical_ohlc: Dict[str, float]) -> bool: ...
-
-    # ── Maintenance & Governance ──
-    def prune_expired_sessions(self, max_retained_sessions: int = 5) -> Dict[str, int]: ...
-    def get_storage_health(self) -> Dict[str, Any]: ...
+### Configurable `CloseReconciliationPolicy`
+Reconciliation replaces arbitrary hardcoded thresholds with a versioned, configurable policy:
+```json
+{
+  "policy_version": "v1.0-standard",
+  "comparison_source": "KITE_HISTORICAL_DAY_CANDLE",
+  "max_absolute_drift_points": 5.0,
+  "max_relative_drift_bps": 2.5,
+  "source_priority": ["LIVE_CANONICAL_OBSERVED", "OFFICIAL_DAY_CANDLE", "NSE_SETTLEMENT", "LAST_VALID_FALLBACK"],
+  "allow_provider_correction": true
+}
 ```
 
 ---
 
-## 5. RECOVERY & ATOMICITY GUARANTEES
+## 5. PRODUCTION LIVE ACCEPTANCE CRITERION
 
-1. **Atomic Disk Commits:**
-   All JSON mutations use a strict **Write-Temp $\rightarrow$ Fsync $\rightarrow$ Atomic Rename** pattern:
-   ```python
-   temp_file = target_path.with_suffix(".tmp." + uuid.uuid4().hex[:8])
-   with open(temp_file, "w", encoding="utf-8") as f:
-       json.dump(payload, f, indent=2)
-       f.flush()
-       os.fsync(f.fileno())
-   os.replace(temp_file, target_path)
-   ```
-2. **Zero Incomplete / Partial Files:**
-   If a crash occurs mid-write, the target file remains completely untouched and uncorrupted. Orphaned temporary `.tmp.*` files are automatically cleaned on startup.
-3. **Corruption Fallback:**
-   If any disk JSON file fails schema validation or CRC check upon read, the store marks that domain `DEGRADED`, logs a high-priority diagnostic alert, and falls back to provider refetch / in-memory derivation without crashing the server.
+Production deployment requires zero unreconciled critical data gaps:
+$$\mathbf{ZERO\ UNRECONCILED\ CRITICAL\ DATA\ GAPS}$$
+- Transient network or WebSocket drops are permitted provided they are automatically detected, safely degraded in UI indicators, and backfilled via REST historical sync with provenance tracking.

@@ -1,6 +1,6 @@
 # ZERODHA KITE FEED GAP RECOVERY & CONNECTIVITY RECONCILIATION DESIGN
 
-**Document Version:** 1.0.0 — Authoritative Gap Recovery Design  
+**Document Version:** 1.1.0 — Authoritative Corrected Gap Recovery Design  
 **Target Modules:** `src/broker/services/market_feed_service.py`, `src/storage/connectivity_ledger.py`
 
 ---
@@ -14,7 +14,7 @@
 | **Case C: Market Open + Partial Domain Failure** (e.g. Options depth down, Spot live) | `PARTIAL_FEED` | Real-time Spot & 5m Candles; records `OPTIONS_STALE` event | No fake 0.00 options depth | Spot continues; Options shows `UNAVAILABLE` | Option quote polling retry | Permitted with `PARTIAL_EVIDENCE` flag | `PARTIAL` |
 | **Case D: Market Open + Reconnecting** | `RECONNECTING` | Reconnect attempt logged | No data writes during socket handshake | Holds last valid in-memory state | Reconnect exponential backoff | Hold pending | `DEGRADED` |
 | **Case E: Market Open + Recovered** | `HEALTHY` | Connectivity Event (`MARKET_FEED_RECOVERED`); Gap candles | No gaps left in candle buffer | Backfills 1-min & 5-min candles via REST | `kite.historical_data` REST API | Normal 15:35 EOD finalization | `COMPLETE` |
-| **Case F: Market Closed (15:30–09:00)** | `CLOSED` | Off-hours recovery snapshot (periodic 60s) | No live candle appends | Freezes 15:30 EOD closing truth | In-memory EOD baseline | Read-only | `FROZEN` |
+| **Case F: Market Closed (15:30+ IST)** | `STANDBY` (Feed listener remains connected) | Off-hours recovery snapshot (periodic 60s) | No fake ticks after exchange close | Freezes 15:30 EOD closing truth | In-memory EOD baseline | Finalizes via CloseReconciliationPolicy | `FROZEN` |
 | **Case G: Weekend / NSE Holiday** | `HOLIDAY` | Nothing (Zero session files created) | No weekend session records | Serves previous Friday's finalized close | Previous trading day close | Read-only | `HOLIDAY_STANDBY` |
 | **Case H: Server Offline at 15:30** | `OFFLINE` | Nothing during crash | No corrupted partial files | Recovers on startup via missed-close routine | Kite historical Daily API | Automatic on next startup | `RECOVERED` |
 | **Case I: Kite Down until after Close** | `OUTAGE_EXTENDED` | Connectivity outage ledger | No live ticks recorded | Uses last valid options snapshot; EOD OHLC via exchange | NSE / NSDL EOD reports | Reconciles using exchange EOD settlements | `RECOVERED_PARTIAL` |
@@ -55,3 +55,4 @@
 4. **Deduplication & Insertion:** Fetched candles are deduplicated against existing buffer timestamps and cleanly merged.
 5. **Indicator Recalculation:** `EMA20`, `EMA50`, `EMA200`, `RSI14`, `VWAP` are recomputed in **<0.5ms**, restoring full analytical integrity without restarting the server.
 6. **Provenance Tracking:** Ingested gap candles are tagged with `"source": "RECOVERED_HISTORICAL"` in memory and audit logs.
+7. **Acceptance Threshold:** Production requires **ZERO UNRECONCILED CRITICAL DATA GAPS**. All transient drops must complete this recovery flow before finalization.

@@ -1,6 +1,6 @@
 # LIGHTWEIGHT STORAGE MIGRATION PLAN & IMPLEMENTATION ROADMAP
 
-**Document Version:** 1.0.0 — Authoritative Staging Migration Plan  
+**Document Version:** 1.1.0 — Authoritative Corrected Staging Migration Plan  
 **Target Subsystems:** `src/storage/`, `src/intelligence_engine/`, `src/application/`  
 **Execution Constraint:** Staging Only. Dual-write validation required prior to legacy deprecation.
 
@@ -24,7 +24,7 @@
 └─────────┘      └─────────┘      └─────────┘      └─────────┘      └─────────┘      └─────────┘
   Atomic           Candle /         EOD Close        Reader           Dual-Write       Live Session
   Storage          Telemetry        & Options        Migration        Validation       Verification
-  Primitives       Writers          Finalizer        (3 Readers)      (Zero Regress)   & Cutover
+  Primitives       Writers          Finalizer        (3 Readers)      (Zero Regress)   (Zero Gaps)
 ```
 
 ### Phase A: Core Schemas & Storage Primitives
@@ -37,8 +37,8 @@
 - Implement 15-minute `IntradayTelemetrySeries` writer hooked into WorkstationStateService timer.
 - Implement line-delimited `ConnectivityEvent` logger.
 
-### Phase C: Session Close & Options Finalizer
-- Implement `SessionLifecycleManager` with 15:20 pre-close capture, 15:35 reconciliation, and EOD enrichment.
+### Phase C: Session Close & Options Finalizer (PERMANENT)
+- Implement `SessionLifecycleManager` with 15:20 pre-close capture, continuous standby ingestion past 15:30, 15:35 `CloseReconciliationPolicy` evaluation, and permanent storage of `SessionCloseCore` and `OptionsCloseBaseline`.
 - Implement `recover_missed_close()` for daemon cold-start post-15:30.
 - Implement duplicate finalization protection with idempotency keys.
 
@@ -49,10 +49,13 @@
 - Run storage engine in dual-write mode: writes both lightweight structures and legacy `session_history_{date}.json`.
 - Execute validation test suite to confirm zero data discrepancies or missing fields.
 
-### Phase F: Live Trading Session Verification
+### Phase F: Live Trading Session Verification (ZERO UNRECONCILED CRITICAL GAPS)
 - Monitor one full live NSE session (08:45 – 15:40 IST).
 - Verify real-time streaming, disconnect recovery, EOD finalization, and next-morning PRE load.
+- Production criterion: **ZERO UNRECONCILED CRITICAL DATA GAPS**.
 
 ### Phase G: Decommission Legacy Writes
 - Disable legacy `_persist_session_history` disk writes.
+
+### Phase H: Historical Pruning (Explicit Approval Required)
 - Archive or prune legacy `session_history_*.json` files only upon explicit user sign-off.
