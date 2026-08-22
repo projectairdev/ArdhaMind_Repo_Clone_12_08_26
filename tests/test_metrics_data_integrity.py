@@ -153,36 +153,32 @@ def test_metrics_workspace_layout_and_elements_contract():
     with open("/opt/ardhamind/staging/src/frontend/components/MarketPulseWorkspace.tsx", "r") as f:
         src = f.read()
 
-    # 1. Row 1 checks
+    # 1. Row 1 checks: Compact Market State + Horizontal Macro Asset Strip
     assert "1. MARKET STATE" in src
     assert "GLOBAL & MACRO CONTEXT" in src
+    assert "CROSS-ASSET OVERVIEW" in src
     assert "CrossAssetIcon" in src
-    assert "MARKET SESSION STATUS (LOCAL TIME)" in src
-    assert "MarketCenterSilhouette" in src
+    assert "MiniTrendSparkline" in src
 
-    # 2. Row 2 checks (5-column balanced cards)
+    # 2. Row 2 checks: 5-column balanced cards
     assert "2. PRICE & TREND METRICS" in src
     assert "3. KEY STRUCTURAL LEVELS" in src
     assert "4. MARKET BREADTH" in src
     assert "5. VOLATILITY & RANGE" in src
     assert "9. KEY TELEMETRY SUMMARY" in src
 
-    # 3. Row 3 checks
+    # 3. Row 3 checks: 3-column grounding cards
     assert "6. SECTOR PARTICIPATION (NIFTY SECTORS)" in src
     assert "7. INSTITUTIONAL POSITIONING" in src
     assert "10. METRIC INTERPRETATION" in src
 
-    # 4. Global financial centers
-    centers = ["Tokyo", "Shanghai", "Hong Kong", "Mumbai", "Frankfurt", "London", "New York"]
-    for c in centers:
-        assert c in src
-
-    # 5. Global benchmarks
+    # 4. Global benchmarks (11 cards)
     instruments = ["GIFT_NIFTY", "S&P 500", "NASDAQ", "DOW_JONES", "NIKKEI_225", "HANG_SENG", "BRENT_CRUDE", "GOLD", "USD_INR", "DXY", "US_10Y"]
     for inst in instruments:
         assert inst in src
 
-    # 6. Contract test anchors
+    # 5. Contract test anchors
     assert "INDIA_VIX" in src
     assert "Object.keys(quotes)" in src
+
 
