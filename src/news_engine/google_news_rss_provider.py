@@ -49,7 +49,16 @@ class GoogleNewsRSSProvider(BaseNewsProvider):
     def fetch_raw_news(self) -> List[Dict[str, Any]]:
         if self.xml_fixture is not None:
             try:
-                items = self._parse_rss_xml(self.xml_fixture)
+                # Use the first configured query's metadata so that the
+                # when:Nd bounded-discovery detection works in fixtures/tests.
+                first_q = self.queries[0] if self.queries else {}
+                if isinstance(first_q, dict):
+                    fix_query = first_q.get("query", "")
+                    fix_cat = first_q.get("category", "Other")
+                    fix_stream = first_q.get("stream", "OTHER")
+                else:
+                    fix_query, fix_cat, fix_stream = str(first_q), "Other", "OTHER"
+                items = self._parse_rss_xml(self.xml_fixture, fix_query, fix_cat, fix_stream)
                 self.raw_item_count = len(items)
                 self.normalized_item_count = len(items)
                 self.record_success(items)
@@ -114,8 +123,18 @@ class GoogleNewsRSSProvider(BaseNewsProvider):
         discovery_category: str = "Other",
         discovery_stream: str = "OTHER",
     ) -> List[Dict[str, Any]]:
+        import re as _re
         root = safe_parse_xml(xml_bytes)
         items = []
+
+        # Determine the when:Nd restriction of this query to assess staleness bound
+        when_match = _re.search(r'when:(\d+)([dDhH])', discovery_query)
+        when_days = None
+        if when_match:
+            qty = int(when_match.group(1))
+            unit = when_match.group(2).lower()
+            when_days = qty if unit == 'd' else qty / 24
+
         for el in root.findall('.//item')[: self.max_items_per_query]:
             title_el = el.find('title')
             link_el = el.find('link')
@@ -128,6 +147,18 @@ class GoogleNewsRSSProvider(BaseNewsProvider):
             pub_date = pub_date_el.text if pub_date_el is not None and pub_date_el.text else ""
             desc = description_el.text if description_el is not None and description_el.text else ""
             source = source_el.text if source_el is not None and source_el.text else ""
+
+            # Extract publisher domain from the source/@url attribute (available in Google News RSS)
+            publisher_domain = ""
+            if source_el is not None:
+                src_url_attr = source_el.get("url") or ""
+                if src_url_attr:
+                    try:
+                        from urllib.parse import urlparse as _urlparse
+                        parsed_host = _urlparse(src_url_attr).hostname or ""
+                        publisher_domain = parsed_host.replace("www.", "")
+                    except Exception:
+                        pass
 
             headline = title
             source_name = source
@@ -151,6 +182,20 @@ class GoogleNewsRSSProvider(BaseNewsProvider):
             if not clean_headline or not clean_source or not pub_date:
                 continue
 
+            # Google News `when:Nd` bounded-window verification model:
+            # When a query has a tight recency filter (when:2d or when:3d), the aggregator's
+            # pubDate is bounded evidence that the article appeared within that window.
+            # This isn't as strong as a verified publisher timestamp, but it is a structural
+            # guarantee from the search engine — we label it GOOGLE_DISCOVERY_BOUNDED
+            # so the temporal integrity engine can apply reduced-confidence current-eligibility
+            # rather than treating it as completely unverified.
+            if when_days is not None and when_days <= 3:
+                ts_source = "GOOGLE_DISCOVERY_BOUNDED"
+                ts_verified = True
+            else:
+                ts_source = "AGGREGATOR_DISCOVERY"
+                ts_verified = False
+
             items.append({
                 "headline": clean_headline,
                 "summary_snippet": clean_desc,
@@ -163,12 +208,13 @@ class GoogleNewsRSSProvider(BaseNewsProvider):
                 "discovery_query": discovery_query,
                 "discovery_category": discovery_category,
                 "discovery_stream": discovery_stream,
+                "publisher_domain": publisher_domain,
                 "language": "en",
                 "published_at": pub_date,
                 "discovered_at": pub_date,
                 "received_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-                "timestamp_source": "AGGREGATOR_DISCOVERY",
-                "timestamp_verified": False,
+                "timestamp_source": ts_source,
+                "timestamp_verified": ts_verified,
                 "verification_status": "unverified"
             })
         return items

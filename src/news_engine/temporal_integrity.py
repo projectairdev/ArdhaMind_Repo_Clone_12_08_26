@@ -30,7 +30,13 @@ class TemporalAssessment:
 
 
 def strict_publication_timestamp(value: Any) -> Optional[datetime]:
-    """Parse only timestamps with explicit timezone provenance."""
+    """Parse only timestamps with explicit timezone provenance.
+
+    Supports RFC 2822, ISO 8601, and official-feed date-only formats
+    such as SEBI's '20 Aug, 2026 +0530' (date + UTC offset, no time component).
+    The latter is treated as midnight (00:00:00) in the stated timezone,
+    which is conservative (official feed, authoritative date, unknown intraday time).
+    """
     if not value or not isinstance(value, str):
         return None
     raw = value.strip()
@@ -40,7 +46,17 @@ def strict_publication_timestamp(value: Any) -> Optional[datetime]:
         try:
             parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except (TypeError, ValueError, OverflowError):
-            return None
+            # Official-feed date-only patterns: '20 Aug, 2026 +0530' / '20 Aug 2026 +0530'
+            # Strip commas and try known date+offset formats
+            cleaned = raw.replace(",", "")
+            for fmt in ("%d %b %Y %z", "%d %B %Y %z"):
+                try:
+                    parsed = datetime.strptime(cleaned, fmt)
+                    break
+                except ValueError:
+                    continue
+            else:
+                return None
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         return None
     try:
@@ -98,8 +114,29 @@ def assess_publication_time(value: Any, now: datetime,
                                   reason="publication_timestamp_beyond_clock_skew_tolerance")
     age = max(0, int(delta.total_seconds()))
 
-    # If timestamp is from an aggregator discovery without verified publisher date,
-    # mark as unverified discovery (discovery-only / background)
+    # GOOGLE_DISCOVERY_BOUNDED: The Google News when:Nd filter provides a bounded-staleness
+    # guarantee that the article was discoverable within N days of this crawl.
+    # This is not the same as a verified publisher publication timestamp, but it does bound
+    # the maximum age. We treat such items as DISCOVERY_BOUNDED with reduced confidence.
+    # They may be eligible for live ranking if age is within the tight window (when:2d / when:3d).
+    if timestamp_source == "GOOGLE_DISCOVERY_BOUNDED" and timestamp_verified:
+        # Use the aggregator pubDate as an upper-bound staleness signal.
+        # Articles with when:2d queries arriving within 24h are treated as provisionally current.
+        if age <= 24 * 3600:
+            temporal_class = "CURRENT"
+        elif age <= 3 * 86400:
+            temporal_class = "RECENT"
+        else:
+            temporal_class = "STALE"
+        return TemporalAssessment(
+            observed, temporal_class, "BOUNDED", timestamp_source, "MEDIUM", age,
+            temporal_class in {"CURRENT", "RECENT"},
+            int(window.total_seconds() // 3600),
+            timestamp_verified=True,
+            reason="google_discovery_when_filter_bounded_staleness",
+        )
+
+    # Strict unverified aggregator discovery: discovery-only, never current-eligible
     if not timestamp_verified:
         temporal_class = "DISCOVERY_RECENT" if age <= 24 * 3600 else "DISCOVERY_OLDER"
         return TemporalAssessment(
