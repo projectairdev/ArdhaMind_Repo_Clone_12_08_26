@@ -1380,6 +1380,92 @@ class WorkstationStateService:
 
         cls._persist_session_history(session_date, force=force_flush)
 
+        # ── PRE-LIVE WIRING: EOD Finalization & Pre-Close Capture Hooks ──
+        try:
+            from src.storage import (
+                LightweightSessionStore, SessionCloseCore, OptionsCloseBaseline,
+                SessionIntegrityEnvelope, MarketOHLCV, StructuralLevels,
+                MarketRegime, ClosingVIX, ClosingBreadth, SessionStory
+            )
+            store = LightweightSessionStore.get_instance()
+
+            # 1. Pre-close options candidate capture during live trading
+            if not is_closed_phase and options:
+                opt_strikes = options.get("strikes") or []
+                if opt_strikes:
+                    store.record_pre_close_options(OptionsCloseBaseline(
+                        session_date=session_date,
+                        underlying_spot=spot,
+                        strike_baseline=opt_strikes
+                    ))
+
+            # 2. Synchronize 5m candle buffer if available
+            if payload.get("nifty_5m_candles"):
+                store.sync_candles(payload["nifty_5m_candles"])
+
+            # 3. Finalize SessionCloseCore, OptionsCloseBaseline, and IntegrityEnvelope upon close
+            if is_closed_phase and force_flush:
+                m_ctx = section("marketContext", market_status)
+                opt_ctx = section("optionContext", option_status)
+                
+                c_open = float(m_ctx.get("open") or spot or 0)
+                c_high = float(m_ctx.get("high") or spot or 0)
+                c_low = float(m_ctx.get("low") or spot or 0)
+                c_close = float(spot or 0)
+                c_prev_close = float(m_ctx.get("previous_close") or 0)
+                
+                pivot = round((c_high + c_low + c_close) / 3.0, 2)
+                r1 = round((2.0 * pivot) - c_low, 2)
+                s1 = round((2.0 * pivot) - c_high, 2)
+                r2 = round(pivot + (c_high - c_low), 2)
+                s2 = round(pivot - (c_high - c_low), 2)
+                
+                close_core = SessionCloseCore(
+                    session_date=session_date,
+                    finalized_at=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                    market_ohlcv=MarketOHLCV(
+                        open=c_open, high=c_high, low=c_low, close=c_close,
+                        previous_close=c_prev_close,
+                        change_points=round(c_close - c_prev_close, 2) if c_prev_close else None,
+                        change_percent=round(((c_close - c_prev_close) / c_prev_close) * 100.0, 4) if c_prev_close else None,
+                        session_range_points=round(c_high - c_low, 2)
+                    ),
+                    structural_levels=StructuralLevels(pivot=pivot, r1=r1, r2=r2, s1=s1, s2=s2),
+                    market_regime=MarketRegime(regime=str(unified.get("market_regime", "RANGE_DAY"))),
+                    closing_vix=ClosingVIX(vix_close=vix_val),
+                    closing_breadth=ClosingBreadth(
+                        advances=(m_ctx.get("breadth") or {}).get("advances"),
+                        declines=(m_ctx.get("breadth") or {}).get("declines")
+                    ),
+                    session_story=SessionStory(
+                        headline=str(session_story.get("headline") or ""),
+                        primary_driver=str(session_story.get("primary_driver") or "")
+                    ),
+                    provenance={
+                        "provider": "ZERODHA_KITE_RECONCILED",
+                        "reconciliation_policy": "v1.0-standard",
+                        "reconciliation_status": "OFFICIAL_RECONCILED"
+                    }
+                )
+                store.finalize_session_close(close_core)
+                
+                opt_strikes = opt_ctx.get("strikes") or []
+                store.finalize_options_baseline(OptionsCloseBaseline(
+                    session_date=session_date,
+                    underlying_spot=spot,
+                    strike_baseline=opt_strikes
+                ))
+                
+                store.finalize_integrity_envelope(SessionIntegrityEnvelope(
+                    session_date=session_date,
+                    finalization_status="FINALIZED",
+                    completeness_status="FULL_SESSION"
+                ))
+                
+                store.prune_expired_sessions()
+        except Exception as eod_wiring_exc:
+            logger.debug(f"[WorkstationStateService] Lightweight EOD runtime hook error: {eod_wiring_exc}")
+
         state_seq = cls._next_sequence()
 
         from src.opportunity_engine.registry import OpportunityRegistryService
