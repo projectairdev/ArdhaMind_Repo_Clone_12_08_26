@@ -46,7 +46,7 @@ export function OptionChainLadder({
   const strikes = Array.isArray(rawStrikes) ? rawStrikes : [];
 
   const expiry = propSelectedExpiry || options?.current_weekly_expiry || options?.expiry || "18 Aug 2026";
-  const [internalSortDir, setInternalSortDir] = useState<"asc" | "desc">("asc");
+  const [strikeSortDir, setStrikeSortDir] = useState<"asc" | "desc">("asc");
   const [internalViewMode, setInternalViewMode] = useState<OptionChainViewMode>("TABLE");
   const [internalSelectedStrike, setInternalSelectedStrike] = useState<number | null>(null);
 
@@ -76,9 +76,9 @@ export function OptionChainLadder({
   const sortedStrikes = useMemo(() => {
     return [...strikes].sort((a: any, b: any) => {
       const diff = safeNumber(a.strike || a.strike_price, 0) - safeNumber(b.strike || b.strike_price, 0);
-      return internalSortDir === "asc" ? diff : -diff;
+      return strikeSortDir === "asc" ? diff : -diff;
     });
-  }, [strikes, internalSortDir]);
+  }, [strikes, strikeSortDir]);
 
   // Max OI for Heatmap normalization
   const maxOiInChain = useMemo(() => {
@@ -129,9 +129,9 @@ export function OptionChainLadder({
               </th>
               <th
                 className="p-1.5 text-center text-[#E6E8EB] bg-[#08090B] border-r border-[#191D23] cursor-pointer hover:bg-[#13161A]"
-                onClick={() => setInternalSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                onClick={() => setStrikeSortDir((d) => (d === "asc" ? "desc" : "asc"))}
               >
-                STRIKE {internalSortDir === "asc" ? "↑" : "↓"}
+                STRIKE {strikeSortDir === "asc" ? "↑" : "↓"}
               </th>
               <th colSpan={activeViewMode === "HEATMAP" ? 2 : activeViewMode === "CHANGE" ? 3 : 5} className="p-1.5 text-center text-[#00C896] bg-[#00C896]/10">
                 PUTS (PE)

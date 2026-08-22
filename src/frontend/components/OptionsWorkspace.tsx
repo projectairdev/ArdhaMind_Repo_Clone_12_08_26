@@ -165,6 +165,7 @@ export function OptionsWorkspace() {
         <span>["ATM"</span>
         <span>["Expected Move"</span>
         <span>OptionChainLadder</span>
+        <span>OI Concentration</span>
         <OptionChainLadder />
         <OpenInterestHeatmap />
       </div>
