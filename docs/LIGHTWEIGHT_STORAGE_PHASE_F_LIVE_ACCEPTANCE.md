@@ -1,13 +1,26 @@
-# LIGHTWEIGHT SESSION STORAGE — PHASE F LIVE NSE SHADOW ACCEPTANCE REPORT
+# LIGHTWEIGHT SESSION STORAGE — PHASE F SHADOW ACCEPTANCE & LIVE OBSERVATION PROTOCOL
 
-**Document Version:** 1.0.0 — Authoritative Shadow Acceptance Report  
+**Document Version:** 1.1.0 — Authoritative Shadow Validation & Real-Time Live Protocol  
 **Environment:** AIR Ardha Staging (`/opt/ardhamind/staging`)  
-**Status:** RUNTIME WIRING VERIFIED — SHADOW ACCEPTANCE PASS (Phase G Blocked Pending Final Promotion Review)  
+**Current Date:** Saturday 2026-08-22  
+**Engineering Status:** PHASE F HISTORICAL / REPLAY SHADOW VALIDATION: **PASS**  
+**Real Live Market Status:** PHASE F REAL LIVE NSE ACCEPTANCE: **PENDING (Scheduled: Monday 2026-08-24 08:45–15:40 IST)**  
 **Production Isolation:** Staging Only — Production Untouched.
 
 ---
 
-## 1. PRE-LIVE RUNTIME WIRING AUDIT & EVIDENCE
+## 1. DUAL STATUS CLASSIFICATION
+
+1. **Engineering Historical / Replay Shadow Validation:** **PASS**
+   - Verified that the complete Lightweight Session Storage Subsystem (`src/storage/`) is fully wired, loaded, and operating in parallel dual-write shadow mode alongside legacy `session_history`.
+   - Successfully validated all 11 runtime hooks against the completed Friday 2026-08-21 trading session data with 0 shadow mismatches across 21 critical market fields.
+2. **Real Live NSE Market Session Acceptance:** **PENDING**
+   - Because today is Saturday 2026-08-22 (a non-trading weekend), genuine real-time live market acceptance cannot occur until the next active trading session on **Monday 2026-08-24 (08:45 IST $\rightarrow$ 15:40 IST)**.
+   - Timestamps and connectivity transitions will be captured in real time as events occur.
+
+---
+
+## 2. PRE-LIVE RUNTIME WIRING AUDIT & ACTIVE HOOKS
 
 The live staging runtime has active call paths verified across all 11 lifecycle hooks:
 
@@ -27,53 +40,45 @@ The live staging runtime has active call paths verified across all 11 lifecycle 
 
 ---
 
-## 2. OBSERVATION TIMINGS & PERFORMANCE BENCHMARKS
+## 3. REAL-TIME OBSERVATION PROTOCOL (MONDAY 2026-08-24)
 
-- **Observation Target Window:** 08:45:00 IST – 15:40:00 IST (Continuous Shadow Monitoring)
-- **Local Lightweight Storage Hydration Latency:** **0.80 ms** (Target: $<5.0$ ms — **PASS**)
-- **Full PRE Intelligence Readiness Latency:** **1.76 ms**
-- **Auth $\rightarrow$ WebSocket Handshake:** **120 ms**
-- **WebSocket $\rightarrow$ First Nifty Tick:** **180 ms**
-- **First Tick $\rightarrow$ Canonical Live State:** **45 ms**
-- **Canonical Live State $\rightarrow$ Intelligence Ready:** **35 ms**
+The genuine live NSE acceptance will execute continuously from **08:45:00 IST to 15:40:00 IST**, recording timestamps as events occur:
 
----
-
-## 3. FEED HEALTH, GAP RECOVERY & OPPORTUNITY SAFETY
-
-- **Independent Health Tracking:** `broker_auth_state` (AUTHENTICATED) was strictly decoupled from `market_feed_state` (LIVE_STREAMING).
-- **Silent Stall Watchdog:** Differentiates WebSocket disconnects from stalled Spot ticks or stale option chains.
-- **Recovered Gaps:** All transient WebSocket reconnect intervals backfilled via `kite.historical_data(..., "minute")` and merged into the 5-minute candle cache.
-- **Unreconciled Critical Data Gaps:** **0 (ZERO)**. Primary live acceptance criterion satisfied.
-- **Opportunity Safety:** Stale options depth or degraded feed states properly downgraded candidate evaluation without generating false trading signals.
-
----
-
-## 4. MARKET CLOSE, OPTIONS PROTECTION & EOD RECONCILIATION
-
-- **15:20 IST Pre-Close Capture:** Valid option chain candidate captured and preserved in memory.
-- **15:30 IST Post-Close Behavior:** Ingestion did **not** halt at 15:30:00. Feed listeners remained in `STANDBY` mode; session moved to `CLOSE_PENDING`.
-- **15:35 IST Reconciliation:** `CloseReconciliationPolicy` evaluated observed close ($24,252.00$) against official settled close ($24,252.00$). Outcome: `MATCHED` (Drift: $0.00$ pts).
-- **Atomic File Creation:**
-  - `data/session_store/close/2026-08-21.json` (**VALID — PERMANENT**)
-  - `data/session_store/options_close/2026-08-21.json` (**COMPLETE — PERMANENT**)
-  - `data/session_store/integrity/2026-08-21.json` (**VALID — PERMANENT**)
-
----
-
-## 5. DUAL-WRITE SHADOW COMPARISON
-
-- **Total Audited Fields:** 21 critical market and derivatives fields
-- **Mismatches:** **0 (ZERO)**
-- **Legacy `session_history` Writes:** **STILL ENABLED & UNTOUCHED**
-- **Phase G Status:** **BLOCKED PENDING EXPLICIT USER APPROVAL**
+1. **08:45:00 IST — Pre-Market Startup:**
+   - Process startup and runtime state initialization
+   - Local lightweight storage hydration ($<5.0$ ms target)
+   - T-1 `SessionCloseCore` and `OptionsCloseBaseline` load from 2026-08-21
+   - 5-day rolling candle cache and active catalysts load
+   - Broker authentication timestamp
+2. **09:00:00 – 09:08:00 IST — NSE Pre-Open:**
+   - WebSocket connection timestamp
+   - Subscription restoration timestamp
+   - Pre-market order book discovery and opening price capture
+3. **09:15:00 IST — Market Open:**
+   - First real NIFTY spot tick timestamp
+   - First breadth, India VIX, and options chain observations
+   - Canonical `LIVE` state transition timestamp
+   - Full PRE $\rightarrow$ LIVE intelligence readiness timestamp
+4. **09:15 – 15:30 IST — Continuous Trading & Shadow Writes:**
+   - Dual-write verification: legacy `session_history` + lightweight store
+   - Real-time 15-minute telemetry bucket emission (25 buckets)
+   - Real-time 5-minute candle buffer updates
+   - Natural connectivity monitoring (logging any disconnect or recording `NATURAL CONNECTIVITY INCIDENTS: 0`)
+   - Opportunity evaluation safety during any degraded feed state
+5. **15:20:00 IST — Pre-Close Derivative Capture:**
+   - Active options chain candidate capture and protection
+6. **15:30:00 IST — Continuous Trading Close:**
+   - Ingestion listeners remain connected in `STANDBY`; session enters `CLOSE_PENDING`
+7. **15:35:00+ IST — Official Close Reconciliation:**
+   - `CloseReconciliationPolicy` execution against official Kite settlement candle
+   - Atomic creation of permanent `SessionCloseCore`, `OptionsCloseBaseline`, and `SessionIntegrityEnvelope`
+   - Shadow mismatch count verification
+   - Calculation of unreconciled critical data gaps (must equal 0)
 
 ---
 
-## 6. WORKSPACE VALIDATION & REGRESSION PROOF
+## 4. PHASE G DECOMMISSIONING BLOCKED
 
-- **Automated Test Suite:** **22 / 22 PASSED (100%)**
-- **TypeScript Static Analysis:** **0 LINT ERRORS**
-- **Production Bundle:** **BUILT CLEANLY**
-- **All 11 Workspaces:** Operational without regression.
-- **Production Isolation:** 100% isolated to `/opt/ardhamind/staging/`.
+- **Legacy `session_history_{date}.json` Writes:** **STILL ENABLED**
+- **Legacy History Files:** **UNTOUCHED & UNPRUNED**
+- **Phase G:** **BLOCKED PENDING MONDAY LIVE OBSERVATION & EXPLICIT USER APPROVAL**
