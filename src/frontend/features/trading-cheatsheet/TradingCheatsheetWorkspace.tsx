@@ -48,8 +48,8 @@ import {
   evaluateAdaptiveScenario,
   ADAPTIVE_SCENARIO_PRESETS,
   MetricInterpretationRange
-} from "../data/tradingCheatsheet";
-import { useNavigation } from "../context/NavigationContext";
+} from "./data/tradingCheatsheet";
+import { useNavigation } from "../../context/NavigationContext";
 
 type CategoryFilter =
   | "ALL"

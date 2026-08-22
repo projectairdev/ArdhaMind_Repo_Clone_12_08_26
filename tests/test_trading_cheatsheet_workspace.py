@@ -22,8 +22,8 @@ class TestTradingCheatsheetAdaptiveWorkspace(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.data_file = Path("src/frontend/data/tradingCheatsheet.ts")
-        cls.component_file = Path("src/frontend/components/TradingCheatsheetWorkspace.tsx")
+        cls.data_file = Path("src/frontend/features/trading-cheatsheet/data/tradingCheatsheet.ts")
+        cls.component_file = Path("src/frontend/features/trading-cheatsheet/TradingCheatsheetWorkspace.tsx")
         cls.layout_file = Path("src/frontend/layout/DashboardLayout.tsx")
 
     def test_01_source_files_exist(self):

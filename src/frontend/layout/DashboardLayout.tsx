@@ -11,7 +11,7 @@ import { MarketPulseWorkspace } from "../components/MarketPulseWorkspace";
 import { OptionsWorkspace } from "../components/OptionsWorkspace";
 import { PortfolioWorkspace } from "../components/PortfolioWorkspace";
 import { MarketIntelligenceWorkspace } from "../components/MarketIntelligenceWorkspace";
-import { TradingCheatsheetWorkspace } from "../components/TradingCheatsheetWorkspace";
+import { TradingCheatsheetWorkspace } from "../features/trading-cheatsheet";
 import { NewsWorkspace, NewsSubTab } from "../components/news/NewsWorkspace";
 import { ArdhaPerformanceWorkspace } from "../components/ArdhaPerformanceWorkspace";
 import { InspectionSelection, MarketDeepDive, MarketInspectionProvider } from "../context/MarketInspectionContext";
