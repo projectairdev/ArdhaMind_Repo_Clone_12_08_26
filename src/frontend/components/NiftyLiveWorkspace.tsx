@@ -417,8 +417,24 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
 
   const temporalCtx = getTemporalSessionContext(data.state, "PRE");
 
-  const fiiNet = data.fiiFlow?.net_value != null ? Number(data.fiiFlow.net_value) : inst.fii_net_crores != null ? Number(inst.fii_net_crores) : -542.7;
-  const diiNet = data.diiFlow?.net_value != null ? Number(data.diiFlow.net_value) : inst.dii_net_crores != null ? Number(inst.dii_net_crores) : 2124.1;
+  const fiiNet = data.fiiFlow?.net_value != null
+    ? Number(data.fiiFlow.net_value)
+    : inst.fii_net_crores != null
+    ? Number(inst.fii_net_crores)
+    : inst.fii_net != null
+    ? Number(inst.fii_net)
+    : null;
+  const diiNet = data.diiFlow?.net_value != null
+    ? Number(data.diiFlow.net_value)
+    : inst.dii_net_crores != null
+    ? Number(inst.dii_net_crores)
+    : inst.dii_net != null
+    ? Number(inst.dii_net)
+    : null;
+  const netFlow = fiiNet != null && diiNet != null ? Number((fiiNet + diiNet).toFixed(1)) : null;
+
+  const scenario = report.primary_scenario || report.scenarios?.primary || ((safeArray(data.state?.trade_scenarios)[0] as any)?.plan) || report.summary || "Mixed opening with slight positive bias if Nifty holds above 24,250. Upside on breakout above 24,500.";
+  const invalidation = report.invalidation || report.invalidation_condition || ((safeArray(data.state?.trade_scenarios)[0] as any)?.invalidation) || (levels.immediate_support ? `Close below ${formatNumber(Number(levels.immediate_support), 2)} invalidates opening thesis.` : "Close below key support invalidates opening thesis.");
 
   const giftQuote = getCanonicalQuote(quotes, "GIFT_NIFTY");
   const prevCloseNum = levels.reference_close != null ? Number(levels.reference_close)
@@ -521,42 +537,42 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
                 <div>
                   <div className="flex justify-between items-center mb-0.5">
                     <span className="text-[#A5ABB4]">FII (Net Selling)</span>
-                    <span className="font-bold text-[#E5484D] air-data">
-                      {fiiNet != null ? `${fiiNet >= 0 ? "+" : ""}${formatNumber(fiiNet, 1)} Cr` : "-542.7 Cr"}
+                    <span className={`font-bold ${fiiNet == null ? "text-[#707987]" : fiiNet >= 0 ? "text-[#00C896]" : "text-[#E5484D]"} air-data`}>
+                      {fiiNet != null ? `${fiiNet >= 0 ? "+" : ""}${formatNumber(fiiNet, 1)} Cr` : "UNAVAILABLE"}
                     </span>
                   </div>
                   <div className="h-1.5 w-full bg-[#191D23] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#E5484D] rounded-full" style={{ width: "35%" }} />
+                    <div className="h-full bg-[#E5484D] rounded-full" style={{ width: fiiNet != null ? `${Math.min(100, Math.max(10, Math.abs(fiiNet) / 40))}%` : "0%" }} />
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between items-center mb-0.5">
                     <span className="text-[#A5ABB4]">DII (Net Buying)</span>
-                    <span className="font-bold text-[#00C896] air-data">
-                      {diiNet != null ? `${diiNet >= 0 ? "+" : ""}${formatNumber(diiNet, 1)} Cr` : "+2,124.1 Cr"}
+                    <span className={`font-bold ${diiNet == null ? "text-[#707987]" : diiNet >= 0 ? "text-[#00C896]" : "text-[#E5484D]"} air-data`}>
+                      {diiNet != null ? `${diiNet >= 0 ? "+" : ""}${formatNumber(diiNet, 1)} Cr` : "UNAVAILABLE"}
                     </span>
                   </div>
                   <div className="h-1.5 w-full bg-[#191D23] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#00C896] rounded-full" style={{ width: "80%" }} />
+                    <div className="h-full bg-[#00C896] rounded-full" style={{ width: diiNet != null ? `${Math.min(100, Math.max(10, Math.abs(diiNet) / 40))}%` : "0%" }} />
                   </div>
                 </div>
 
                 <div>
                   <div className="flex justify-between items-center mb-0.5">
                     <span className="font-bold text-[#E6E8EB]">Combined Net Flow</span>
-                    <span className="font-bold text-[#00C896] air-data">
-                      {netFlow != null ? `${netFlow >= 0 ? "+" : ""}${formatNumber(netFlow, 1)} Cr` : "+1,581.4 Cr"}
+                    <span className={`font-bold ${netFlow == null ? "text-[#707987]" : netFlow >= 0 ? "text-[#00C896]" : "text-[#E5484D]"} air-data`}>
+                      {netFlow != null ? `${netFlow >= 0 ? "+" : ""}${formatNumber(netFlow, 1)} Cr` : "UNAVAILABLE"}
                     </span>
                   </div>
                   <div className="h-1.5 w-full bg-[#191D23] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#00C896] rounded-full" style={{ width: "65%" }} />
+                    <div className="h-full bg-[#00C896] rounded-full" style={{ width: netFlow != null ? `${Math.min(100, Math.max(10, Math.abs(netFlow) / 40))}%` : "0%" }} />
                   </div>
                 </div>
               </div>
 
               <div className="pt-1">
-                <PositioningSpectrumBar netValue={netFlow ?? 1581.4} />
+                <PositioningSpectrumBar netValue={netFlow} />
               </div>
             </div>
           </div>

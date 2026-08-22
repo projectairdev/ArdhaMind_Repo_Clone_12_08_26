@@ -1195,7 +1195,6 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
 
     if (connected === "true" || connected === "connected" || loginStatus === "success") {
       window.history.replaceState({}, document.title, window.location.pathname);
-      setWorkspaceContextState(prev => ({ ...prev, brokerState: "CONNECTING" }));
       syncBroker(true);
     } else if (loginStatus === "failed") {
       const reason = params.get("reason");
