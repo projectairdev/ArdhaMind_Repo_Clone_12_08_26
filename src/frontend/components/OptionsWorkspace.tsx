@@ -96,8 +96,8 @@ export function OptionsWorkspace() {
   const totalPutOiCr = options.total_put_oi_cr != null ? Number(options.total_put_oi_cr) : (totalPutOi ? Number((totalPutOi / 10000000).toFixed(2)) : null);
   const totalOiCr = options.total_oi_cr != null ? Number(options.total_oi_cr) : (totalOi ? Number((totalOi / 10000000).toFixed(2)) : null);
 
-  const callWall = options.highest_call_oi_strike ?? 24500;
-  const putWall = options.highest_put_oi_strike ?? 24300;
+  const callWall = options.highest_call_oi_strike != null && Number(options.highest_call_oi_strike) > 0 ? Number(options.highest_call_oi_strike) : null;
+  const putWall = options.highest_put_oi_strike != null && Number(options.highest_put_oi_strike) > 0 ? Number(options.highest_put_oi_strike) : null;
 
   const callRatioPct = totalCallOi && totalOi ? Math.round((totalCallOi / totalOi) * 100) : 45;
   const putRatioPct = 100 - callRatioPct;
@@ -330,11 +330,11 @@ export function OptionsWorkspace() {
               <div className="text-[8.5px] uppercase font-bold text-[#707987]">KEY CONCENTRATIONS</div>
               <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center">
                 <span className="text-[#E5484D] font-bold text-[9.5px]">CALL WALL (RES):</span>
-                <span className="font-bold text-[#E6E8EB] air-data text-[13px]">{formatNumber(callWall, 0)}</span>
+                <span className="font-bold text-[#E6E8EB] air-data text-[13px]">{callWall != null ? formatNumber(callWall, 0) : "UNAVAILABLE"}</span>
               </div>
               <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center">
                 <span className="text-[#00C896] font-bold text-[9.5px]">PUT WALL (SUPP):</span>
-                <span className="font-bold text-[#E6E8EB] air-data text-[13px]">{formatNumber(putWall, 0)}</span>
+                <span className="font-bold text-[#E6E8EB] air-data text-[13px]">{putWall != null ? formatNumber(putWall, 0) : "UNAVAILABLE"}</span>
               </div>
               <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center">
                 <span className="text-[#E59700] font-bold text-[9.5px]">MAX PAIN PIN:</span>
