@@ -1,5 +1,6 @@
+// src/frontend/components/WorkstationTopBar.tsx
 import React, { useEffect, useState } from "react";
-import { Menu, X, Settings as SettingsIcon, Clock, ShieldCheck, Zap } from "lucide-react";
+import { Menu, X, Settings as SettingsIcon, Clock, Sparkles } from "lucide-react";
 import { useBrokerStatus, useWorkstationState } from "../context/WorkstationStateContext";
 import { useNavigation } from "../context/NavigationContext";
 import {
@@ -24,11 +25,11 @@ export function WorkstationTopBar({
   const { canonicalState, lastValidState } = useWorkstationState();
   const { data: broker } = useBrokerStatus();
   const { navigateTo, assistantOpen, toggleAssistant } = useNavigation();
-  const [clockIst, setClockIst] = useState({ fullDate: "", compactDate: "", timeIst: "" });
+  const [clockIst, setClockIst] = useState({ dateStr: "", timeStr: "" });
 
   useEffect(() => {
     if ((import.meta as any).env?.VITE_STAGING_MODE === "true") {
-      document.title = "[STAGING] AIR ArdhaMind";
+      document.title = "[STAGING] ARDHA Workstation";
     }
   }, []);
 
@@ -36,20 +37,14 @@ export function WorkstationTopBar({
   useEffect(() => {
     const updateClock = () => {
       const now = new Date();
-      const fullDate = new Intl.DateTimeFormat("en-GB", {
+      const dateStr = new Intl.DateTimeFormat("en-GB", {
         timeZone: "Asia/Kolkata",
         day: "2-digit",
         month: "short",
         year: "numeric",
       }).format(now);
 
-      const compactDate = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Asia/Kolkata",
-        day: "2-digit",
-        month: "short",
-      }).format(now);
-
-      const timeIst = new Intl.DateTimeFormat("en-IN", {
+      const timeStr = new Intl.DateTimeFormat("en-IN", {
         timeZone: "Asia/Kolkata",
         hour: "numeric",
         minute: "2-digit",
@@ -59,7 +54,7 @@ export function WorkstationTopBar({
         .format(now)
         .toUpperCase();
 
-      setClockIst({ fullDate, compactDate, timeIst });
+      setClockIst({ dateStr, timeStr });
     };
 
     updateClock();
@@ -97,16 +92,6 @@ export function WorkstationTopBar({
     ? "VERIFYING"
     : "DISCONNECTED";
 
-  const brokerDotClass = isVerified
-    ? "bg-[#00C896]"
-    : isAuthRequired
-    ? "bg-[#E59700]"
-    : isReconnecting
-    ? "bg-[#E59700]"
-    : isUnverified
-    ? "bg-[#8B5CF6]"
-    : "bg-[#E5484D]";
-
   const brokerTextClass = isVerified
     ? "text-[#00C896]"
     : isAuthRequired
@@ -117,15 +102,21 @@ export function WorkstationTopBar({
     ? "text-[#8B5CF6]"
     : "text-[#E5484D]";
 
+  const marketTextClass = sessionBadge.isOpen
+    ? "text-[#00C896]"
+    : sessionBadge.isPreMarket
+    ? "text-[#38BDF8]"
+    : "text-[#E59700]";
+
   const staging = (import.meta as any).env?.VITE_STAGING_MODE === "true";
 
   return (
     <header
       data-testid="phase1-top-bar"
-      className="sticky top-0 z-50 grid grid-cols-[auto_1fr_auto] h-[56px] shrink-0 items-center border-b border-[#242830] bg-[#050607] px-3.5 sm:px-4 font-mono text-[11px] w-full min-w-0"
+      className="sticky top-0 z-50 flex h-14 md:h-16 shrink-0 items-center justify-between border-b border-[#191D23] bg-[#050607] px-3.5 sm:px-5 font-mono text-[11px] w-full min-w-0"
     >
-      {/* ── ZONE 1: LEFT BRAND CLUSTER ── */}
-      <div className="justify-self-start flex items-center gap-2.5 min-w-0 shrink-0">
+      {/* ── LEFT: ARDHA BRAND IDENTITY ── */}
+      <div className="flex items-center gap-2.5 min-w-0 shrink-0">
         <button
           aria-label="Toggle navigation"
           title="Toggle navigation"
@@ -136,93 +127,101 @@ export function WorkstationTopBar({
         </button>
 
         <div className="flex items-center gap-2 min-w-0">
-          <ArdhaMindBrandMark size={24} />
-          <span className="text-[15px] font-bold tracking-tight text-[#E6E8EB] whitespace-nowrap">ArdhaMind</span>
+          <ArdhaMindBrandMark size={22} />
+          <span className="text-sm font-bold tracking-tight text-[#E6E8EB] whitespace-nowrap">ARDHA</span>
           {staging && (
-            <span className="rounded border border-[#E59700]/40 bg-[#E59700]/10 px-1.5 py-0.5 text-[9.5px] font-bold text-[#E59700] uppercase shrink-0">
+            <span className="rounded border border-[#E59700]/40 bg-[#E59700]/10 px-1.5 py-0.5 text-[8.5px] font-bold text-[#E59700] uppercase shrink-0 tracking-wider">
               STAGING
             </span>
           )}
         </div>
       </div>
 
-      {/* ── ZONE 2: CENTER GLOBAL STATUS CLUSTER ── */}
-      <div className="justify-self-center hidden sm:flex items-center gap-3 text-[10px] bg-[#0B0D10] border border-[#191D23] px-3 py-1 rounded-[3px] shrink-0">
-        {/* Market Status (Navigates to Market Nifty) */}
+      {/* ── RIGHT: STATUS + ACTIONS + CLOCK CLUSTER ── */}
+      <div className="flex items-center gap-3 sm:gap-3.5 shrink-0 text-[#A5ABB4]">
+        {/* 1. Market Status (Text-only, no icon, no large box) */}
         <button
           onClick={() => navigateTo({ workspace: "market", tab: "nifty", section: "market-nifty-session-summary" })}
           title="View Market Command (NIFTY)"
-          aria-label="Market Status — View Market Command"
-          className="flex items-center gap-1.5 whitespace-nowrap hover:bg-[#13161A] px-1 py-0.5 rounded cursor-pointer transition focus:outline-none focus:ring-1 focus:ring-[#38BDF8]"
+          aria-label="Market Status"
+          className="hidden sm:flex items-center gap-1.5 text-[10.5px] hover:opacity-80 transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#38BDF8] rounded px-1"
         >
-          <span className={`h-2 w-2 rounded-full shrink-0 ${sessionBadge.dotClass}`} />
           <span className="text-[#707987]">Market:</span>
-          <span className={`font-bold ${sessionBadge.isOpen ? "text-[#00C896]" : sessionBadge.isPreMarket ? "text-[#38BDF8]" : "text-[#E59700]"}`}>
+          <span className={`font-bold uppercase tracking-tight ${marketTextClass}`}>
             {sessionBadge.label}
           </span>
         </button>
 
-        <span className="text-[#242830]">|</span>
+        {/* Separator */}
+        <span className="hidden sm:inline text-[#242830] select-none text-[12px]">|</span>
 
-        {/* Broker Status (Navigates to Settings Connections Broker Integration) */}
+        {/* 2. Broker Status (Text-only, no icon, no large box) */}
         <button
           onClick={() => navigateTo({ workspace: "settings", tab: "connections", section: "settings-connections-broker" })}
           title="View Broker Authentication & Integration"
-          aria-label="Broker Status — View Broker Connections"
-          className="flex items-center gap-1.5 whitespace-nowrap hover:bg-[#13161A] px-1 py-0.5 rounded cursor-pointer transition focus:outline-none focus:ring-1 focus:ring-[#38BDF8]"
+          aria-label="Broker Status"
+          className="hidden sm:flex items-center gap-1.5 text-[10.5px] hover:opacity-80 transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#38BDF8] rounded px-1"
         >
-          <span
-            className={`h-2 w-2 rounded-full shrink-0 ${brokerDotClass}`}
-          />
           <span className="text-[#707987]">Broker:</span>
-          <span
-            className={`font-bold ${brokerTextClass}`}
-          >
+          <span className={`font-bold uppercase tracking-tight ${brokerTextClass}`}>
             {brokerLabel}
           </span>
         </button>
-      </div>
 
-      {/* ── ZONE 3: RIGHT GLOBAL ACTIONS & IST CLOCK ── */}
-      <div className="justify-self-end flex items-center gap-2.5 shrink-0 text-[#A5ABB4]">
-        {/* Live Assistant Button */}
-        <button
-          onClick={toggleAssistant}
-          title="Live Assistant — Conversational Intelligence"
-          aria-label="Live Assistant — Conversational Intelligence"
-          className={`hidden md:flex items-center gap-1.5 text-[9.5px] font-bold border px-2.5 py-1 rounded-[3px] transition cursor-pointer shrink-0 ${
-            assistantOpen
-              ? "border-[#8B5CF6] bg-[#8B5CF6]/30 text-white shadow-[0_0_10px_rgba(139,92,246,0.3)]"
-              : "border-[#8B5CF6]/40 bg-[#8B5CF6]/10 text-[#8B5CF6] hover:bg-[#8B5CF6]/20"
-          }`}
-        >
-          <span className="h-1.5 w-1.5 rounded-full bg-[#8B5CF6] shrink-0 animate-pulse" />
-          <span>Live Assistant</span>
-        </button>
+        {/* Separator */}
+        <span className="hidden sm:inline text-[#242830] select-none text-[12px]">|</span>
 
-        {/* Settings Button */}
-        <button
-          onClick={() => navigateTo({ workspace: "settings", tab: "overview" })}
-          title="Settings &amp; System Diagnostics"
-          className={`flex items-center gap-1.5 rounded border px-2.5 py-1 text-[10px] font-bold transition cursor-pointer shrink-0 ${
-            settingsOpen
-              ? "border-[#38BDF8] bg-[#38BDF8]/15 text-[#38BDF8]"
-              : "border-[#242830] bg-[#0B0D10] text-[#E6E8EB] hover:bg-[#13161A]"
-          }`}
-        >
-          <SettingsIcon size={13} className={settingsOpen ? "text-[#38BDF8]" : "text-[#A5ABB4]"} />
-          <span>Settings</span>
-        </button>
+        {/* 3. Live Assistant (Icon-only with hover tooltip) */}
+        <div className="relative group flex items-center">
+          <button
+            onClick={toggleAssistant}
+            aria-label="Live Assistant"
+            className={`flex h-8 w-8 items-center justify-center rounded-[3px] border transition cursor-pointer ${
+              assistantOpen
+                ? "border-[#8B5CF6] bg-[#8B5CF6]/20 text-[#C084FC] shadow-[0_0_8px_rgba(139,92,246,0.25)]"
+                : "border-[#242830] bg-[#0B0D10] text-[#707987] hover:border-[#8B5CF6]/50 hover:text-[#C084FC] hover:bg-[#13161A]"
+            }`}
+          >
+            <Sparkles size={15} />
+          </button>
+          {/* Tooltip */}
+          <div className="absolute right-0 top-full mt-1.5 hidden group-hover:flex items-center z-50 pointer-events-none">
+            <div className="rounded border border-[#242830] bg-[#0E1013] px-2 py-1 text-[9.5px] font-mono text-[#E6E8EB] shadow-xl whitespace-nowrap">
+              Live Assistant
+            </div>
+          </div>
+        </div>
 
-        <span className="hidden xl:inline text-[#242830]">|</span>
+        {/* 4. Settings (Icon-only with hover tooltip) */}
+        <div className="relative group flex items-center">
+          <button
+            onClick={onOpenSettings}
+            aria-label="Settings"
+            className={`flex h-8 w-8 items-center justify-center rounded-[3px] border transition cursor-pointer ${
+              settingsOpen
+                ? "border-[#38BDF8] bg-[#38BDF8]/20 text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.25)]"
+                : "border-[#242830] bg-[#0B0D10] text-[#707987] hover:border-[#38BDF8]/50 hover:text-[#E6E8EB] hover:bg-[#13161A]"
+            }`}
+          >
+            <SettingsIcon size={15} />
+          </button>
+          {/* Tooltip */}
+          <div className="absolute right-0 top-full mt-1.5 hidden group-hover:flex items-center z-50 pointer-events-none">
+            <div className="rounded border border-[#242830] bg-[#0E1013] px-2 py-1 text-[9.5px] font-mono text-[#E6E8EB] shadow-xl whitespace-nowrap">
+              Settings
+            </div>
+          </div>
+        </div>
 
-        {/* Centralized Live IST Clock */}
-        <div className="hidden lg:flex items-center gap-1.5 text-[9.5px] font-mono shrink-0">
-          <Clock size={11} className="text-[#38BDF8]" />
-          <span className="text-[#707987] hidden xl:inline">{clockIst.fullDate}</span>
-          <span className="text-[#707987] xl:hidden">{clockIst.compactDate}</span>
-          <span className="text-[#707987]">·</span>
-          <span className="text-[#38BDF8] font-bold">{clockIst.timeIst} IST</span>
+        {/* Separator */}
+        <span className="hidden md:inline text-[#242830] select-none text-[12px]">|</span>
+
+        {/* 5. Clock / Date Region (Clock icon followed by date & time, NO calendar icon) */}
+        <div className="hidden md:flex items-center gap-1.5 text-[10px] font-mono shrink-0">
+          <Clock size={13} className="text-[#38BDF8]" />
+          <span className="text-[#707987]">{clockIst.dateStr}</span>
+          <span className="text-[#333942] select-none">·</span>
+          <span className="text-[#38BDF8] font-bold">{clockIst.timeStr} IST</span>
         </div>
       </div>
     </header>
