@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import os
 import json
+import logging
 import atexit
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import Lock
 from typing import Any
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from src.news_engine.safe_utils import atomic_write_json
 from src.application.data_quality_service import DataQualityService
