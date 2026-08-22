@@ -12,7 +12,6 @@ import { MarketStory } from "./MarketStory";
 import { NewsIntelligence } from "./NewsIntelligence";
 import { IntradayAssistant } from "./IntradayAssistant";
 import { NiftyLiveWorkspace as NiftyLiveView } from "./NiftyLiveWorkspace";
-import { SettingsDashboard } from "./SettingsDashboard";
 import { SettingsWorkspace as SettingsWorkspaceNew } from "./settings/SettingsWorkspace";
 import { ErrorBoundary } from "./ErrorBoundary";
 import { TodaysAnalysisSynthesis } from "./UnifiedIntelligencePanel";

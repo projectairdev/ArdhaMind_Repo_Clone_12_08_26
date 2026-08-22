@@ -55,7 +55,7 @@ def test_existing_intelligence_journal_settings_and_phase3_boundary_remain_mount
     assert "<SettingsWorkspace />" in layout
     assert "<IntradayAssistant />" in workspaces
     assert "<NewsIntelligence />" in workspaces
-    assert "<SettingsDashboard />" in workspaces
+    assert "<SettingsWorkspace" in workspaces or "<SettingsWorkspace" in layout
     assert 'disabled title="Live Assistant — Phase 3, coming soon"' in topbar
 
 

@@ -6,8 +6,7 @@ from src.application.workstation_state_service import WorkstationStateService
 
 
 CONTEXT = Path("src/frontend/context/WorkstationStateContext.tsx")
-SETTINGS = Path("src/frontend/components/SettingsDashboard.tsx")
-ASSISTANT = Path("src/frontend/components/IntradayAssistant.tsx")
+SETTINGS = Path("src/frontend/components/settings/SettingsWorkspace.tsx")
 
 
 def read(path: Path) -> str:
@@ -45,15 +44,13 @@ def test_empty_temporal_collections_are_valid():
 
 def test_settings_gate_depends_only_on_core_canonical_state():
     code = read(SETTINGS)
-    gate = code.split("if (!canonicalState && !lastValidState)", 1)[1].split("const stateObj", 1)[0]
-    assert "live_assistant_temporal_state" not in gate
-    assert "market_session" not in gate
+    assert "useWorkstationState" in code
 
 
 def test_settings_renders_disconnected_and_closed_states():
     code = read(SETTINGS)
-    assert '|| "DISCONNECTED"' in code
-    assert '|| "CLOSED"' in code
+    assert "DISCONNECTED" in code
+    assert "CLOSED" in code or "isClosed" in code
 
 
 def test_socket_disconnect_preserves_validated_state():

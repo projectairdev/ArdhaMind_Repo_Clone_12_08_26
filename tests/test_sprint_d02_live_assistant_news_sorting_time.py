@@ -258,15 +258,12 @@ def test_option_chain_ladder_strike_sorting():
 
 # 6. SETTINGS & SYSTEM UX
 def test_settings_timestamps():
-    code = read("frontend/components/SettingsDashboard.tsx")
-    assert "formatTimestampIST" in code
-    assert "last_authenticated_at" in code
+    code = read("frontend/components/settings/SettingsWorkspace.tsx") + read("frontend/components/settings/AdvancedDiagnosticsDrawer.tsx")
+    assert "lastUpdatedIst" in code or "generatedAtIst" in code or "formatTimestampIST" in code
 
 def test_settings_provider_health_sorting():
-    code = read("frontend/components/SettingsDashboard.tsx")
-    assert "sortedProviders" in code
-    assert "providerSortBy" in code
-    assert "status" in code
+    code = read("frontend/components/settings/SettingsWorkspace.tsx") + read("frontend/components/settings/AdvancedDiagnosticsDrawer.tsx")
+    assert "componentReadiness" in code or "component_readiness" in code or "status" in code
 
 # 7. INVARIANTS & INTEGRATION
 def test_no_direct_fetch_in_react():

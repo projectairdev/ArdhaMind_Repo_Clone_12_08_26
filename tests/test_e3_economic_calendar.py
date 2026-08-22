@@ -167,7 +167,7 @@ def test_workspace_ui_contains_required_calendar_surfaces():
         assert label in news_ui
     assistant = (root / "IntradayAssistant.tsx").read_text(encoding="utf-8")
     assert "WHAT MATTERS NEXT" in assistant and "nearestSupport" in assistant and "nearestResistance" in assistant
-    assert "Economic Calendar Provider Health" in (root / "SettingsDashboard.tsx").read_text(encoding="utf-8")
+    assert "Macro Calendar" in (root / "settings/SettingsWorkspace.tsx").read_text(encoding="utf-8")
 
 
 def test_no_production_calendar_fixture_or_synthetic_fallback():

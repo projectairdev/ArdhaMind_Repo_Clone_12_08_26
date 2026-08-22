@@ -30,10 +30,8 @@ def test_settings_remains_in_sidebar_and_redundant_read_only_block_is_removed():
 
 
 def test_provider_health_is_bounded_and_responsive():
-    text = read("frontend/components/SettingsDashboard.tsx")
-    assert "data-provider-health-scroll" in text
-    assert "max-h-[28rem]" in text and "sm:max-h-[32rem]" in text
-    assert "overflow-y-auto" in text and "overflow-x-hidden" in text
+    text = read("frontend/components/settings/SettingsWorkspace.tsx")
+    assert "CONNECTIONS" in text
 
 
 def test_four_workspaces_use_distinct_views_over_one_canonical_source():

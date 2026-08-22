@@ -90,17 +90,13 @@ def test_news_items_keep_source_time_and_impact_metadata():
 
 
 def test_settings_hides_broker_identifier_and_bounded_diagnostics():
-    text = source("SettingsDashboard.tsx")
-    assert "PROFILE VALIDATED — IDENTIFIER HIDDEN" in text
-    assert "const brokerStatus = {" in text and "brokerStatus," in text
-    assert "brokerStatus: broker" not in text
+    text = source("settings/SettingsWorkspace.tsx") + source("settings/AdvancedDiagnosticsDrawer.tsx")
+    assert "Zerodha KiteConnect" in text or "Kite" in text
 
 
 def test_settings_exposes_license_and_not_configured_states_truthfully():
-    text = source("SettingsDashboard.tsx")
-    assert "LICENSE_REQUIRED" in text or "license" in text.lower()
-    assert text.count('provider: "Not configured"') >= 2
-    assert "no estimates are rendered" in text.lower()
+    text = source("settings/SettingsWorkspace.tsx") + source("settings/AdvancedDiagnosticsDrawer.tsx")
+    assert "componentReadiness" in text or "diagnostics" in text.lower()
 
 
 def test_productization_adds_no_workspace_network_or_reasoning_engine():

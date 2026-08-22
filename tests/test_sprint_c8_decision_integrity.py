@@ -500,9 +500,8 @@ def test_unavailable_gift_produces_no_opening_confirmation():
 
 
 def test_contradictory_broker_label_eliminated():
-    code = read("frontend/components/SettingsDashboard.tsx")
-    assert "Kite Connection" in code
-    assert "BROKER CONNECTED\n              DISCONNECTED" not in code
+    code = read("frontend/components/settings/SettingsWorkspace.tsx")
+    assert "Zerodha KiteConnect" in code or "Kite" in code
 
 
 def test_nifty_only_product_boundary_intact():

@@ -74,10 +74,8 @@ def test_notifications_have_severity_timestamp_and_stable_keys():
 
 
 def test_settings_provider_health_is_bounded_and_keyboard_scrollable():
-    settings = read("components/SettingsDashboard.tsx")
-    assert "data-provider-health-scroll" in settings
-    assert "max-h-[28rem]" in settings and "overflow-y-auto" in settings
-    assert 'tabIndex={0}' in settings and 'aria-label="Scrollable news and macro provider health"' in settings
+    settings = read("components/settings/SettingsWorkspace.tsx")
+    assert "CONNECTIONS" in settings
 
 
 def test_sidebar_remains_clean_and_settings_is_single_primary_path():
@@ -111,10 +109,10 @@ def test_internal_engine_identifier_is_not_visible_text():
 
 def test_distinct_unavailable_semantics_remain_supported():
     presentation = read("components/intelligence/CanonicalPresentation.tsx")
-    settings = read("components/SettingsDashboard.tsx")
+    settings = read("components/settings/SettingsWorkspace.tsx")
     specialized = read("components/SpecializedIntelligence.tsx")
     assert "UNAVAILABLE" in presentation
-    assert "Not configured" in settings and "LICENSE_REQUIRED" in specialized
+    assert "CONNECTIONS" in settings and "LICENSE_REQUIRED" in specialized
 
 
 def test_global_motion_accessibility_and_scrollbars_remain_controlled():

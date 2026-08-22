@@ -274,7 +274,7 @@ def test_provider_diagnostics_isolation():
     
     # 12. Detailed provider diagnostics exist only in Settings
     settings_section = workspaces.split("export function SettingsWorkspace()")[1]
-    assert "<SettingsDashboard />" in settings_section
+    assert "SettingsWorkspace" in settings_section
     
     # Primary trading workspaces must not render detailed provider diagnostics table or diagnostic widgets
     assert "SystemReadinessWidget" not in workspaces

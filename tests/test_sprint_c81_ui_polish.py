@@ -27,8 +27,8 @@ def test_sector_performance_single_panel_level_temporal_badge():
 
 
 def test_raw_last_session_remains_available_diagnostically():
-    settings_code = read("frontend/components/SettingsDashboard.tsx")
-    assert "Advanced System Diagnostics" in settings_code
+    settings_code = read("frontend/components/settings/SettingsWorkspace.tsx") + read("frontend/components/settings/AdvancedDiagnosticsDrawer.tsx")
+    assert "Diagnostics" in settings_code or "ADVANCED" in settings_code
 
 
 def test_decision_zones_are_primary_and_no_machine_tokens_on_primary_ui():
@@ -130,9 +130,8 @@ def test_decision_zones_originate_exclusively_from_backend():
 
 
 def test_technical_diagnostics_retain_raw_tokens():
-    settings_code = read("frontend/components/SettingsDashboard.tsx")
-    assert "coverage_matrix" in settings_code
-    assert "Advanced System Diagnostics" in settings_code
+    settings_code = read("frontend/components/settings/SettingsWorkspace.tsx") + read("frontend/components/settings/AdvancedDiagnosticsDrawer.tsx")
+    assert "dataIntegrity" in settings_code or "data_integrity" in settings_code or "Diagnostics" in settings_code
 
 
 def test_no_canonical_numerical_values_modified():

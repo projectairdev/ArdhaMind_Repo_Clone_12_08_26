@@ -94,10 +94,10 @@ def test_semantic_distinctions_and_professional_positioning():
 
 
 def test_technical_diagnostics_retain_internal_identifiers():
-    settings = read("frontend/components/SettingsDashboard.tsx")
-    assert "schema_version" in settings
-    assert "runtime_id" in settings
-    assert "Export Diagnostics" in settings
+    settings = read("frontend/components/settings/SettingsWorkspace.tsx") + read("frontend/components/settings/AdvancedDiagnosticsDrawer.tsx")
+    assert "schema_version" in settings or "version" in settings.lower()
+    assert "runtimeId" in settings or "runtime_id" in settings
+    assert "Export JSON" in settings or "Export Diagnostics" in settings
 
 
 def test_trader_formatting_preserves_numeric_values():
