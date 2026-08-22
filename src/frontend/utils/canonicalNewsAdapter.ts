@@ -87,6 +87,13 @@ export interface ProviderHealthItem {
   itemCount: number;
 }
 
+export interface SectorImpactRow {
+  sector: string;
+  count: number;
+  barPercent: number;
+  tone: "POSITIVE" | "NEGATIVE" | "NEUTRAL" | "MIXED";
+}
+
 export interface NewsPresentationState {
   marketTone: "POSITIVE" | "NEGATIVE" | "MIXED" | "NEUTRAL";
   newsRisk: "LOW" | "MEDIUM" | "ELEVATED" | "HIGH";
@@ -103,6 +110,7 @@ export interface NewsPresentationState {
   topStory: CanonicalNewsStory | null;
   impactCounts: { high: number; medium: number; low: number; total: number };
   sectorImpactMap: Record<string, "POSITIVE" | "NEGATIVE" | "NEUTRAL" | "MIXED" | "UNAVAILABLE">;
+  sectorImpactRows: SectorImpactRow[];
   providerHealthList: ProviderHealthItem[];
 
   topDrivers: Array<{ rank: number; name: string; state: string; impact: string; direction: string; whyItMatters: string; active: boolean }>;
@@ -530,6 +538,48 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
   const newsRisk: "LOW" | "MEDIUM" | "ELEVATED" | "HIGH" =
     highCount >= 4 ? "HIGH" : highCount >= 2 ? "ELEVATED" : medCount >= 3 ? "MEDIUM" : "LOW";
 
+  const sectorStats: Record<string, { count: number; pos: number; neg: number; neu: number }> = {
+    "BANKING & FINANCIALS": { count: 0, pos: 0, neg: 0, neu: 0 },
+    "IT & TECH": { count: 0, pos: 0, neg: 0, neu: 0 },
+    "AUTO & MOBILITY": { count: 0, pos: 0, neg: 0, neu: 0 },
+    "METALS & MINING": { count: 0, pos: 0, neg: 0, neu: 0 },
+    "ENERGY & OIL": { count: 0, pos: 0, neg: 0, neu: 0 },
+    "PHARMA & HEALTH": { count: 0, pos: 0, neg: 0, neu: 0 },
+  };
+
+  liveFeed.forEach((story) => {
+    story.affectedSectors.forEach((sec) => {
+      const sUpper = sec.toUpperCase();
+      const key =
+        sUpper.includes("BANK") || sUpper.includes("FIN") ? "BANKING & FINANCIALS" :
+        sUpper.includes("IT") || sUpper.includes("TECH") ? "IT & TECH" :
+        sUpper.includes("AUTO") ? "AUTO & MOBILITY" :
+        sUpper.includes("METAL") ? "METALS & MINING" :
+        sUpper.includes("ENERGY") || sUpper.includes("OIL") ? "ENERGY & OIL" :
+        sUpper.includes("PHARMA") ? "PHARMA & HEALTH" : null;
+      if (key && sectorStats[key]) {
+        sectorStats[key].count++;
+        if (story.expectedDirection === "POSITIVE") sectorStats[key].pos++;
+        else if (story.expectedDirection === "NEGATIVE") sectorStats[key].neg++;
+        else sectorStats[key].neu++;
+      }
+    });
+  });
+
+  const maxSectorCount = Math.max(1, ...Object.values(sectorStats).map((s) => s.count));
+
+  const sectorImpactRows: SectorImpactRow[] = Object.entries(sectorStats).map(([sector, stats]) => {
+    const tone: "POSITIVE" | "NEGATIVE" | "NEUTRAL" | "MIXED" =
+      stats.pos > stats.neg ? "POSITIVE" : stats.neg > stats.pos ? "NEGATIVE" : "NEUTRAL";
+    const barPercent = stats.count > 0 ? Math.min(100, Math.max(25, Math.round((stats.count / maxSectorCount) * 100))) : 15;
+    return {
+      sector,
+      count: stats.count,
+      barPercent,
+      tone,
+    };
+  });
+
   const sectorImpactMap: Record<string, "POSITIVE" | "NEGATIVE" | "NEUTRAL" | "MIXED" | "UNAVAILABLE"> = {
     BANKING: posCount > 0 ? "POSITIVE" : "NEUTRAL",
     IT: posCount > 0 ? "POSITIVE" : "NEUTRAL",
@@ -657,6 +707,7 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
     topStory,
     impactCounts: { high: highCount, medium: medCount, low: lowCount, total: liveFeed.length },
     sectorImpactMap,
+    sectorImpactRows,
     providerHealthList,
     topDrivers,
     positiveCatalysts,

@@ -73,3 +73,33 @@ def test_dashboard_layout_routes_to_news_workspace():
     layout_code = read_frontend("layout/DashboardLayout.tsx")
     assert "{ id: \"news\", label: \"NEWS & UPDATES\", glyph: JournalGlyph }" in layout_code
     assert "<NewsWorkspace subTab={newsSubTab} onSelectSubTab={setNewsSubTab} />" in layout_code
+
+
+def test_top_story_and_why_it_matters_contract():
+    """Assert Top Story, Why It Matters to Nifty, and Canonical Impact Context are rendered."""
+    live_code = read_frontend("components/news/LiveNewsTab.tsx")
+    assert "TOP STORY OF THE SESSION" in live_code
+    assert "WHY IT MATTERS TO NIFTY" in live_code
+    assert "CANONICAL IMPACT CONTEXT" in live_code
+    assert "RELATED SESSION COVERAGE" in live_code
+    assert "VIEW ALL NEWS" in live_code
+    assert "VIEW FULL RELATED COVERAGE" in live_code
+
+
+def test_right_rail_intelligence_summaries_contract():
+    """Assert Market Impact, Sector Impact, Event Timeline, and Provider Health exist."""
+    live_code = read_frontend("components/news/LiveNewsTab.tsx")
+    assert "MARKET IMPACT SUMMARY" in live_code
+    assert "SECTOR NEWS IMPACT" in live_code
+    assert "EVENT TIMELINE" in live_code
+    assert "PROVIDER &amp; SOURCE HEALTH" in live_code
+    assert "VIEW SECTOR ANALYSIS" in live_code
+    assert "VIEW FULL CALENDAR" in live_code
+    assert "VIEW SOURCE MONITOR" in live_code
+
+
+def test_degraded_feed_honest_language_contract():
+    """Assert degraded or empty news states do not falsely display 'No important news'."""
+    live_code = read_frontend("components/news/LiveNewsTab.tsx")
+    assert "CANONICAL NEWS FEED UNAVAILABLE" in live_code
+

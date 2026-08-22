@@ -98,7 +98,7 @@ export function NewsWorkspace({
       <div className="w-full min-w-0">
         {currentSubTab === "live_news" ? (
           <div id="news-live-feed">
-            <LiveNewsTab pres={pres} />
+            <LiveNewsTab pres={pres} onSelectSubTab={handleSubTabChange} />
           </div>
         ) : currentSubTab === "catalysts" ? (
           <div id="news-catalysts">
