@@ -121,54 +121,54 @@ export function OptionChainLadder({
 
       {/* Table Container */}
       <div className="overflow-x-auto flex-1 bg-[#08090B] border border-[#191D23] rounded-[2px]" tabIndex={0} aria-label="NIFTY option chain matrix">
-        <table className="w-full text-[10.5px] font-mono border-collapse text-left select-none">
+        <table className="w-full text-[11px] font-mono border-collapse text-left select-none">
           <thead className="sticky top-0 z-10 bg-[#0E1013]">
-            <tr className="text-[#707987] border-b border-[#191D23] text-[9.5px] uppercase font-bold">
-              <th colSpan={activeViewMode === "HEATMAP" ? 2 : activeViewMode === "CHANGE" ? 3 : 5} className="p-1.5 text-center text-[#E5484D] border-r border-[#191D23] bg-[#E5484D]/10">
+            <tr className="text-[#707987] border-b border-[#191D23] text-[10px] uppercase font-bold">
+              <th colSpan={activeViewMode === "HEATMAP" ? 2 : activeViewMode === "CHANGE" ? 3 : 5} className="py-1 px-2 text-center text-[#E5484D] border-r border-[#191D23] bg-[#E5484D]/10">
                 CALLS (CE)
               </th>
               <th
-                className="p-1.5 text-center text-[#E6E8EB] bg-[#08090B] border-r border-[#191D23] cursor-pointer hover:bg-[#13161A]"
+                className="py-1 px-2 text-center text-[#E6E8EB] bg-[#08090B] border-r border-[#191D23] cursor-pointer hover:bg-[#13161A] text-[10.5px]"
                 onClick={() => setStrikeSortDir((d) => (d === "asc" ? "desc" : "asc"))}
               >
                 STRIKE {strikeSortDir === "asc" ? "↑" : "↓"}
               </th>
-              <th colSpan={activeViewMode === "HEATMAP" ? 2 : activeViewMode === "CHANGE" ? 3 : 5} className="p-1.5 text-center text-[#00C896] bg-[#00C896]/10">
+              <th colSpan={activeViewMode === "HEATMAP" ? 2 : activeViewMode === "CHANGE" ? 3 : 5} className="py-1 px-2 text-center text-[#00C896] border-r border-[#191D23] bg-[#00C896]/10">
                 PUTS (PE)
               </th>
             </tr>
-            <tr className="bg-[#0B0D10] text-[#707987] border-b border-[#191D23] text-[8.5px] uppercase font-bold">
+            <tr className="bg-[#0B0D10] text-[#707987] border-b border-[#191D23] text-[9.5px] uppercase font-bold">
               {activeViewMode === "TABLE" ? (
                 <>
-                  <th className="p-1 text-right text-[#E5484D]">OI (Lakh)</th>
-                  <th className="p-1 text-right text-[#E5484D]">ΔOI (L)</th>
-                  <th className="p-1 text-right text-[#E5484D]">LTP</th>
-                  <th className="p-1 text-right text-[#E5484D]">CHG %</th>
-                  <th className="p-1 text-right text-[#E5484D] border-r border-[#191D23]">IV</th>
-                  <th className="p-1 text-center text-[#E6E8EB] bg-[#0E1013] border-r border-[#191D23]">STRIKE</th>
-                  <th className="p-1 text-left text-[#00C896]">IV</th>
-                  <th className="p-1 text-left text-[#00C896]">CHG %</th>
-                  <th className="p-1 text-left text-[#00C896]">LTP</th>
-                  <th className="p-1 text-left text-[#00C896]">ΔOI (L)</th>
-                  <th className="p-1 text-left text-[#00C896]">OI (Lakh)</th>
+                  <th className="py-1 px-1.5 text-right text-[#E5484D]">OI (Lakh)</th>
+                  <th className="py-1 px-1.5 text-right text-[#E5484D]">ΔOI (L)</th>
+                  <th className="py-1 px-1.5 text-right text-[#E5484D]">LTP</th>
+                  <th className="py-1 px-1.5 text-right text-[#E5484D]">CHG %</th>
+                  <th className="py-1 px-1.5 text-right text-[#E5484D] border-r border-[#191D23]">IV</th>
+                  <th className="py-1 px-1.5 text-center text-[#E6E8EB] bg-[#0E1013] border-r border-[#191D23]">STRIKE</th>
+                  <th className="py-1 px-1.5 text-left text-[#00C896]">IV</th>
+                  <th className="py-1 px-1.5 text-left text-[#00C896]">CHG %</th>
+                  <th className="py-1 px-1.5 text-left text-[#00C896]">LTP</th>
+                  <th className="py-1 px-1.5 text-left text-[#00C896]">ΔOI (L)</th>
+                  <th className="py-1 px-1.5 text-left text-[#00C896]">OI (Lakh)</th>
                 </>
               ) : activeViewMode === "HEATMAP" ? (
                 <>
-                  <th className="p-1 text-right text-[#E5484D]">OI (Lakh)</th>
-                  <th className="p-1 text-right text-[#E5484D] border-r border-[#191D23]">CALL OI CONCENTRATION</th>
-                  <th className="p-1 text-center text-[#E6E8EB] bg-[#0E1013] border-r border-[#191D23]">STRIKE</th>
-                  <th className="p-1 text-left text-[#00C896]">PUT OI CONCENTRATION</th>
-                  <th className="p-1 text-left text-[#00C896]">OI (Lakh)</th>
+                  <th className="py-1 px-2 text-right text-[#E5484D]">OI (Lakh)</th>
+                  <th className="py-1 px-2 text-right text-[#E5484D] border-r border-[#191D23]">CALL OI CONCENTRATION</th>
+                  <th className="py-1 px-2 text-center text-[#E6E8EB] bg-[#0E1013] border-r border-[#191D23]">STRIKE</th>
+                  <th className="py-1 px-2 text-left text-[#00C896]">PUT OI CONCENTRATION</th>
+                  <th className="py-1 px-2 text-left text-[#00C896]">OI (Lakh)</th>
                 </>
               ) : (
                 <>
-                  <th className="p-1 text-right text-[#E5484D]">CE ΔOI (L)</th>
-                  <th className="p-1 text-right text-[#E5484D]">CE LTP CHG</th>
-                  <th className="p-1 text-right text-[#E5484D] border-r border-[#191D23]">CE BUILD-UP</th>
-                  <th className="p-1 text-center text-[#E6E8EB] bg-[#0E1013] border-r border-[#191D23]">STRIKE</th>
-                  <th className="p-1 text-left text-[#00C896]">PE BUILD-UP</th>
-                  <th className="p-1 text-left text-[#00C896]">PE LTP CHG</th>
-                  <th className="p-1 text-left text-[#00C896]">PE ΔOI (L)</th>
+                  <th className="py-1 px-2 text-right text-[#E5484D]">CE ΔOI (L)</th>
+                  <th className="py-1 px-2 text-right text-[#E5484D]">CE LTP CHG</th>
+                  <th className="py-1 px-2 text-right text-[#E5484D] border-r border-[#191D23]">CE BUILD-UP</th>
+                  <th className="py-1 px-2 text-center text-[#E6E8EB] bg-[#0E1013] border-r border-[#191D23]">STRIKE</th>
+                  <th className="py-1 px-2 text-left text-[#00C896]">PE BUILD-UP</th>
+                  <th className="py-1 px-2 text-left text-[#00C896]">PE LTP CHG</th>
+                  <th className="py-1 px-2 text-left text-[#00C896]">PE ΔOI (L)</th>
                 </>
               )}
             </tr>
@@ -176,7 +176,7 @@ export function OptionChainLadder({
           <tbody className="divide-y divide-[#191D23]">
             {sortedStrikes.length === 0 ? (
               <tr>
-                <td colSpan={11} className="p-8 text-center text-[#707987] italic font-mono">
+                <td colSpan={11} className="p-8 text-center text-[#707987] italic font-mono text-[11px]">
                   Option chain telemetry unavailable or awaiting broker session snapshot.
                 </td>
               </tr>
@@ -217,7 +217,7 @@ export function OptionChainLadder({
                   <tr
                     key={strikePx || i}
                     onClick={() => handleStrikeClick(strikePx)}
-                    className={`cursor-pointer transition-colors text-[10px] ${
+                    className={`cursor-pointer transition-colors text-[11px] ${
                       isSelected
                         ? "bg-[#38BDF8]/20 ring-1 ring-[#38BDF8]"
                         : isAtm
@@ -228,95 +228,95 @@ export function OptionChainLadder({
                     {activeViewMode === "TABLE" ? (
                       <>
                         {/* Call Columns */}
-                        <td className="p-1 text-right text-[#E6E8EB] air-data">{formatOiLakh(cOi)}</td>
-                        <td className={`p-1 text-right font-bold air-data ${cChg != null && Number(cChg) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        <td className="py-1 px-1.5 text-right text-[#E6E8EB] air-data font-semibold">{formatOiLakh(cOi)}</td>
+                        <td className={`py-1 px-1.5 text-right font-bold air-data ${cChg != null && Number(cChg) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
                           {cChg != null ? formatOiChgLakh(cChg) : "—"}
                         </td>
-                        <td className="p-1 text-right font-semibold text-[#E6E8EB] air-data">{cLtp != null ? formatNumber(Number(cLtp), 2) : "—"}</td>
-                        <td className={`p-1 text-right font-bold air-data ${cChgPct != null && Number(cChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        <td className="py-1 px-1.5 text-right font-bold text-[#E6E8EB] air-data">{cLtp != null ? formatNumber(Number(cLtp), 2) : "—"}</td>
+                        <td className={`py-1 px-1.5 text-right font-bold air-data ${cChgPct != null && Number(cChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
                           {cChgPct != null ? `${Number(cChgPct) >= 0 ? "+" : ""}${formatNumber(Number(cChgPct), 1)}%` : "—"}
                         </td>
-                        <td className="p-1 text-right text-[#38BDF8] border-r border-[#191D23] air-data">
+                        <td className="py-1 px-1.5 text-right text-[#38BDF8] font-semibold border-r border-[#191D23] air-data">
                           {cIv != null ? `${formatNumber(Number(cIv), 1)}%` : "—"}
                         </td>
 
                         {/* Center Strike Column with Smart Badges */}
-                        <td className="p-1 text-center font-bold border-r border-[#191D23] bg-[#0E1013]">
+                        <td className="py-1 px-1.5 text-center font-black border-r border-[#191D23] bg-[#0E1013] text-[12px]">
                           <div className="flex items-center justify-center gap-1">
                             <span className={isAtm ? "text-[#38BDF8] font-black" : "text-[#E6E8EB]"}>{strikePx}</span>
-                            {isAtm && <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7px] px-1 py-0.2 rounded font-mono font-bold">ATM</span>}
-                            {isCallWall && <span className="bg-[#E5484D]/20 text-[#E5484D] text-[7px] px-1 py-0.2 rounded font-mono font-bold">CALL WALL</span>}
-                            {isPutWall && <span className="bg-[#00C896]/20 text-[#00C896] text-[7px] px-1 py-0.2 rounded font-mono font-bold">PUT WALL</span>}
-                            {isMaxPain && !isAtm && <span className="bg-[#E59700]/20 text-[#E59700] text-[7px] px-1 py-0.2 rounded font-mono font-bold">MAX PAIN</span>}
+                            {isAtm && <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7.5px] px-1 py-0.2 rounded font-mono font-bold">ATM</span>}
+                            {isCallWall && <span className="bg-[#E5484D]/20 text-[#E5484D] text-[7.5px] px-1 py-0.2 rounded font-mono font-bold">CALL WALL</span>}
+                            {isPutWall && <span className="bg-[#00C896]/20 text-[#00C896] text-[7.5px] px-1 py-0.2 rounded font-mono font-bold">PUT WALL</span>}
+                            {isMaxPain && !isAtm && <span className="bg-[#E59700]/20 text-[#E59700] text-[7.5px] px-1 py-0.2 rounded font-mono font-bold">MAX PAIN</span>}
                           </div>
                         </td>
 
                         {/* Put Columns */}
-                        <td className="p-1 text-left text-[#38BDF8] air-data">{pIv != null ? `${formatNumber(Number(pIv), 1)}%` : "—"}</td>
-                        <td className={`p-1 text-left font-bold air-data ${pChgPct != null && Number(pChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        <td className="py-1 px-1.5 text-left text-[#38BDF8] font-semibold air-data">{pIv != null ? `${formatNumber(Number(pIv), 1)}%` : "—"}</td>
+                        <td className={`py-1 px-1.5 text-left font-bold air-data ${pChgPct != null && Number(pChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
                           {pChgPct != null ? `${Number(pChgPct) >= 0 ? "+" : ""}${formatNumber(Number(pChgPct), 1)}%` : "—"}
                         </td>
-                        <td className="p-1 text-left font-semibold text-[#E6E8EB] air-data">{pLtp != null ? formatNumber(Number(pLtp), 2) : "—"}</td>
-                        <td className={`p-1 text-left font-bold air-data ${pChg != null && Number(pChg) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        <td className="py-1 px-1.5 text-left font-bold text-[#E6E8EB] air-data">{pLtp != null ? formatNumber(Number(pLtp), 2) : "—"}</td>
+                        <td className={`py-1 px-1.5 text-left font-bold air-data ${pChg != null && Number(pChg) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
                           {pChg != null ? formatOiChgLakh(pChg) : "—"}
                         </td>
-                        <td className="p-1 text-left text-[#E6E8EB] air-data">{formatOiLakh(pOi)}</td>
+                        <td className="py-1 px-1.5 text-left text-[#E6E8EB] air-data font-semibold">{formatOiLakh(pOi)}</td>
                       </>
                     ) : activeViewMode === "HEATMAP" ? (
                       <>
-                        <td className="p-1 text-right text-[#E6E8EB] air-data">{formatOiLakh(cOi)}</td>
-                        <td className="p-1 text-right border-r border-[#191D23] pr-2">
-                          <div className="w-full bg-[#191D23] h-2.5 rounded overflow-hidden flex justify-end">
+                        <td className="py-1 px-2 text-right text-[#E6E8EB] air-data font-semibold">{formatOiLakh(cOi)}</td>
+                        <td className="py-1 px-2 text-right border-r border-[#191D23] pr-2">
+                          <div className="w-full bg-[#191D23] h-3 rounded overflow-hidden flex justify-end">
                             <div style={{ width: `${cHeatPct}%` }} className="h-full bg-gradient-to-l from-[#E5484D] to-[#E5484D]/40 rounded" />
                           </div>
                         </td>
-                        <td className="p-1 text-center font-bold border-r border-[#191D23] bg-[#0E1013]">
+                        <td className="py-1 px-2 text-center font-black border-r border-[#191D23] bg-[#0E1013] text-[12px]">
                           <div className="flex items-center justify-center gap-1">
                             <span className={isAtm ? "text-[#38BDF8] font-black" : "text-[#E6E8EB]"}>{strikePx}</span>
-                            {isAtm && <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7px] px-1 py-0.2 rounded font-mono font-bold">ATM</span>}
-                            {isCallWall && <span className="bg-[#E5484D]/20 text-[#E5484D] text-[7px] px-1 py-0.2 rounded font-mono font-bold">CW</span>}
-                            {isPutWall && <span className="bg-[#00C896]/20 text-[#00C896] text-[7px] px-1 py-0.2 rounded font-mono font-bold">PW</span>}
+                            {isAtm && <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7.5px] px-1 py-0.2 rounded font-mono font-bold">ATM</span>}
+                            {isCallWall && <span className="bg-[#E5484D]/20 text-[#E5484D] text-[7.5px] px-1 py-0.2 rounded font-mono font-bold">CW</span>}
+                            {isPutWall && <span className="bg-[#00C896]/20 text-[#00C896] text-[7.5px] px-1 py-0.2 rounded font-mono font-bold">PW</span>}
                           </div>
                         </td>
-                        <td className="p-1 text-left pl-2">
-                          <div className="w-full bg-[#191D23] h-2.5 rounded overflow-hidden flex justify-start">
+                        <td className="py-1 px-2 text-left pl-2">
+                          <div className="w-full bg-[#191D23] h-3 rounded overflow-hidden flex justify-start">
                             <div style={{ width: `${pHeatPct}%` }} className="h-full bg-gradient-to-r from-[#00C896] to-[#00C896]/40 rounded" />
                           </div>
                         </td>
-                        <td className="p-1 text-left text-[#E6E8EB] air-data">{formatOiLakh(pOi)}</td>
+                        <td className="py-1 px-2 text-left text-[#E6E8EB] air-data font-semibold">{formatOiLakh(pOi)}</td>
                       </>
                     ) : (
                       <>
-                        <td className={`p-1 text-right font-bold air-data ${cChgNum >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        <td className={`py-1 px-2 text-right font-bold air-data ${cChgNum >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
                           {cChg != null ? formatOiChgLakh(cChg) : "—"}
                         </td>
-                        <td className={`p-1 text-right font-bold air-data ${cChgPct != null && Number(cChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        <td className={`py-1 px-2 text-right font-bold air-data ${cChgPct != null && Number(cChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
                           {cChgPct != null ? `${Number(cChgPct) >= 0 ? "+" : ""}${formatNumber(Number(cChgPct), 1)}%` : "—"}
                         </td>
-                        <td className="p-1 text-right border-r border-[#191D23]">
-                          <span className={`text-[7.5px] font-bold px-1 py-0.5 rounded ${
+                        <td className="py-1 px-2 text-right border-r border-[#191D23]">
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
                             cBuildLabel === "OI BUILD" ? "bg-[#00C896]/20 text-[#00C896]" : cBuildLabel === "OI REDUCTION" ? "bg-[#E5484D]/20 text-[#E5484D]" : "text-[#707987]"
                           }`}>
                             {cBuildLabel}
                           </span>
                         </td>
-                        <td className="p-1 text-center font-bold border-r border-[#191D23] bg-[#0E1013]">
+                        <td className="py-1 px-2 text-center font-black border-r border-[#191D23] bg-[#0E1013] text-[12px]">
                           <div className="flex items-center justify-center gap-1">
                             <span className={isAtm ? "text-[#38BDF8] font-black" : "text-[#E6E8EB]"}>{strikePx}</span>
-                            {isAtm && <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7px] px-1 py-0.2 rounded font-mono font-bold">ATM</span>}
+                            {isAtm && <span className="bg-[#38BDF8]/20 text-[#38BDF8] text-[7.5px] px-1 py-0.2 rounded font-mono font-bold">ATM</span>}
                           </div>
                         </td>
-                        <td className="p-1 text-left">
-                          <span className={`text-[7.5px] font-bold px-1 py-0.5 rounded ${
+                        <td className="py-1 px-2 text-left">
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${
                             pBuildLabel === "OI BUILD" ? "bg-[#00C896]/20 text-[#00C896]" : pBuildLabel === "OI REDUCTION" ? "bg-[#E5484D]/20 text-[#E5484D]" : "text-[#707987]"
                           }`}>
                             {pBuildLabel}
                           </span>
                         </td>
-                        <td className={`p-1 text-left font-bold air-data ${pChgPct != null && Number(pChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        <td className={`py-1 px-2 text-left font-bold air-data ${pChgPct != null && Number(pChgPct) >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
                           {pChgPct != null ? `${Number(pChgPct) >= 0 ? "+" : ""}${formatNumber(Number(pChgPct), 1)}%` : "—"}
                         </td>
-                        <td className={`p-1 text-left font-bold air-data ${pChgNum >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+                        <td className={`py-1 px-2 text-left font-bold air-data ${pChgNum >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
                           {pChg != null ? formatOiChgLakh(pChg) : "—"}
                         </td>
                       </>
@@ -329,7 +329,7 @@ export function OptionChainLadder({
         </table>
       </div>
 
-      <div className="flex justify-between items-center text-[8.5px] font-mono text-[#707987] px-1">
+      <div className="flex justify-between items-center text-[9px] font-mono text-[#707987] px-1 pt-0.5">
         <span>Click any strike row to inspect Volatility, Greeks, and Positioning delta</span>
         <span>Data Source: NSE Options, Zerodha Kite</span>
       </div>

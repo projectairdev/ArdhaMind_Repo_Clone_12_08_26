@@ -157,7 +157,7 @@ export function OptionsWorkspace() {
   }, [hasHistory, snapshots, pcr, atmIv, callWall, putWall, spot]);
 
   return (
-    <div className="space-y-2 font-sans text-left text-[10px]">
+    <div className="space-y-2 font-sans text-left text-[11px]">
       {/* Hidden Hooks for Test Suite Contracts */}
       <div className="hidden" aria-hidden="true">
         <span>Market structure</span>
@@ -174,94 +174,94 @@ export function OptionsWorkspace() {
           1. DERIVATIVES STATE STRIP (COMPACT HORIZONTAL TOP BAR)
           ═══════════════════════════════════════════════════════════════════════ */}
       <Surface className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[#191D23] bg-[#0E1013] px-3 py-1 text-[10px] font-mono font-bold text-[#E6E8EB] uppercase">
+        <div className="flex items-center justify-between border-b border-[#191D23] bg-[#0E1013] px-3 py-1.5 text-[11px] font-mono font-bold text-[#E6E8EB] uppercase">
           <div className="flex items-center gap-2">
-            <Layers size={13} className="text-[#38BDF8]" />
+            <Layers size={14} className="text-[#38BDF8]" />
             <span>DERIVATIVES STATE STRIP</span>
           </div>
-          <span className="text-[9px] text-[#707987]">NIFTY 50 OPTIONS TELEMETRY</span>
+          <span className="text-[10px] text-[#707987]">NIFTY 50 OPTIONS TELEMETRY</span>
         </div>
 
-        <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-11 divide-x divide-[#191D23] bg-[#0B0D10] items-center p-1.5 text-[9.5px] font-mono">
+        <div className="grid grid-cols-3 sm:grid-cols-6 lg:grid-cols-11 divide-x divide-[#191D23] bg-[#0B0D10] items-center p-2 text-[10.5px] font-mono">
           {/* Expiry */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">EXPIRY</div>
-            <div className="font-bold text-[#E6E8EB] truncate">{selectedExpiry}</div>
-            <div className="text-[7.5px] text-[#00C896] font-bold">{expiryCountdown}</div>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">EXPIRY</div>
+            <div className="font-bold text-[#E6E8EB] text-[11.5px] truncate">{selectedExpiry}</div>
+            <div className="text-[8.5px] text-[#00C896] font-bold">{expiryCountdown}</div>
           </div>
 
           {/* Spot */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">SPOT</div>
-            <div className="font-bold text-[#E6E8EB] air-data text-[11px]">{spot != null ? formatNumber(spot, 2) : "—"}</div>
-            <div className={`text-[8px] font-bold air-data ${positive ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">SPOT</div>
+            <div className="font-bold text-[#E6E8EB] air-data text-[13px]">{spot != null ? formatNumber(spot, 2) : "—"}</div>
+            <div className={`text-[9px] font-bold air-data ${positive ? "text-[#00C896]" : "text-[#E5484D]"}`}>
               {change != null ? `${positive ? "+" : ""}${formatNumber(change, 2)} (${positive ? "+" : ""}${formatNumber(changePct, 2)}%)` : "—"}
             </div>
           </div>
 
           {/* ATM Strike */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">ATM STRIKE</div>
-            <div className="font-bold text-[#38BDF8] air-data text-[11px]">{atmStrike != null ? formatNumber(atmStrike, 0) : "—"}</div>
-            <div className="text-[7.5px] text-[#707987]">Nearest 50 Strike</div>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">ATM STRIKE</div>
+            <div className="font-bold text-[#38BDF8] air-data text-[13px]">{atmStrike != null ? formatNumber(atmStrike, 0) : "—"}</div>
+            <div className="text-[8.5px] text-[#707987]">Nearest 50 Strike</div>
           </div>
 
           {/* PCR (OI) */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">PCR (OI)</div>
-            <div className="font-bold text-[#00C896] air-data text-[11px]">{pcr != null ? formatNumber(pcr, 2) : "—"}</div>
-            <div className="text-[7.5px] text-[#707987]">{pcr != null ? (pcr >= 1.15 ? "Bullish" : pcr <= 0.85 ? "Bearish" : "Neutral") : "—"}</div>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">PCR (OI)</div>
+            <div className="font-bold text-[#00C896] air-data text-[13px]">{pcr != null ? formatNumber(pcr, 2) : "—"}</div>
+            <div className="text-[8.5px] text-[#707987]">{pcr != null ? (pcr >= 1.15 ? "Bullish" : pcr <= 0.85 ? "Bearish" : "Neutral") : "—"}</div>
           </div>
 
           {/* PCR (Vol) */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">PCR (VOL)</div>
-            <div className="font-bold text-[#E6E8EB] air-data text-[11px]">{pcrVol != null ? formatNumber(pcrVol, 2) : "UNAVAILABLE"}</div>
-            <div className="text-[7.5px] text-[#707987]">Vol Weighted</div>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">PCR (VOL)</div>
+            <div className="font-bold text-[#E6E8EB] air-data text-[12px]">{pcrVol != null ? formatNumber(pcrVol, 2) : "UNAVAILABLE"}</div>
+            <div className="text-[8.5px] text-[#707987]">Vol Weighted</div>
           </div>
 
           {/* Max Pain */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">MAX PAIN</div>
-            <div className="font-bold text-[#E59700] air-data text-[11px]">{maxPain != null ? formatNumber(maxPain, 0) : "—"}</div>
-            <div className="text-[7.5px] text-[#707987]">Settlement Pin</div>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">MAX PAIN</div>
+            <div className="font-bold text-[#E59700] air-data text-[13px]">{maxPain != null ? formatNumber(maxPain, 0) : "—"}</div>
+            <div className="text-[8.5px] text-[#707987]">Settlement Pin</div>
           </div>
 
           {/* ATM IV */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">ATM IV</div>
-            <div className="font-bold text-[#38BDF8] air-data text-[11px]">{atmIv != null ? `${formatNumber(atmIv, 2)}%` : "UNAVAILABLE"}</div>
-            <div className="text-[7.5px] text-[#707987]">CE/PE Mean</div>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">ATM IV</div>
+            <div className="font-bold text-[#38BDF8] air-data text-[13px]">{atmIv != null ? `${formatNumber(atmIv, 2)}%` : "UNAVAILABLE"}</div>
+            <div className="text-[8.5px] text-[#707987]">CE/PE Mean</div>
           </div>
 
           {/* IV State */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">IV STATE</div>
-            <div className="font-bold text-[#00C896] air-data text-[10px]">{ivState}</div>
-            <div className="text-[7.5px] text-[#707987]">Implied Vol Regime</div>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">IV STATE</div>
+            <div className="font-bold text-[#00C896] air-data text-[11px]">{ivState}</div>
+            <div className="text-[8.5px] text-[#707987]">Implied Vol Regime</div>
           </div>
 
           {/* Call OI */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">TOTAL CALL OI</div>
-            <div className="font-bold text-[#E5484D] air-data">{totalCallOiCr != null ? `${totalCallOiCr} Cr` : "—"}</div>
-            <div className="text-[7.5px] text-[#707987]">{callRatioPct}% of Total</div>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">TOTAL CALL OI</div>
+            <div className="font-bold text-[#E5484D] air-data text-[12px]">{totalCallOiCr != null ? `${totalCallOiCr} Cr` : "—"}</div>
+            <div className="text-[8.5px] text-[#707987]">{callRatioPct}% of Total</div>
           </div>
 
           {/* Put OI */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">TOTAL PUT OI</div>
-            <div className="font-bold text-[#00C896] air-data">{totalPutOiCr != null ? `${totalPutOiCr} Cr` : "—"}</div>
-            <div className="text-[7.5px] text-[#707987]">{putRatioPct}% of Total</div>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">TOTAL PUT OI</div>
+            <div className="font-bold text-[#00C896] air-data text-[12px]">{totalPutOiCr != null ? `${totalPutOiCr} Cr` : "—"}</div>
+            <div className="text-[8.5px] text-[#707987]">{putRatioPct}% of Total</div>
           </div>
 
           {/* OI Skew / Bias */}
-          <div className="px-1.5 py-0.5 space-y-0.5">
-            <div className="text-[7.5px] uppercase font-bold text-[#707987]">OI SKEW / BIAS</div>
-            <div className={`font-bold uppercase text-[10px] ${derivativesBias === "BULLISH" ? "text-[#00C896]" : derivativesBias === "BEARISH" ? "text-[#E5484D]" : "text-[#E59700]"}`}>
+          <div className="px-2 py-0.5 space-y-0.5">
+            <div className="text-[8.5px] uppercase font-bold text-[#707987]">OI SKEW / BIAS</div>
+            <div className={`font-bold uppercase text-[11px] ${derivativesBias === "BULLISH" ? "text-[#00C896]" : derivativesBias === "BEARISH" ? "text-[#E5484D]" : "text-[#E59700]"}`}>
               {oiSkew}
             </div>
-            <div className="text-[7.5px] text-[#707987]">{derivativesBias} BIAS</div>
+            <div className="text-[8.5px] text-[#707987]">{derivativesBias} BIAS</div>
           </div>
         </div>
       </Surface>
@@ -273,15 +273,15 @@ export function OptionsWorkspace() {
         {/* ── LEFT COLUMN: POSITIONING MAP ── */}
         <Surface className="overflow-hidden flex flex-col justify-between h-auto">
           <SectionHeader title="POSITIONING MAP" eyebrow="DERIVATIVES CONCENTRATIONS" accent="cyan" />
-          <div className="p-2 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[9.5px]">
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2.5 font-mono text-[10px]">
             {/* Expiry Selector Dropdown */}
             <div className="space-y-1">
-              <div className="text-[8px] uppercase font-bold text-[#707987]">EXPIRY SELECTOR</div>
+              <div className="text-[8.5px] uppercase font-bold text-[#707987]">EXPIRY SELECTOR</div>
               <div className="relative">
                 <select
                   value={selectedExpiry}
                   onChange={(e) => setSelectedExpiry(e.target.value)}
-                  className="w-full appearance-none bg-[#0E1013] border border-[#242830] rounded px-2 py-1 text-[10px] font-bold text-[#E6E8EB] focus:outline-none focus:border-[#38BDF8] transition cursor-pointer"
+                  className="w-full appearance-none bg-[#0E1013] border border-[#242830] rounded px-2.5 py-1.5 text-[11px] font-bold text-[#E6E8EB] focus:outline-none focus:border-[#38BDF8] transition cursor-pointer"
                 >
                   {expiriesList.map((exp) => (
                     <option key={exp} value={exp} className="bg-[#0E1013] text-[#E6E8EB]">
@@ -289,36 +289,36 @@ export function OptionsWorkspace() {
                     </option>
                   ))}
                 </select>
-                <ChevronDown size={12} className="absolute right-2 top-2 text-[#707987] pointer-events-none" />
+                <ChevronDown size={13} className="absolute right-2.5 top-2.5 text-[#707987] pointer-events-none" />
               </div>
             </div>
 
             {/* A. Call vs Put OI */}
-            <div className="border-t border-[#191D23] pt-1.5 space-y-1">
-              <div className="flex justify-between items-center text-[8.5px] uppercase font-bold text-[#707987]">
+            <div className="border-t border-[#191D23] pt-2 space-y-1">
+              <div className="flex justify-between items-center text-[9px] uppercase font-bold text-[#707987]">
                 <span>CALL VS PUT OI</span>
-                <span className="text-[#38BDF8]">PCR {formatNumber(pcr, 2)}</span>
+                <span className="text-[#38BDF8] font-bold">PCR {formatNumber(pcr, 2)}</span>
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">Call OI:</span>
-                <span className="font-bold text-[#E5484D] air-data">{totalCallOiCr != null ? `${totalCallOiCr} Cr` : "—"}</span>
+                <span className="font-bold text-[#E5484D] air-data text-[12px]">{totalCallOiCr != null ? `${totalCallOiCr} Cr` : "—"}</span>
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">Put OI:</span>
-                <span className="font-bold text-[#00C896] air-data">{totalPutOiCr != null ? `${totalPutOiCr} Cr` : "—"}</span>
+                <span className="font-bold text-[#00C896] air-data text-[12px]">{totalPutOiCr != null ? `${totalPutOiCr} Cr` : "—"}</span>
               </div>
-              <div className="flex justify-between py-0.5 font-bold border-t border-[#191D23]/60 pt-0.5">
+              <div className="flex justify-between py-0.5 font-bold border-t border-[#191D23]/60 pt-1">
                 <span className="text-[#E6E8EB]">Total OI:</span>
-                <span className="text-[#38BDF8] air-data">{totalOiCr != null ? `${totalOiCr} Cr` : "—"}</span>
+                <span className="text-[#38BDF8] air-data text-[12px]">{totalOiCr != null ? `${totalOiCr} Cr` : "—"}</span>
               </div>
 
               {/* Horizontal Balance Bar */}
-              <div className="space-y-0.5 pt-0.5">
-                <div className="h-1.5 w-full bg-[#191D23] rounded-full overflow-hidden flex">
+              <div className="space-y-0.5 pt-1">
+                <div className="h-2 w-full bg-[#191D23] rounded-full overflow-hidden flex">
                   <div style={{ width: `${callRatioPct}%` }} className="h-full bg-[#E5484D]" />
                   <div style={{ width: `${putRatioPct}%` }} className="h-full bg-[#00C896]" />
                 </div>
-                <div className="flex justify-between text-[7.5px] text-[#707987]">
+                <div className="flex justify-between text-[8px] text-[#707987] font-bold">
                   <span>CE {callRatioPct}%</span>
                   <span>PE {putRatioPct}%</span>
                 </div>
@@ -326,47 +326,47 @@ export function OptionsWorkspace() {
             </div>
 
             {/* B. Key Concentrations */}
-            <div className="border-t border-[#191D23] pt-1.5 space-y-1">
-              <div className="text-[8px] uppercase font-bold text-[#707987]">KEY CONCENTRATIONS</div>
-              <div className="bg-[#0E1013] p-1 rounded border border-[#191D23] flex justify-between items-center">
-                <span className="text-[#E5484D] font-bold text-[8.5px]">CALL WALL (RES):</span>
-                <span className="font-bold text-[#E6E8EB] air-data">{formatNumber(callWall, 0)}</span>
+            <div className="border-t border-[#191D23] pt-2 space-y-1.5">
+              <div className="text-[8.5px] uppercase font-bold text-[#707987]">KEY CONCENTRATIONS</div>
+              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center">
+                <span className="text-[#E5484D] font-bold text-[9px]">CALL WALL (RES):</span>
+                <span className="font-bold text-[#E6E8EB] air-data text-[12px]">{formatNumber(callWall, 0)}</span>
               </div>
-              <div className="bg-[#0E1013] p-1 rounded border border-[#191D23] flex justify-between items-center">
-                <span className="text-[#00C896] font-bold text-[8.5px]">PUT WALL (SUPP):</span>
-                <span className="font-bold text-[#E6E8EB] air-data">{formatNumber(putWall, 0)}</span>
+              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center">
+                <span className="text-[#00C896] font-bold text-[9px]">PUT WALL (SUPP):</span>
+                <span className="font-bold text-[#E6E8EB] air-data text-[12px]">{formatNumber(putWall, 0)}</span>
               </div>
-              <div className="bg-[#0E1013] p-1 rounded border border-[#191D23] flex justify-between items-center">
-                <span className="text-[#E59700] font-bold text-[8.5px]">MAX PAIN PIN:</span>
-                <span className="font-bold text-[#E59700] air-data">{formatNumber(maxPain, 0)}</span>
+              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center">
+                <span className="text-[#E59700] font-bold text-[9px]">MAX PAIN PIN:</span>
+                <span className="font-bold text-[#E59700] air-data text-[12px]">{formatNumber(maxPain, 0)}</span>
               </div>
             </div>
 
             {/* C. Distance / Structure */}
-            <div className="border-t border-[#191D23] pt-1.5 space-y-0.5">
-              <div className="text-[8px] uppercase font-bold text-[#707987]">DISTANCE & STRUCTURE</div>
+            <div className="border-t border-[#191D23] pt-2 space-y-1">
+              <div className="text-[8.5px] uppercase font-bold text-[#707987]">DISTANCE & STRUCTURE</div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">Spot → Call Wall:</span>
-                <span className="font-semibold text-[#E6E8EB] air-data">{spot && callWall ? signedStr(callWall - spot, 0) : "—"} ({spot && callWall ? signedStr(((callWall - spot) / spot) * 100, 2, "%") : "—"})</span>
+                <span className="font-semibold text-[#E6E8EB] air-data text-[11px]">{spot && callWall ? signedStr(callWall - spot, 0) : "—"} ({spot && callWall ? signedStr(((callWall - spot) / spot) * 100, 2, "%") : "—"})</span>
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">Spot → Put Wall:</span>
-                <span className="font-semibold text-[#E6E8EB] air-data">{spot && putWall ? signedStr(putWall - spot, 0) : "—"} ({spot && putWall ? signedStr(((putWall - spot) / spot) * 100, 2, "%") : "—"})</span>
+                <span className="font-semibold text-[#E6E8EB] air-data text-[11px]">{spot && putWall ? signedStr(putWall - spot, 0) : "—"} ({spot && putWall ? signedStr(((putWall - spot) / spot) * 100, 2, "%") : "—"})</span>
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">Spot → Max Pain:</span>
-                <span className="font-semibold text-[#E59700] air-data">{spot && maxPain ? signedStr(maxPain - spot, 0) : "—"} ({spot && maxPain ? signedStr(((maxPain - spot) / spot) * 100, 2, "%") : "—"})</span>
+                <span className="font-semibold text-[#E59700] air-data text-[11px]">{spot && maxPain ? signedStr(maxPain - spot, 0) : "—"} ({spot && maxPain ? signedStr(((maxPain - spot) / spot) * 100, 2, "%") : "—"})</span>
               </div>
               <div className="flex justify-between py-0.5 border-t border-[#191D23]/60 pt-1">
                 <span className="text-[#707987]">Range Bracket:</span>
-                <span className="font-bold text-[#38BDF8] air-data">{formatNumber(putWall, 0)} – {formatNumber(callWall, 0)}</span>
+                <span className="font-bold text-[#38BDF8] air-data text-[11.5px]">{formatNumber(putWall, 0)} – {formatNumber(callWall, 0)}</span>
               </div>
             </div>
           </div>
         </Surface>
 
         {/* ── CENTER COLUMN: SMART OPTION CHAIN ── */}
-        <Surface className="overflow-hidden flex flex-col h-auto min-h-[460px]">
+        <Surface className="overflow-hidden flex flex-col h-auto">
           <OptionChainLadder
             selectedStrike={activeSelectedStrike}
             onSelectStrike={(s) => setSelectedStrike(s)}
@@ -383,16 +383,16 @@ export function OptionsWorkspace() {
         {/* ── RIGHT COLUMN: OPTIONS INSPECTOR ── */}
         <Surface className="overflow-hidden flex flex-col justify-between h-auto">
           <SectionHeader title="OPTIONS INSPECTOR" eyebrow="STRIKE & VOLATILITY" accent="cyan" />
-          <div className="p-2 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[9.5px]">
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2.5 font-mono text-[10px]">
             {/* A. Volatility Section */}
             <div className="space-y-1">
-              <div className="flex justify-between items-center text-[8px] uppercase font-bold text-[#707987]">
+              <div className="flex justify-between items-center text-[8.5px] uppercase font-bold text-[#707987]">
                 <span>VOLATILITY STRUCTURE</span>
-                <span className="text-[#00C896]">{ivState}</span>
+                <span className="text-[#00C896] font-bold">{ivState}</span>
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">ATM Implied Vol (IV):</span>
-                <span className="font-bold text-[#38BDF8] air-data">{atmIv != null ? `${formatNumber(atmIv, 2)}%` : "UNAVAILABLE"}</span>
+                <span className="font-bold text-[#38BDF8] air-data text-[13px]">{atmIv != null ? `${formatNumber(atmIv, 2)}%` : "UNAVAILABLE"}</span>
               </div>
               <div className="flex justify-between py-0.5">
                 <span className="text-[#707987]">IV Percentile / Rank:</span>
@@ -405,24 +405,24 @@ export function OptionsWorkspace() {
             </div>
 
             {/* B. Selected Strike Inspector */}
-            <div className="border-t border-[#191D23] pt-1.5 space-y-1.5">
+            <div className="border-t border-[#191D23] pt-2 space-y-1.5">
               <div className="flex items-center justify-between">
-                <span className="text-[8px] uppercase font-bold text-[#38BDF8]">
+                <span className="text-[9px] uppercase font-bold text-[#38BDF8]">
                   SELECTED STRIKE: {activeSelectedStrike} {activeSelectedStrike === atmStrike ? "(ATM)" : ""}
                 </span>
-                <span className="text-[8px] text-[#707987] air-data">
+                <span className="text-[9px] text-[#E6E8EB] font-semibold air-data">
                   {distFromSpot != null ? `${signedStr(distFromSpot, 0)} pts (${signedStr(distFromSpotPct, 2, "%")})` : ""}
                 </span>
               </div>
 
               {/* Dual CE / PE Breakdown Boxes */}
-              <div className="grid grid-cols-2 gap-1.5 text-[8.5px]">
+              <div className="grid grid-cols-2 gap-1.5 text-[9.5px]">
                 {/* Call Side */}
-                <div className="bg-[#0E1013] p-1.5 rounded border border-[#E5484D]/30 space-y-0.5">
+                <div className="bg-[#0E1013] p-2 rounded border border-[#E5484D]/30 space-y-0.5">
                   <div className="font-bold text-[#E5484D] border-b border-[#191D23] pb-0.5">CALL (CE)</div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">LTP:</span>
-                    <span className="font-bold text-[#E6E8EB] air-data">{ceLtp != null ? `₹${formatNumber(Number(ceLtp), 2)}` : "—"}</span>
+                    <span className="font-bold text-[#E6E8EB] air-data text-[11px]">{ceLtp != null ? `₹${formatNumber(Number(ceLtp), 2)}` : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">OI:</span>
@@ -439,11 +439,11 @@ export function OptionsWorkspace() {
                 </div>
 
                 {/* Put Side */}
-                <div className="bg-[#0E1013] p-1.5 rounded border border-[#00C896]/30 space-y-0.5">
+                <div className="bg-[#0E1013] p-2 rounded border border-[#00C896]/30 space-y-0.5">
                   <div className="font-bold text-[#00C896] border-b border-[#191D23] pb-0.5">PUT (PE)</div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">LTP:</span>
-                    <span className="font-bold text-[#E6E8EB] air-data">{peLtp != null ? `₹${formatNumber(Number(peLtp), 2)}` : "—"}</span>
+                    <span className="font-bold text-[#E6E8EB] air-data text-[11px]">{peLtp != null ? `₹${formatNumber(Number(peLtp), 2)}` : "—"}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-[#707987]">OI:</span>
@@ -462,10 +462,10 @@ export function OptionsWorkspace() {
             </div>
 
             {/* C. Greeks Model Verification Section */}
-            <div className="border-t border-[#191D23] pt-1.5 space-y-1">
-              <div className="text-[8px] uppercase font-bold text-[#707987]">BLACK-SCHOLES GREEKS</div>
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] text-[8px] text-[#707987] leading-tight">
-                <div className="text-[#E59700] font-bold mb-0.5">GREEKS UNAVAILABLE</div>
+            <div className="border-t border-[#191D23] pt-2 space-y-1">
+              <div className="text-[8.5px] uppercase font-bold text-[#707987]">BLACK-SCHOLES GREEKS</div>
+              <div className="bg-[#0E1013] p-2 rounded border border-[#191D23] text-[9px] text-[#707987] leading-tight space-y-0.5">
+                <div className="text-[#E59700] font-bold">GREEKS UNAVAILABLE</div>
                 <div>Reason: Insufficient model inputs / canonical calculation unavailable for exact timestamp. No fabricated zeros displayed.</div>
               </div>
             </div>
@@ -480,23 +480,23 @@ export function OptionsWorkspace() {
         {/* ── WHAT CHANGED ── */}
         <Surface className="overflow-hidden flex flex-col justify-between h-auto">
           <SectionHeader title="WHAT CHANGED (DERIVATIVES EVIDENCE)" eyebrow="INTRA-SESSION DELTA" accent="cyan" />
-          <div className="p-2 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-1.5 font-mono text-[9px]">
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono text-[10px]">
             {whatChangedItems.length > 0 ? (
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 {whatChangedItems.map((item, idx) => (
-                  <div key={idx} className="flex items-start gap-1.5 text-[#E6E8EB]">
+                  <div key={idx} className="flex items-start gap-1.5 text-[#E6E8EB] leading-relaxed">
                     <span className="text-[#38BDF8] font-bold">•</span>
                     <span>{item}</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="bg-[#0E1013] p-2 rounded border border-[#191D23] text-[#707987] space-y-0.5">
-                <div className="font-bold text-[#38BDF8]">INSUFFICIENT HISTORICAL SNAPSHOTS</div>
+              <div className="bg-[#0E1013] p-2.5 rounded border border-[#191D23] text-[#707987] space-y-0.5">
+                <div className="font-bold text-[#38BDF8] text-[10.5px]">INSUFFICIENT HISTORICAL SNAPSHOTS</div>
                 <div>Live session baseline established. Observing intra-session derivatives shifts as new sequence packets arrive.</div>
               </div>
             )}
-            <div className="text-[7.5px] text-[#707987] pt-1 border-t border-[#191D23] flex justify-between">
+            <div className="text-[8.5px] text-[#707987] pt-1.5 border-t border-[#191D23] flex justify-between">
               <span>Baseline: Completed Session Reference</span>
               <span>Tracking: 50 Strikes Live Matrix</span>
             </div>
@@ -506,35 +506,35 @@ export function OptionsWorkspace() {
         {/* ── STRIKE STRUCTURE SUMMARY ── */}
         <Surface className="overflow-hidden flex flex-col justify-between h-auto">
           <SectionHeader title="STRIKE STRUCTURE SUMMARY" eyebrow="DERIVATIVES ANCHORS" accent="cyan" />
-          <div className="p-2 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono">
+          <div className="p-2.5 bg-[#0B0D10] flex-1 flex flex-col justify-between space-y-2 font-mono">
             {/* Visual 3-Node Structure Rail */}
-            <div className="grid grid-cols-3 gap-1 text-center text-[9px]">
+            <div className="grid grid-cols-3 gap-1.5 text-center text-[10px]">
               {/* Put Support */}
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#00C896]/30">
-                <div className="text-[7.5px] uppercase font-bold text-[#00C896]">PUT SUPPORT</div>
-                <div className="font-bold text-[#00C896] text-[12px] mt-0.5 air-data">{formatNumber(putWall, 0)}</div>
-                <div className="text-[7.5px] text-[#707987]">{spot && putWall ? signedStr(putWall - spot, 0) : "—"} pts</div>
+              <div className="bg-[#0E1013] p-2 rounded border border-[#00C896]/30">
+                <div className="text-[8.5px] uppercase font-bold text-[#00C896]">PUT SUPPORT</div>
+                <div className="font-bold text-[#00C896] text-[15px] mt-0.5 air-data">{formatNumber(putWall, 0)}</div>
+                <div className="text-[8.5px] text-[#707987] font-semibold">{spot && putWall ? signedStr(putWall - spot, 0) : "—"} pts</div>
               </div>
 
               {/* Spot / ATM */}
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#38BDF8]/40">
-                <div className="text-[7.5px] uppercase font-bold text-[#38BDF8]">SPOT / ATM</div>
-                <div className="font-bold text-[#E6E8EB] text-[12px] mt-0.5 air-data">
-                  {spot != null ? formatNumber(spot, 0) : "—"} <span className="text-[#707987] text-[9px]">/ {formatNumber(atmStrike, 0)}</span>
+              <div className="bg-[#0E1013] p-2 rounded border border-[#38BDF8]/40">
+                <div className="text-[8.5px] uppercase font-bold text-[#38BDF8]">SPOT / ATM</div>
+                <div className="font-bold text-[#E6E8EB] text-[15px] mt-0.5 air-data">
+                  {spot != null ? formatNumber(spot, 0) : "—"} <span className="text-[#707987] text-[11px]">/ {formatNumber(atmStrike, 0)}</span>
                 </div>
-                <div className="text-[7.5px] text-[#E59700]">Max Pain: {formatNumber(maxPain, 0)}</div>
+                <div className="text-[8.5px] text-[#E59700] font-semibold">Max Pain: {formatNumber(maxPain, 0)}</div>
               </div>
 
               {/* Call Resistance */}
-              <div className="bg-[#0E1013] p-1.5 rounded border border-[#E5484D]/30">
-                <div className="text-[7.5px] uppercase font-bold text-[#E5484D]">CALL RESISTANCE</div>
-                <div className="font-bold text-[#E5484D] text-[12px] mt-0.5 air-data">{formatNumber(callWall, 0)}</div>
-                <div className="text-[7.5px] text-[#707987]">{spot && callWall ? signedStr(callWall - spot, 0) : "—"} pts</div>
+              <div className="bg-[#0E1013] p-2 rounded border border-[#E5484D]/30">
+                <div className="text-[8.5px] uppercase font-bold text-[#E5484D]">CALL RESISTANCE</div>
+                <div className="font-bold text-[#E5484D] text-[15px] mt-0.5 air-data">{formatNumber(callWall, 0)}</div>
+                <div className="text-[8.5px] text-[#707987] font-semibold">{spot && callWall ? signedStr(callWall - spot, 0) : "—"} pts</div>
               </div>
             </div>
 
             {/* Structure Summary Strip */}
-            <div className="bg-[#0E1013] p-1.5 rounded border border-[#191D23] flex justify-between items-center text-[8.5px]">
+            <div className="bg-[#0E1013] p-2 rounded border border-[#191D23] flex justify-between items-center text-[9.5px]">
               <span>PCR: <strong className="text-[#00C896]">{formatNumber(pcr, 2)}</strong></span>
               <span>OI Skew: <strong className="text-[#00C896]">{oiSkew}</strong></span>
               <span>Bias: <strong className={derivativesBias === "BULLISH" ? "text-[#00C896]" : derivativesBias === "BEARISH" ? "text-[#E5484D]" : "text-[#E59700]"}>{derivativesBias}</strong></span>
@@ -545,7 +545,7 @@ export function OptionsWorkspace() {
       </div>
 
       {/* ── FOOTER METADATA STRIP ── */}
-      <div className="text-center text-[8.5px] font-mono text-[#707987] pt-1 border-t border-[#191D23]">
+      <div className="text-center text-[9.5px] font-mono text-[#707987] pt-1.5 border-t border-[#191D23]">
         Market Data: {sessionBadge.isOpen ? "Live Streaming Session" : "Completed Session Reference"} • 18 Aug 2026 | Selected Expiry: {selectedExpiry} ({expiryCountdown}) | Source: NSE Options, Zerodha Kite
       </div>
     </div>
