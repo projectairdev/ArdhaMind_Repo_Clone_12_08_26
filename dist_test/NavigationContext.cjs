@@ -1771,10 +1771,10 @@ function normalizeModuleId(raw) {
   }
   if (clean === "journal") return "news";
   if (clean === "ardha_performance") return "settings";
+  if (clean === "trading_cheatsheet" || clean === "cheatsheet") return "market";
   const allowed = [
     "market",
     "market_intelligence",
-    "trading_cheatsheet",
     "news",
     "portfolio",
     "settings"

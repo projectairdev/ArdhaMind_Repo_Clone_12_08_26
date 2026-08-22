@@ -14,8 +14,8 @@ def test_files_exist():
     assert os.path.exists(SETTINGS_DIAGNOSTICS), "SettingsDiagnostics.tsx must exist"
     assert os.path.exists(ARDHA_PERF_PANEL), "ArdhaPerformancePanel.tsx must exist"
 
-def test_primary_sidebar_contains_exact_five_modules():
-    """Verify primary sidebar contains exactly the 5 official trading workspaces."""
+def test_primary_sidebar_contains_exact_four_modules():
+    """Verify primary sidebar contains exactly the 4 official trading workspaces."""
     with open(DASHBOARD_LAYOUT, "r", encoding="utf8") as f:
         content = f.read()
 
@@ -23,13 +23,14 @@ def test_primary_sidebar_contains_exact_five_modules():
     expected_modules = [
         '{ id: "market", label: "MARKET"',
         '{ id: "market_intelligence", label: "MARKET INTELLIGENCE"',
-        '{ id: "trading_cheatsheet", label: "TRADING CHEATSHEET"',
         '{ id: "news", label: "NEWS & UPDATES"',
         '{ id: "portfolio", label: "PORTFOLIO"',
     ]
 
     for mod in expected_modules:
         assert mod in content, f"Missing expected primary module in sidebar: {mod}"
+
+    assert "trading_cheatsheet" not in content, "trading_cheatsheet must not be in PRIMARY_MODULES"
 
     # Verify ARDHA PERFORMANCE is removed from PRIMARY_MODULES
     primary_modules_block = re.search(r"export const PRIMARY_MODULES = \[(.*?)\] as const;", content, re.DOTALL)

@@ -5,8 +5,8 @@ import { buildMarketIntelligenceViewModel } from '../src/frontend/viewmodels/bui
 
 console.log("=== 1. SIDEBAR CONSOLIDATION SMOKE TEST ===");
 console.log("Modules in PRIMARY_MODULES:", PRIMARY_MODULES.map(m => `${m.label} (id: ${m.id})`));
-if (PRIMARY_MODULES.length !== 6) {
-  throw new Error(`Expected 6 sidebar modules, found ${PRIMARY_MODULES.length}`);
+if (PRIMARY_MODULES.length !== 4) {
+  throw new Error(`Expected 4 sidebar modules, found ${PRIMARY_MODULES.length}`);
 }
 
 console.log("\n=== 2. LEGACY SAVED-STATE MIGRATION TEST ===");
@@ -19,8 +19,8 @@ const testCases = [
   { input: "market", expected: "market" },
   { input: "news", expected: "news" },
   { input: "portfolio", expected: "portfolio" },
-  { input: "trading_cheatsheet", expected: "trading_cheatsheet" },
-  { input: "ardha_performance", expected: "ardha_performance" },
+  { input: "trading_cheatsheet", expected: "market" },
+  { input: "ardha_performance", expected: "settings" },
   { input: "invalid_key", expected: "market" }
 ];
 

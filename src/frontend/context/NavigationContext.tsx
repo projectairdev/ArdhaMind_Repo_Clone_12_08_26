@@ -4,7 +4,6 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 export type PrimaryModuleId =
   | "market"
   | "market_intelligence"
-  | "trading_cheatsheet"
   | "news"
   | "portfolio"
   | "settings";
@@ -46,7 +45,7 @@ export interface NavigationContextType {
 /**
  * Migration normalizer for legacy saved workspaces.
  * Safely maps "intelligence", "market_insights", "pre_market_briefing", and temporary "market_intelligence_v2"
- * to canonical "market_intelligence", and "ardha_performance" to "settings".
+ * to canonical "market_intelligence", "trading_cheatsheet" to "market", and "ardha_performance" to "settings".
  */
 export function normalizeModuleId(raw: string | null | undefined): PrimaryModuleId {
   if (!raw) return "market";
@@ -62,10 +61,10 @@ export function normalizeModuleId(raw: string | null | undefined): PrimaryModule
   }
   if (clean === "journal") return "news";
   if (clean === "ardha_performance") return "settings";
+  if (clean === "trading_cheatsheet" || clean === "cheatsheet") return "market";
   const allowed: PrimaryModuleId[] = [
     "market",
     "market_intelligence",
-    "trading_cheatsheet",
     "news",
     "portfolio",
     "settings",

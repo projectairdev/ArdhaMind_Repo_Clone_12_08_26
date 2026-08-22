@@ -64,15 +64,15 @@ class TestTopNavbarRebuild:
 
 
 class TestSidebarRebuild:
-    """Tests confirming the sidebar contains ONLY the 5 primary navigation items and no Settings/collapse clutter."""
+    """Tests confirming the sidebar contains ONLY the 4 primary navigation items and no Settings/collapse clutter."""
 
-    def test_exact_five_primary_modules_present(self):
+    def test_exact_four_primary_modules_present(self):
         code = read_frontend("layout/DashboardLayout.tsx")
         assert 'id: "market", label: "MARKET"' in code
         assert 'id: "market_intelligence", label: "MARKET INTELLIGENCE"' in code
-        assert 'id: "trading_cheatsheet", label: "TRADING CHEATSHEET"' in code
         assert 'id: "news", label: "NEWS & UPDATES"' in code
         assert 'id: "portfolio", label: "PORTFOLIO"' in code
+        assert 'trading_cheatsheet' not in code
 
     def test_settings_removed_from_sidebar_navigation(self):
         code = read_frontend("layout/DashboardLayout.tsx")

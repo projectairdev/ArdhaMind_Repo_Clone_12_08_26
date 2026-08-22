@@ -61,7 +61,7 @@ def test_legacy_saved_module_migration():
         ("market", "market"),
         ("news", "news"),
         ("portfolio", "portfolio"),
-        ("trading_cheatsheet", "trading_cheatsheet"),
+        ("trading_cheatsheet", "market"),
         ("ardha_performance", "settings"),
         ("settings", "settings"),
         # Case D: Unknown / invalid -> "market"

@@ -1,6 +1,6 @@
 // src/frontend/layout/DashboardLayout.tsx
 import React, { useEffect, useState, useMemo } from "react";
-import { Calendar, Sliders, BookOpen } from "lucide-react";
+import { Calendar, Sliders } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useWorkstationState } from "../context/WorkstationStateContext";
 import { useNavigation, PrimaryModuleId } from "../context/NavigationContext";
@@ -11,7 +11,6 @@ import { MarketPulseWorkspace } from "../components/MarketPulseWorkspace";
 import { OptionsWorkspace } from "../components/OptionsWorkspace";
 import { PortfolioWorkspace } from "../components/PortfolioWorkspace";
 import { MarketIntelligenceWorkspace } from "../components/MarketIntelligenceWorkspace";
-import { TradingCheatsheetWorkspace } from "../features/trading-cheatsheet";
 import { NewsWorkspace, NewsSubTab } from "../components/news/NewsWorkspace";
 import { ArdhaPerformanceWorkspace } from "../components/ArdhaPerformanceWorkspace";
 import { InspectionSelection, MarketDeepDive, MarketInspectionProvider } from "../context/MarketInspectionContext";
@@ -20,11 +19,10 @@ import LiveAssistantPanel from "../components/LiveAssistantPanel";
 import { resolveBriefingPresentationMode } from "../utils/briefingTimeResolver";
 import { WorkspaceErrorBoundary } from "../components/ui/WorkspaceErrorBoundary";
 
-// Primary sidebar modules (5 Official Primary Trading Modules ONLY)
+// Primary sidebar modules (4 Official Primary Trading Modules ONLY)
 export const PRIMARY_MODULES = [
   { id: "market", label: "MARKET", glyph: MarketGlyph },
   { id: "market_intelligence", label: "MARKET INTELLIGENCE", glyph: IntelligenceGlyph },
-  { id: "trading_cheatsheet", label: "TRADING CHEATSHEET", glyph: BookOpen },
   { id: "news", label: "NEWS & UPDATES", glyph: JournalGlyph },
   { id: "portfolio", label: "PORTFOLIO", glyph: PortfolioGlyph },
 ] as const;
@@ -269,8 +267,6 @@ export function DashboardLayout() {
                     onSelectSubTab={setSettingsSubTab}
                     onBack={() => setSettingsOpen(false)}
                   />
-                ) : activeModule === "trading_cheatsheet" ? (
-                  <TradingCheatsheetWorkspace />
                 ) : activeModule === "news" || (activeModule as string) === "journal" ? (
                   <NewsWorkspace subTab={newsSubTab} onSelectSubTab={setNewsSubTab} />
                 ) : activeModule === "portfolio" ? (
