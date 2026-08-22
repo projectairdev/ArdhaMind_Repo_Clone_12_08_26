@@ -5,6 +5,7 @@ import { getCanonicalNewsPresentation } from "../../utils/canonicalNewsAdapter";
 import { LiveNewsTab } from "./LiveNewsTab";
 import { CatalystsTab } from "./CatalystsTab";
 import { CalendarTab } from "./CalendarTab";
+import { TemporalContextStrip } from "../ui/TemporalContextStrip";
 
 export type NewsSubTab = "live_news" | "catalysts" | "calendar";
 
@@ -41,6 +42,8 @@ export function NewsWorkspace({
 
   return (
     <div className="w-full min-w-0 space-y-2.5 font-sans text-left text-[11px]">
+      {/* ── TEMPORAL CONTEXT STRIP ── */}
+      <TemporalContextStrip canonicalState={state} customTitle="News & Macro Events Intelligence" />
       {/* Hidden Hook for Test Contract Assertions */}
       <div className="hidden" aria-hidden="true">
         <span>NEWS &amp; UPDATES</span>

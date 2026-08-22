@@ -21,6 +21,7 @@ import {
 import { useWorkstationState } from "../context/WorkstationStateContext";
 import { formatNumber, safeArray } from "../utils/safeHelpers";
 import { SectionHeader, Surface } from "./ui/WorkspacePrimitives";
+import { TemporalContextStrip } from "./ui/TemporalContextStrip";
 import {
   resolveMarketSessionState,
   getMarketSessionBadge,
@@ -394,6 +395,9 @@ export function MarketPulseWorkspace() {
         <span>&lt;SectorPerformanceChart</span>
         <span>formatRelativeAge</span>
       </div>
+
+      {/* ── TEMPORAL CONTEXT STRIP ── */}
+      <TemporalContextStrip canonicalState={stateObj} customTitle="Market Metrics & Benchmark Telemetry" />
 
       {/* ═══════════════════════════════════════════════════════════════════════
           ROW 1: 1. MARKET STATE (COMPACT CARD, ~28%) + 8. GLOBAL & MACRO (HORIZONTAL STRIP, ~72%)

@@ -33,6 +33,8 @@ import { CompactRows, MarketValue, MetricCell, SectionHeader, Surface } from "./
 import { useMarketInspection } from "../context/MarketInspectionContext";
 import { InstrumentVisual } from "./ui/AuthenticMarketLogo";
 import { getCanonicalQuote, getGlobalSessionLabel } from "../utils/canonicalQuotes";
+import { TemporalContextStrip } from "./ui/TemporalContextStrip";
+import { getTemporalSessionContext } from "../utils/temporalSessionResolver";
 import {
   MarketBreadthMeter,
   DayRangeBar,
@@ -240,6 +242,12 @@ function isCenterOpen(center: typeof GLOBAL_MARKET_CENTERS[0], utcNow: Date, can
     };
   }
 
+  const day = utcNow.getUTCDay();
+  const isWeekend = day === 0 || day === 6; // Sunday = 0, Saturday = 6
+  if (isWeekend) {
+    return { status: "CLOSED", isOpen: false };
+  }
+
   const localH = utcNow.getUTCHours() + center.utcOffset;
   const localM = utcNow.getUTCMinutes();
   const localMinutes = ((localH * 60 + localM) % 1440 + 1440) % 1440;
@@ -406,12 +414,11 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
   const quotes = data.state?.global_market_intelligence?.quotes || data.state?.global_quotes || data.macro?.quotes || {};
   const levels = report.critical_levels || {};
   const inst = report.institutional_context || {};
-  const scenario = report.primary_scenario?.summary || report.primary_scenario_description;
-  const invalidation = report.invalidation_level || report.primary_scenario?.invalidation || "Below 24,150 on open and sustain.";
+
+  const temporalCtx = getTemporalSessionContext(data.state, "PRE");
 
   const fiiNet = data.fiiFlow?.net_value != null ? Number(data.fiiFlow.net_value) : inst.fii_net_crores != null ? Number(inst.fii_net_crores) : -542.7;
   const diiNet = data.diiFlow?.net_value != null ? Number(data.diiFlow.net_value) : inst.dii_net_crores != null ? Number(inst.dii_net_crores) : 2124.1;
-  const netFlow = fiiNet != null && diiNet != null ? fiiNet + diiNet : 1581.4;
 
   const giftQuote = getCanonicalQuote(quotes, "GIFT_NIFTY");
   const prevCloseNum = levels.reference_close != null ? Number(levels.reference_close)
@@ -426,12 +433,17 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
 
   return (
     <div className="space-y-2.5 font-sans text-left text-[11px]">
+      {/* ── TEMPORAL CONTEXT STRIP ── */}
+      <TemporalContextStrip canonicalState={data.state} previewMode="PRE" />
+
       {/* ── TOP SUMMARY STRIP: OPENING OUTLOOK ── */}
       <Surface className="overflow-hidden">
         <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-[#191D23] bg-[#0B0D10] items-center">
           {/* Bias */}
           <div className="p-3 space-y-0.5">
-            <div className="text-[9px] uppercase font-bold text-[#707987] tracking-wider">OPENING BIAS</div>
+            <div className="text-[9px] uppercase font-bold text-[#707987] tracking-wider">
+              OPENING BIAS ({temporalCtx.nextSessionDate})
+            </div>
             <div className="text-sm sm:text-base font-extrabold text-[#00C896] uppercase tracking-wide">
               {report.opening_bias || "STRONG POSITIVE OPENING BIAS"}
             </div>
@@ -447,12 +459,14 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
 
           {/* Expected Open */}
           <div className="p-3 space-y-0.5">
-            <div className="text-[9px] uppercase font-bold text-[#707987] tracking-wider">EXPECTED OPEN</div>
+            <div className="text-[9px] uppercase font-bold text-[#707987] tracking-wider">
+              EXPECTED NEXT-SESSION OPEN
+            </div>
             <div className="text-[13px] font-bold text-[#E6E8EB] font-mono air-data">
               {expOpenStr}
             </div>
             <div className="text-[9.5px] text-[#707987] font-mono">
-              vs Prev Close {formatNumber(prevCloseNum, 2)}
+              vs Close ({temporalCtx.lastValidSessionDate}) {formatNumber(prevCloseNum, 2)}
             </div>
           </div>
 
@@ -490,8 +504,8 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
           <div className="p-3 bg-[#0B0D10] space-y-3">
             <CompactRows
               rows={[
-                ["Reference Close (18 Aug)", prevCloseNum != null ? formatNumber(prevCloseNum, 2) : "24,252.00"],
-                ["GIFT Nifty (Last)", giftQuote?.value != null ? formatNumber(Number(giftQuote.value), 2) : "24,329.00"],
+                [`Reference Close (${temporalCtx.lastValidSessionDate})`, prevCloseNum != null ? formatNumber(prevCloseNum, 2) : "24,252.00"],
+                ["LATEST GIFT NIFTY OBSERVATION", giftQuote?.value != null ? formatNumber(Number(giftQuote.value), 2) : "24,329.00"],
                 ["Expected Gap", expGapStr ?? "+98 to +128 (+0.40% to +0.52%)"],
                 ["Immediate Structural Resistance", levels.immediate_resistance ? formatNumber(Number(levels.immediate_resistance), 2) : "24,288.44"],
                 ["Immediate Structural Support", levels.immediate_support ? formatNumber(Number(levels.immediate_support), 2) : "24,211.19"],
@@ -501,7 +515,7 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
 
             <div className="border-t border-[#191D23] pt-2.5 space-y-2">
               <div className="text-[9px] font-bold uppercase tracking-wider text-[#707987] flex items-center justify-between">
-                <span>INSTITUTIONAL POSITIONING (CASH MARKET)</span>
+                <span>INSTITUTIONAL POSITIONING · Cash Market ({temporalCtx.lastValidSessionDate})</span>
               </div>
               <div className="space-y-2 text-[10px] font-mono">
                 <div>

@@ -16,6 +16,7 @@ import { buildSessionViewModels } from "../viewmodels/session/buildSessionViewMo
 import { MorningPlanView } from "./intelligence/MorningPlanView";
 import { LiveGuideView } from "./intelligence/LiveGuideView";
 import { TomorrowPlanView } from "./intelligence/TomorrowPlanView";
+import { TemporalContextStrip } from "./ui/TemporalContextStrip";
 
 export function MarketIntelligenceWorkspace() {
   const { canonicalState, lastValidState, marketContext, optionContext } = useWorkstationState() as any;
@@ -67,6 +68,9 @@ export function MarketIntelligenceWorkspace() {
       data-testid="market-intelligence-workspace"
       className="space-y-2.5 font-sans text-left text-[#E6E8EB]"
     >
+      {/* ── TEMPORAL CONTEXT STRIP ── */}
+      <TemporalContextStrip canonicalState={rawState} customTitle="Institutional Market Intelligence & Scenarios" />
+
       {/* ─────────────────────────────────────────────────────────────
           COMPACT SUBTAB ROW & PREVIEW SELECTOR (MATCHING MARKET)
       ───────────────────────────────────────────────────────────── */}

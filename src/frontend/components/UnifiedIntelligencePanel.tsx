@@ -3,6 +3,7 @@ import { useWorkstationState } from "../context/WorkstationStateContext";
 import { formatNumber, safeArray, safeString } from "../utils/safeHelpers";
 import { mapTraderEnum } from "../utils/traderTerminology";
 import { DecisionAreasPanel, DecisionZonesPanel, EvidenceList, ExplicitState, KeyLevelsPanel, ScenarioCard, SemanticBadge, nearestDecisionLevels } from "./intelligence/CanonicalPresentation";
+import { TemporalContextStrip } from "./ui/TemporalContextStrip";
 
 function useCanonicalIntelligence() {
   const { canonicalState } = useWorkstationState();
@@ -92,6 +93,7 @@ export function TodaysAnalysisSynthesis() {
 
   return (
     <section data-unified-intelligence="TODAYS_ANALYSIS" data-intelligence-view="full-session-synthesis" data-intelligence-engine={intelligence.engine} className="space-y-4 rounded-xl border border-cyan-900/50 bg-slate-950/70 p-5 text-left">
+      <TemporalContextStrip canonicalState={canonicalState} customTitle="Session Intelligence Synthesis" />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div data-analysis-session-heading className="text-[10px] font-black uppercase tracking-[.2em] text-cyan-400">

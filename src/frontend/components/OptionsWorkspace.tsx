@@ -4,6 +4,8 @@ import { formatNumber, safeArray, safeNumber } from "../utils/safeHelpers";
 import { OptionChainLadder, OptionChainViewMode } from "./visualizations/OptionChainLadder";
 import { OpenInterestHeatmap } from "./visualizations/OpenInterestHeatmap";
 import { SectionHeader, Surface } from "./ui/WorkspacePrimitives";
+import { TemporalContextStrip } from "./ui/TemporalContextStrip";
+import { getTemporalSessionContext } from "../utils/temporalSessionResolver";
 import {
   resolveMarketSessionState,
   getMarketSessionBadge,
@@ -169,6 +171,9 @@ export function OptionsWorkspace() {
         <OptionChainLadder />
         <OpenInterestHeatmap />
       </div>
+
+      {/* ── TEMPORAL CONTEXT STRIP ── */}
+      <TemporalContextStrip canonicalState={canonicalState} customTitle="NIFTY Derivatives & Option Chain Telemetry" />
 
       {/* ═══════════════════════════════════════════════════════════════════════
           1. DERIVATIVES STATE STRIP (COMPACT HORIZONTAL TOP BAR)
