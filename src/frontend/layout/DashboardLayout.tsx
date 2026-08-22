@@ -1,6 +1,6 @@
 // src/frontend/layout/DashboardLayout.tsx
 import React, { useEffect, useState, useMemo } from "react";
-import { Compass, Layers, Calendar, Sliders, BookOpen, Target, Settings as SettingsIcon, ChevronLeft, ChevronRight } from "lucide-react";
+import { Calendar, Sliders, BookOpen } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useWorkstationState } from "../context/WorkstationStateContext";
 import { useNavigation, PrimaryModuleId } from "../context/NavigationContext";
@@ -20,7 +20,7 @@ import LiveAssistantPanel from "../components/LiveAssistantPanel";
 import { resolveBriefingPresentationMode } from "../utils/briefingTimeResolver";
 import { WorkspaceErrorBoundary } from "../components/ui/WorkspaceErrorBoundary";
 
-// Primary sidebar modules (5 Official Primary Trading Modules)
+// Primary sidebar modules (5 Official Primary Trading Modules ONLY)
 export const PRIMARY_MODULES = [
   { id: "market", label: "MARKET", glyph: MarketGlyph },
   { id: "market_intelligence", label: "MARKET INTELLIGENCE", glyph: IntelligenceGlyph },
@@ -91,22 +91,6 @@ export function DashboardLayout() {
   const [niftyModeOverride, setNiftyModeOverride] = useState<NiftySessionMode>("auto");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [deepDive, setDeepDive] = useState<InspectionSelection | null>(null);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("ardhamind_sidebar_collapsed") === "true";
-    }
-    return false;
-  });
-
-  const toggleSidebarCollapse = () => {
-    setIsSidebarCollapsed((prev) => {
-      const next = !prev;
-      if (typeof window !== "undefined") {
-        localStorage.setItem("ardhamind_sidebar_collapsed", String(next));
-      }
-      return next;
-    });
-  };
 
   // Compute canonical session mode for dynamic workspaces
   const computedNiftyMode = useMemo<"pre_market" | "live" | "post_market">(() => {
@@ -200,14 +184,13 @@ export function DashboardLayout() {
 
         {/* Main Workspace Frame: Sidebar + Content */}
         <div className="flex min-h-0 flex-1 bg-[#050607]">
-          {/* Primary Sidebar Module Navigation */}
+          {/* Primary Sidebar Module Navigation (5 Primary Modules ONLY) */}
           <aside
             id="workstation-sidebar"
-            className={`${mobileOpen ? "block" : "hidden"} ${
-              isSidebarCollapsed ? "w-[58px]" : "w-[230px] sm:w-[240px]"
-            } absolute z-40 h-full border-r border-[#191D23] bg-[#050607] px-2 py-3 lg:static lg:flex lg:flex-col lg:justify-between overflow-y-auto shrink-0 transition-[width] duration-200`}
+            className={`${
+              mobileOpen ? "block" : "hidden"
+            } w-[230px] sm:w-[240px] absolute z-40 h-full border-r border-[#191D23] bg-[#050607] px-2 py-3 lg:static lg:block overflow-y-auto shrink-0`}
           >
-            {/* Upper Navigation List */}
             <nav className="space-y-1 font-mono">
               {PRIMARY_MODULES.map((module) => {
                 const Glyph = module.glyph;
@@ -215,92 +198,26 @@ export function DashboardLayout() {
                 const labelText = module.label;
 
                 return (
-                  <div key={module.id} className="relative group">
-                    <button
-                      onClick={() => navigateModule(module.id)}
-                      aria-current={isActive ? "page" : undefined}
-                      aria-label={labelText}
-                      className={`flex h-11 w-full items-center ${
-                        isSidebarCollapsed ? "justify-center px-0" : "gap-3 px-3"
-                      } rounded-[3px] border-l-2 text-left text-[11px] font-bold tracking-wide transition-colors ${
-                        isActive
-                          ? "border-[#38BDF8] bg-[#12151A] text-[#E6E8EB]"
-                          : "border-transparent text-[#707987] hover:bg-[#0E1013] hover:text-[#A5ABB4]"
-                      }`}
-                    >
-                      <Glyph
-                        size={17}
-                        className={`shrink-0 ${isActive ? "text-[#38BDF8]" : "text-[#707987] group-hover:text-[#A5ABB4]"}`}
-                      />
-                      {!isSidebarCollapsed && <span className="truncate">{labelText}</span>}
-                    </button>
-
-                    {/* Hover Tooltip when collapsed */}
-                    {isSidebarCollapsed && (
-                      <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 hidden group-hover:flex items-center z-50 pointer-events-none">
-                        <div className="rounded border border-[#242830] bg-[#0E1013] px-2 py-1 text-[10px] font-mono text-[#E6E8EB] shadow-xl whitespace-nowrap">
-                          {labelText}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    key={module.id}
+                    onClick={() => navigateModule(module.id)}
+                    aria-current={isActive ? "page" : undefined}
+                    aria-label={labelText}
+                    className={`flex h-11 w-full items-center gap-3 rounded-[3px] border-l-2 px-3 text-left text-[11px] font-bold tracking-wide transition-colors ${
+                      isActive
+                        ? "border-[#38BDF8] bg-[#12151A] text-[#E6E8EB]"
+                        : "border-transparent text-[#707987] hover:bg-[#0E1013] hover:text-[#A5ABB4]"
+                    }`}
+                  >
+                    <Glyph
+                      size={17}
+                      className={`shrink-0 ${isActive ? "text-[#38BDF8]" : "text-[#707987]"}`}
+                    />
+                    <span className="truncate">{labelText}</span>
+                  </button>
                 );
               })}
             </nav>
-
-            {/* Bottom Section: Settings & Collapse Button */}
-            <div className="pt-2 border-t border-[#191D23] space-y-1 font-mono">
-              {/* Settings Item */}
-              <div className="relative group">
-                <button
-                  onClick={openSettingsConsole}
-                  aria-current={settingsOpen ? "page" : undefined}
-                  aria-label="Settings"
-                  className={`flex h-11 w-full items-center ${
-                    isSidebarCollapsed ? "justify-center px-0" : "gap-3 px-3"
-                  } rounded-[3px] border-l-2 text-left text-[11px] font-bold tracking-wide transition-colors ${
-                    settingsOpen
-                      ? "border-[#38BDF8] bg-[#12151A] text-[#E6E8EB]"
-                      : "border-transparent text-[#707987] hover:bg-[#0E1013] hover:text-[#A5ABB4]"
-                  }`}
-                >
-                  <SettingsIcon
-                    size={17}
-                    className={`shrink-0 ${settingsOpen ? "text-[#38BDF8]" : "text-[#707987] group-hover:text-[#A5ABB4]"}`}
-                  />
-                  {!isSidebarCollapsed && <span className="truncate">SETTINGS</span>}
-                </button>
-
-                {isSidebarCollapsed && (
-                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 hidden group-hover:flex items-center z-50 pointer-events-none">
-                    <div className="rounded border border-[#242830] bg-[#0E1013] px-2 py-1 text-[10px] font-mono text-[#E6E8EB] shadow-xl whitespace-nowrap">
-                      Settings
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Collapse / Expand Toggle */}
-              <div className="relative group hidden lg:block">
-                <button
-                  onClick={toggleSidebarCollapse}
-                  aria-label={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-                  className={`flex h-9 w-full items-center ${
-                    isSidebarCollapsed ? "justify-center" : "justify-end px-3"
-                  } rounded-[3px] text-[#707987] hover:bg-[#0E1013] hover:text-[#E6E8EB] transition`}
-                >
-                  {isSidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-                </button>
-
-                {isSidebarCollapsed && (
-                  <div className="absolute left-full top-1/2 -translate-y-1/2 ml-2 hidden group-hover:flex items-center z-50 pointer-events-none">
-                    <div className="rounded border border-[#242830] bg-[#0E1013] px-2 py-1 text-[9.5px] font-mono text-[#E6E8EB] shadow-xl whitespace-nowrap">
-                      Expand Sidebar
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
           </aside>
 
           {/* Workspace Content Region */}

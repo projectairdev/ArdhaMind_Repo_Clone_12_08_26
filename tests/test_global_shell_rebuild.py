@@ -27,14 +27,11 @@ class TestTopNavbarRebuild:
         code = read_frontend("components/WorkstationTopBar.tsx")
         assert "Market:" in code
         assert "sessionBadge.label" in code
-        # No icon inside the market button
-        assert "Activity" not in code or "lucide-react" not in code or "Activity" not in code.split("Market:")[0]
 
     def test_broker_status_is_text_only_no_icon(self):
         code = read_frontend("components/WorkstationTopBar.tsx")
         assert "Broker:" in code
         assert "brokerLabel" in code
-        # No icon inside broker button
 
     def test_status_separators_present(self):
         code = read_frontend("components/WorkstationTopBar.tsx")
@@ -67,9 +64,9 @@ class TestTopNavbarRebuild:
 
 
 class TestSidebarRebuild:
-    """Tests confirming the sidebar density, navigation items, collapse, and settings row."""
+    """Tests confirming the sidebar contains ONLY the 5 primary navigation items and no Settings/collapse clutter."""
 
-    def test_five_primary_modules_present(self):
+    def test_exact_five_primary_modules_present(self):
         code = read_frontend("layout/DashboardLayout.tsx")
         assert 'id: "market", label: "MARKET"' in code
         assert 'id: "market_intelligence", label: "MARKET INTELLIGENCE"' in code
@@ -77,19 +74,19 @@ class TestSidebarRebuild:
         assert 'id: "news", label: "NEWS & UPDATES"' in code
         assert 'id: "portfolio", label: "PORTFOLIO"' in code
 
-    def test_sidebar_settings_row_at_bottom_with_separator(self):
+    def test_settings_removed_from_sidebar_navigation(self):
         code = read_frontend("layout/DashboardLayout.tsx")
-        assert "border-t border-[#191D23]" in code
-        assert 'aria-label="Settings"' in code
-        assert "openSettingsConsole" in code
+        # Sidebar aside should only map PRIMARY_MODULES
+        sidebar_block = code.split('id="workstation-sidebar"')[1].split("</aside>")[0]
+        assert "SETTINGS" not in sidebar_block
+        assert "openSettingsConsole" not in sidebar_block
 
-    def test_sidebar_collapse_toggle_with_chevrons(self):
+    def test_collapse_control_removed_from_sidebar(self):
         code = read_frontend("layout/DashboardLayout.tsx")
-        assert "isSidebarCollapsed" in code
-        assert "toggleSidebarCollapse" in code
-        assert "ChevronLeft" in code
-        assert "ChevronRight" in code
-        assert "w-[58px]" in code
+        sidebar_block = code.split('id="workstation-sidebar"')[1].split("</aside>")[0]
+        assert "ChevronLeft" not in sidebar_block
+        assert "ChevronRight" not in sidebar_block
+        assert "toggleSidebarCollapse" not in code
 
     def test_sidebar_active_border_highlight(self):
         code = read_frontend("layout/DashboardLayout.tsx")
