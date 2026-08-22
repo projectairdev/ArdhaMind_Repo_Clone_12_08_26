@@ -84,3 +84,9 @@ def test_workstation_state_service_publishes_valid_session_metadata():
     assert "market_session" in service_state
     assert "runtime_id" in service_state
     assert "state_sequence" in service_state
+
+
+def test_market_pulse_workspace_has_no_undeclared_state_obj_references():
+    code = read("src/frontend/components/MarketPulseWorkspace.tsx")
+    assert "stateObj" not in code
+    assert "canonicalState={state}" in code

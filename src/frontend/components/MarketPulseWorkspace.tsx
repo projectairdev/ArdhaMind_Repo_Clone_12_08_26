@@ -397,7 +397,7 @@ export function MarketPulseWorkspace() {
       </div>
 
       {/* ── TEMPORAL CONTEXT STRIP ── */}
-      <TemporalContextStrip canonicalState={stateObj} customTitle="Market Metrics & Benchmark Telemetry" />
+      <TemporalContextStrip canonicalState={state} customTitle="Market Metrics & Benchmark Telemetry" />
 
       {/* ═══════════════════════════════════════════════════════════════════════
           ROW 1: 1. MARKET STATE (COMPACT CARD, ~28%) + 8. GLOBAL & MACRO (HORIZONTAL STRIP, ~72%)
