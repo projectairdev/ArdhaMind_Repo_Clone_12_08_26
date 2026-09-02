@@ -34,6 +34,7 @@ class StructuralLevels:
     s1: Optional[float] = None
     s2: Optional[float] = None
     s3: Optional[float] = None
+    raw_atr_14: Optional[float] = None
     local_atr_upper: Optional[float] = None
     local_atr_lower: Optional[float] = None
 
@@ -102,12 +103,15 @@ class SessionStory:
 @dataclass
 class SessionCloseCore:
     schema_name: str = "SESSION_CLOSE_CORE"
-    schema_version: str = "1.1.0"
+    schema_version: str = "1.2.0"
     session_date: str = ""
     session_type: str = "REGULAR_TRADING"
     finalized_at: str = ""
     finalization_generation: int = 1
     idempotency_key: str = ""
+    session_vwap: Optional[float] = None
+    or_high: Optional[float] = None
+    or_low: Optional[float] = None
     market_ohlcv: MarketOHLCV = field(default_factory=MarketOHLCV)
     structural_levels: StructuralLevels = field(default_factory=StructuralLevels)
     market_regime: MarketRegime = field(default_factory=MarketRegime)
@@ -132,12 +136,15 @@ class SessionCloseCore:
             return cls()
         return cls(
             schema_name=data.get("schema_name", "SESSION_CLOSE_CORE"),
-            schema_version=data.get("schema_version", "1.1.0"),
+            schema_version=data.get("schema_version", "1.2.0"),
             session_date=data.get("session_date", ""),
             session_type=data.get("session_type", "REGULAR_TRADING"),
             finalized_at=data.get("finalized_at", ""),
             finalization_generation=data.get("finalization_generation", 1),
             idempotency_key=data.get("idempotency_key", ""),
+            session_vwap=data.get("session_vwap"),
+            or_high=data.get("or_high"),
+            or_low=data.get("or_low"),
             market_ohlcv=MarketOHLCV(**(data.get("market_ohlcv") or {})),
             structural_levels=StructuralLevels(**(data.get("structural_levels") or {})),
             market_regime=MarketRegime(**(data.get("market_regime") or {})),

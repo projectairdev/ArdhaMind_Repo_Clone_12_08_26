@@ -47,6 +47,24 @@ STORAGE_DIR = Path("/opt/ardhamind/staging/data/post_market_briefings")
 FALLBACK_DIR = Path("/opt/ardhamind/staging/.cache/post_market_briefings")
 
 
+def _pnum(*values: Any) -> Optional[float]:
+    """First positive, finite float among the candidates, else None.
+
+    Used so that missing real market data yields an explicit None (and a
+    DEGRADED briefing) rather than a fabricated placeholder price.
+    """
+    for v in values:
+        try:
+            if v is None:
+                continue
+            f = float(v)
+            if f > 0 and f == f:
+                return f
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 class PostMarketBriefingEngine:
     """
     Deterministic Post-Market Briefing Engine.
@@ -163,11 +181,24 @@ class PostMarketBriefingEngine:
         # Check pre-15:20 IST on a trading day (15:00 - 15:19 IST or morning/midday)
         if is_today_trading and current_hhmm < "15:20" and not force_reconcile:
             m_data = state.get("market_data") or state.get("marketContext") or {}
-            spot = float(m_data.get("current_spot") or state.get("last_price") or 24152.05)
-            open_val = float(m_data.get("open") or spot)
-            high_val = float(m_data.get("high") or spot)
-            low_val = float(m_data.get("low") or spot)
-            prev_close = float(m_data.get("previous_close") or 24078.3)
+            spot = _pnum(m_data.get("current_spot"), state.get("last_price"))
+            if spot is None:
+                return PostMarketBriefingReport(
+                    report_id=f"PMB-{session_date}",
+                    trading_session_date=session_date,
+                    generated_at=now_ist.isoformat(),
+                    schema_version=1,
+                    snapshot_time_ist="PREPARING",
+                    snapshot_type="PREPARING",
+                    lifecycle_status="DEGRADED",
+                    nifty_snapshot=None,
+                    session_story=None,
+                    next_session_outlook=None,
+                )
+            prev_close = _pnum(m_data.get("previous_close"))
+            open_val = _pnum(m_data.get("open")) or spot
+            high_val = _pnum(m_data.get("high")) or spot
+            low_val = _pnum(m_data.get("low")) or spot
 
             nifty_snap = NiftySnapshot(
                 price_at_snapshot=spot,
@@ -175,8 +206,8 @@ class PostMarketBriefingEngine:
                 high_so_far=high_val,
                 low_so_far=low_val,
                 previous_close=prev_close,
-                change_points=round(spot - prev_close, 2),
-                change_pct=round(((spot - prev_close) / prev_close) * 100.0, 2) if prev_close > 0 else 0.0,
+                change_points=round(spot - prev_close, 2) if prev_close is not None else None,
+                change_pct=round(((spot - prev_close) / prev_close) * 100.0, 2) if (prev_close is not None and prev_close > 0) else None,
                 session_range_so_far=round(high_val - low_val, 2),
                 official_close_value=None,
                 official_close_available=False,
@@ -207,13 +238,37 @@ class PostMarketBriefingEngine:
 
         # Extract market data
         m_data = state.get("market_data") or state.get("marketContext") or {}
-        spot = float(m_data.get("current_spot") or state.get("last_price") or 24152.05)
-        open_val = float(m_data.get("open") or 24152.05)
-        high_val = float(m_data.get("high") or spot)
-        low_val = float(m_data.get("low") or spot)
-        prev_close = float(m_data.get("previous_close") or 24078.3)
-        chg_pts = round(spot - prev_close, 2)
-        chg_pct = round((chg_pts / prev_close) * 100.0, 2) if prev_close > 0 else 0.0
+        spot = _pnum(m_data.get("current_spot"), state.get("last_price"))
+        if spot is None:
+            # No real spot at all: emit an explicit DEGRADED report. Structural
+            # sub-contexts still carry their honest "UNAVAILABLE" defaults; no
+            # price / level fields are fabricated.
+            return PostMarketBriefingReport(
+                report_id=f"PMB-{session_date}",
+                trading_session_date=session_date,
+                generated_at=now_ist.isoformat(),
+                schema_version=1,
+                snapshot_time_ist="15:20 IST",
+                snapshot_type="PRE_CLOSE_1520",
+                lifecycle_status="DEGRADED",
+                nifty_snapshot=None,
+                session_character=None,
+                key_levels=None,
+                options_context=OptionsContext(),
+                breadth_context=BreadthContext(),
+                sector_context=SectorContext(),
+                institutional_context=InstitutionalContext(),
+                macro_context=MacroContext(),
+                news_context=NewsContext(),
+                session_story=None,
+                next_session_outlook=None,
+            )
+        prev_close = _pnum(m_data.get("previous_close"))
+        open_val = _pnum(m_data.get("open")) or spot
+        high_val = _pnum(m_data.get("high")) or spot
+        low_val = _pnum(m_data.get("low")) or spot
+        chg_pts = round(spot - prev_close, 2) if prev_close is not None else None
+        chg_pct = round((chg_pts / prev_close) * 100.0, 2) if (chg_pts is not None and prev_close and prev_close > 0) else None
         sess_range = round(high_val - low_val, 2)
 
         # Reconcile official close if available
@@ -246,14 +301,18 @@ class PostMarketBriefingEngine:
         vix_val = float(state.get("vix") or m_data.get("india_vix") or 10.81)
         v_regime = "COMPRESSED" if vix_val < 12 else ("NORMAL" if vix_val <= 16 else "ELEVATED")
 
+        # Directional character: use real session change vs previous close when
+        # available, otherwise fall back to the real change from the session open.
+        _dir = chg_pts if chg_pts is not None else round(spot - open_val, 2)
+
         sess_char = SessionCharacter(
             directional_bias=bias if bias in ["BULLISH", "BEARISH", "NEUTRAL", "MIXED"] else "NEUTRAL",
             market_regime=regime,
             volatility_regime=v_regime,
-            trend_quality="STABLE" if chg_pct > 0 else "CONSOLIDATING",
-            breadth_state="POSITIVE" if chg_pts > 0 else "NEGATIVE",
+            trend_quality="STABLE" if _dir > 0 else "CONSOLIDATING",
+            breadth_state="POSITIVE" if _dir > 0 else "NEGATIVE",
             participation_quality="INSTITUTIONAL_SUPPORTED",
-            intraday_structure="HIGHER_LOWS" if chg_pts > 0 else "LOWER_HIGHS",
+            intraday_structure="HIGHER_LOWS" if _dir > 0 else "LOWER_HIGHS",
         )
 
         # Key levels
@@ -279,11 +338,11 @@ class PostMarketBriefingEngine:
         # Options context
         opts = state.get("options") or state.get("option_intelligence") or {}
         has_opts = isinstance(opts, dict) and len(opts) > 0
-        pcr = float(opts.get("pcr", 1.15)) if has_opts else None
-        max_p = float(opts.get("max_pain", 24200.0)) if has_opts else None
-        c_wall = float(opts.get("call_wall", 24300.0)) if has_opts else None
-        p_wall = float(opts.get("put_wall", 24000.0)) if has_opts else None
-        opt_bias = ("BULLISH_SUPPORT" if (pcr or 1.15) >= 1.0 else "BEARISH_RESISTANCE") if has_opts else "UNAVAILABLE"
+        pcr = _pnum(opts.get("pcr")) if has_opts else None
+        max_p = _pnum(opts.get("max_pain")) if has_opts else None
+        c_wall = _pnum(opts.get("call_wall")) if has_opts else None
+        p_wall = _pnum(opts.get("put_wall")) if has_opts else None
+        opt_bias = (("BULLISH_SUPPORT" if pcr >= 1.0 else "BEARISH_RESISTANCE") if pcr is not None else "UNAVAILABLE") if has_opts else "UNAVAILABLE"
 
         opts_ctx = OptionsContext(
             atm_strike=round(spot / 50) * 50 if has_opts else None,
@@ -312,7 +371,7 @@ class PostMarketBriefingEngine:
             unchanged=unch,
             breadth_bias="BULLISH" if adv > dec else "BEARISH",
             breadth_strength="STRONG" if abs(adv - dec) > 15 else "MODERATE",
-            heavyweight_participation="POSITIVE_ALIGNMENT" if chg_pts > 0 else "NEGATIVE_ALIGNMENT",
+            heavyweight_participation="POSITIVE_ALIGNMENT" if _dir > 0 else "NEGATIVE_ALIGNMENT",
         )
 
         # Sectors
@@ -516,7 +575,7 @@ class PostMarketBriefingEngine:
     @classmethod
     def _build_phase3_summary(cls) -> Phase3ExecutionSummary:
         try:
-            from src.execution_engine.proposal_audit_storage import ProposalAuditStorage
+            from src.proposal_engine.audit_storage import ProposalAuditStorage
             storage = ProposalAuditStorage()
             orders = storage.get_active_orders()
             positions = storage.get_open_positions()
@@ -579,7 +638,7 @@ class PostMarketBriefingEngine:
         return NextSessionOutlook(
             target_trading_date=next_trading_date,
             baseline_bias=base_bias,
-            confidence="74%",
+            confidence="UNAVAILABLE",  # no real next-session confidence model feeds this path
             expected_regime="RANGE",
             overnight_risk="LOW" if vix_val < 13 else "MODERATE",
             carry_forward_levels={

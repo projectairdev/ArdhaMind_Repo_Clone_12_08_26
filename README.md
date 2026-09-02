@@ -1,21 +1,30 @@
-# NIFTY Option Finder & Market Intelligence Workstation
+# AIR ArdhaMind — NIFTY 50 Intelligence Workstation
 
-Welcome to the **NIFTY Option Finder & Market Intelligence Workstation** (Version 1.0.0-beta). This is an enterprise-grade, high-performance option analysis, directional scoring, risk management, and decision execution platform designed for paper trading and manual broker evaluation on NIFTY index options.
+AIR ArdhaMind is an enterprise-grade, **READ-ONLY** NIFTY 50 market intelligence workstation and decision-support terminal.
 
-The workstation combines multiple high-speed scoring pipelines, an advanced opportunity intelligence layer, paper trading and manual brokerage bridges, an AI-powered explanation engine, and a complete system health monitor into a unified, lightweight terminal dashboard interface.
+The workstation combines deterministic market-data engines, real-time Kite Connect WebSocket streaming, evidence-based structural level analysis, multi-session intelligence, and an AI-powered Live Assistant into a unified high-performance React/Node/Python workstation.
 
 ---
 
-## 🚀 Key Capabilities
+## 🛡️ Absolute Safety & Product Invariants
 
-- **Market & Option Intelligence**: Analyzes live spot prices, ATM options, Put-Call Ratio (PCR), Max Pain, Open Interest confluences, and structural support/resistance zones.
-- **Directional Scoring Pipeline**: Synthesizes market signals to generate real-time scoring metrics, visual grades, and directional bias (BULLISH/BEARISH/NEUTRAL).
-- **Opportunity & Strategy Engines**: Matches incoming market conditions with a comprehensive strategy library (e.g., Scalping, Momentum, Swing, Mean Reversion) and evaluates candidate option contracts.
-- **Confidence & Risk Controls**: Applies multi-tier statistical checks, exposure boundaries, capital allocation limits, and drawdown protections to each trade plan.
-- **Decision & Execution Manager**: Implements an immutable order-decision layer and tracks live paper positions, slippage simulations, and transaction logs.
-- **Workstation Health & Operations Manager**: Runs deep startup diagnostics, manages active dependency validation, resource utilization tracking, and generates real-time readiness ratings.
-- **AI Explanation Layer**: Generates human-readable, context-aware justifications and risk analyses for every tactical trading decision using the Google Gemini model.
-- **Workspace & Profile Manager**: Supports dynamic loading, saving, and verifying workstation preferences (CLI/React layouts, logging thresholds, active profiles).
+- **Read-Only Invariant**: Production workstation is strictly read-only. No automated order placement, broker mutation, or autonomous execution.
+- **Data Integrity**: Zero data fabrication; zero synthetic price replacement. Missing numeric data is explicitly handled as `UNAVAILABLE` or `None`.
+- **Single Upstream Ticker**: Exactly one active upstream WebSocket streaming instance (`StreamingOrchestrator`).
+- **Canonical State Truth**: Single authoritative frontend source of truth via `CanonicalWorkstationState` over local WebSocket `/api/ws`.
+
+---
+
+## 🚀 Workspaces & Capabilities
+
+1. **NIFTY Live**: Real-time tick stream, live spot chart, candle buffer, VWAP, intraday range, and multi-timeframe trend telemetry.
+2. **Live Assistant**: Context-aware market intelligence, grounded explanations, and live query interface.
+3. **Today's Analysis**: Intraday performance evaluation, regime classification, session high/low tracking, and completed session review.
+4. **Forward Outlook**: Multi-session predictive intelligence, structural level confluences, and scenario planning.
+5. **Pre-Market Planner**: Pre-open market briefing, global cues, GIFT NIFTY gap analysis, and opening setup strategies.
+6. **Market Pulse**: Cross-asset sentiment, India VIX, sector performance, and market breadth.
+7. **NEWS & UPDATES**: Real-time filtered financial news, source attribution, category filtering, and impact scoring.
+8. **Settings**: Broker connectivity health, session diagnostics, performance metrics, and workstation configuration.
 
 ---
 
@@ -24,75 +33,72 @@ The workstation combines multiple high-speed scoring pipelines, an advanced oppo
 ```text
 /
 ├── src/
-│   ├── models/                # Immutable type-safe data schemas (dataclasses)
-│   ├── pipeline/              # Coordinate executing mathematical & trading runs
-│   ├── config_engine/         # Legacy scoring parameters
-│   ├── configuration_engine/  # Profile presets, file loaders, validators, and exporters
-│   ├── indicator_engine/      # Mathematical metrics, trend filters, support/resistance
-│   ├── opportunity_engine/    # Filter spot data, classify regime, find candidate strikes
-│   ├── strategy_engine/       # Tactical strategy evaluations (e.g. Scalping, Swing, Expiry)
-│   ├── planner_engine/        # Formulates comprehensive TradePlans for option contracts
-│   ├── confidence_engine/     # Statistical confirmation, historical confluences, weighting
-│   ├── risk_engine/           # Portfolio drawdown limits, capital sizing rules
-│   ├── decision_engine/       # Actionable buy/sell decisions, margin buffers
-│   ├── execution_engine/      # Lifecycle states, transaction trails, slippage model
-│   ├── paper_trading/         # Margin calculations, ledger tracking, paper accounts
-│   ├── analytics_engine/      # Sharpe ratio, win rate, duration distribution analytics
-│   ├── news_engine/           # Real-time event scraping, sentiment processing, alerts
-│   ├── broker_engine/         # Manual broker accounts, API keys validation, API gateway
-│   ├── operations_engine/     # Readiness, dependency verification, hardware usage metrics
-│   ├── explanation_engine/    # Generates Gemini prompt payloads and parses responses
-│   ├── dashboard/             # Visual dashboard panel rendering (CLI text-blocks & schemas)
-│   └── utils/                 # Clean, stateless file IO, math, time, and loggers
-├── docs/                      # Complete operational and development guides
-├── tests/                     # 180+ comprehensive Python regression unittests
-├── package.json               # Frontend Node workspace definition
-├── requirements.txt           # Python application dependencies
-└── metadata.json              # Platform capability declarations
+│   ├── application/           # Workstation state coordinator, DataQualityService
+│   ├── broker/
+│   │   ├── adapters/          # KiteBrokerGateway (Zerodha KiteConnect REST/WS)
+│   │   └── services/          # BrokerService, StreamingOrchestrator, MarketStatusService
+│   │       └── portfolio/     # Read-only position, portfolio, order, and MTM telemetry
+│   ├── controlled_execution/  # Preserved future human-controlled execution architecture
+│   ├── frontend/              # React 18 / TypeScript workspaces, components, viewmodels
+│   ├── intelligence_engine/   # Pre-Market, Today's Analysis, Forward Outlook, Live Assistant
+│   ├── operations_engine/     # Service monitoring, readiness diagnostics, health scoring
+│   ├── proposal_engine/       # Trade proposal models and audit storage
+│   └── server_bridge.py       # Python daemon bridge interface
+├── dist/                      # Production build bundle (server.cjs and client assets)
+├── data/                      # Session stores, performance records, post-market briefings
+├── docs/                      # Technical specifications, architecture docs, historical audits
+├── tests/                     # 194 active regression tests covering all workstation engines
+│   ├── archived_sprints/      # Archived historical test suites and legacy adapters
+│   └── integration/           # End-to-end integration and runtime acceptance tests
+├── server.ts                  # Production Express / WebSocket / HTTP bridge server
+├── package.json               # Node workspace definition & build scripts
+├── pytest.ini                 # Pytest testpath configuration & exclusions
+└── requirements.txt           # Python application dependencies
 ```
 
 ---
 
-## 🛠️ Quick Start
+## 🛠️ Quick Start & Local Development
 
 ### 1. Prerequisites
-- **Python**: Version `3.11` or higher.
-- **NodeJS**: Version `18` or higher (for front-end dashboard viewing).
+- **Node.js**: `v20.x` or `v24.x`
+- **Python**: `3.11` or `3.12`
 
 ### 2. Dependency Installation
 ```bash
-# Install Python backend dependencies
-pip install -r requirements.txt
-
 # Install Node dependencies
-npm install
+npm ci
+
+# Create virtual environment and install Python dependencies
+python -m venv .venv
+.\.venv\Scripts\pip install -r requirements.txt  # Windows
+# source .venv/bin/activate && pip install -r requirements.txt  # Linux/macOS
 ```
 
-### 3. Running the Test Suite
-The codebase includes 183+ high-coverage unittests. To run the full regression verification suite:
+### 3. Verification & Testing
 ```bash
-python3 -m unittest discover tests
+# TypeScript compilation check
+npx tsc --noEmit
+
+# Production bundle build
+npm run build
+
+# Run active Python regression test suite
+.\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
+```
+
+### 4. Running the Local Workstation
+```bash
+# Start production server (Node Express + Python daemon bridge)
+node dist/server.cjs
+
+# Or run in development mode with Vite hot-reload
+npm run dev
 ```
 
 ---
 
-## 📘 Comprehensive Documentation
-
-Detailed documentation and operator books are organized in the `/docs` folder:
-
-1. [**Architecture Guide**](docs/architecture_guide.md) — Dive deep into data flows, pipeline orchestration, and model relationships.
-2. [**Installation Guide**](docs/installation_guide.md) — Complete setup instructions from a bare system to running workstation instances.
-3. [**Configuration Guide**](docs/configuration_guide.md) — Learn how to customize scoring weights, profiles (Default, Aggressive, Conservative), and workstation preferences.
-4. [**Operator Guide**](docs/operator_guide.md) — Walk through standard operating procedures, CLI monitoring layouts, and report outputs.
-5. [**Paper Trading Guide**](docs/paper_trading_guide.md) — How the paper portfolio behaves, margin thresholds, and performance metrics tracking.
-6. [**Live Trading Guide**](docs/live_trading_guide.md) — Steps for manual broker integration, risk control overrides, and safety margins.
-7. [**Troubleshooting Guide**](docs/troubleshooting_guide.md) — Resolving common errors, missing API keys, or memory utilization bottlenecks.
-8. [**Developer Guide**](docs/developer_guide.md) — Standard guidelines, adding new custom pipelines, and extending test coverage.
-9. [**Release Notes**](docs/release_notes.md) — Details on the Version 1.0.0-beta Release Candidate.
-
-For complete release history, refer to [**CHANGELOG.md**](CHANGELOG.md).
-
----
-
-## ⚖️ License
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) or source file headers for details.
+## 📘 Documentation
+- [**Production Runbook**](PRODUCTION.md) — VPS operations, systemd service management, and monitoring.
+- [**Product Specifications**](PRODUCT_SPEC.md) — Architectural principles and workspace capabilities.
+- [**Historical Audits**](docs/historical_audits/) — Archive of sprint audits and engineering reviews.

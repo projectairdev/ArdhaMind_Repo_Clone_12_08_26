@@ -517,9 +517,11 @@ def evaluate_record(record: ArdhaEvaluationRecord, session_truth: Dict[str, Any]
 
     elif metric_id in ["pre_primary_scenario", "pre_alternate_scenario"] or "Scenario" in metric:
         session_activated = "SCENARIO_C"
-        if actual_change < -40.0 or (actual_low < 24117 and actual_close < actual_open):
+        # Spot-relative breach thresholds (±40 pts vs the session open), not
+        # frozen absolute price levels.
+        if actual_change < -40.0 or (actual_low < actual_open - 40.0 and actual_close < actual_open):
             session_activated = "SCENARIO_B"
-        elif actual_change > 40.0 or (actual_high > 24231 and actual_close > actual_open):
+        elif actual_change > 40.0 or (actual_high > actual_open + 40.0 and actual_close > actual_open):
             session_activated = "SCENARIO_A"
 
         ardha_scen_id = "SCENARIO_C"

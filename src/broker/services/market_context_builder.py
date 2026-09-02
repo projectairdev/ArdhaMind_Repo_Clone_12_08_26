@@ -29,15 +29,21 @@ logger = logging.getLogger("MarketContextBuilder")
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _compute_vwap(candles: List[Dict]) -> float:
+def _compute_vwap(candles: List[Dict], target_date: Optional[str] = None) -> float:
     """
     VWAP = sum(typical_price * volume) / sum(volume)
     Typical price = (high + low + close) / 3
+    Strictly scoped to target_date session candles.
     """
     total_pv = 0.0
     total_v = 0.0
     for c in candles:
         try:
+            if target_date:
+                c_dt = c.get("date")
+                c_date_str = c_dt.strftime("%Y-%m-%d") if hasattr(c_dt, "strftime") else str(c_dt)[:10]
+                if c_date_str != target_date:
+                    continue
             h = float(c.get("high", 0))
             l = float(c.get("low", 0))
             cl = float(c.get("close", 0))
@@ -240,13 +246,18 @@ def _determine_trend(spot: float, vwap: float, atr: float) -> tuple[str, str, fl
     return regime, direction, round(strength, 1)
 
 
-def _compute_support_resistance(spot: float, atr: float) -> tuple[list, list]:
-    """Support and resistance derived from spot ± ATR multiples."""
-    if atr <= 0:
+def _compute_support_resistance(spot: float, atr: float, open_price: Optional[float] = None) -> tuple[list, list]:
+    """Support and resistance dynamically anchored to spot and ATR."""
+    if spot <= 0:
         return [], []
-    supports = [round(spot - atr, 2), round(spot - 2 * atr, 2)]
-    resistances = [round(spot + atr, 2), round(spot + 2 * atr, 2)]
-    return supports, resistances
+    effective_atr = atr if (atr and atr > 0) else spot * 0.006
+    s1 = round(spot - (effective_atr * 0.5), 2)
+    s2 = round(spot - (effective_atr * 1.0), 2)
+    s3 = round(spot - (effective_atr * 1.5), 2)
+    r1 = round(spot + (effective_atr * 0.5), 2)
+    r2 = round(spot + (effective_atr * 1.0), 2)
+    r3 = round(spot + (effective_atr * 1.5), 2)
+    return [s1, s2, s3], [r1, r2, r3]
 
 
 # ---------------------------------------------------------------------------
@@ -390,7 +401,8 @@ class MarketContextBuilder:
         feed_health = feed_health_data.get("status", "OFFLINE")
         feed_latency_ms = float(feed_health_data.get("latency_ms", 0.0))
 
-        # ---- NIFTY 50 spot from latest tick ----
+        # ---- NIFTY 50 spot from authoritative source with strict precedence ----
+        # Precedence: 1. Fresh WebSocket tick -> 2. Fresh Kite REST quote -> 3. Stale/Unavailable
         nifty_tick = (orch.latest_ticks.get("NSE:NIFTY 50") or orch.latest_ticks.get("NIFTY 50")) if orch else None
         spot = 0.0
         ltp = 0.0
@@ -407,7 +419,35 @@ class MarketContextBuilder:
         high_price = None
         low_price = None
 
-        if nifty_tick:
+        ws_connected = bool(orch and hasattr(orch, "is_connected") and orch.is_connected())
+        ws_tick_fresh = False
+        t_now = time.time()
+
+        if ws_connected and nifty_tick:
+            tick_raw_ts = nifty_tick.get("timestamp")
+            if tick_raw_ts:
+                try:
+                    if hasattr(tick_raw_ts, "timestamp"):
+                        tick_age = t_now - tick_raw_ts.timestamp()
+                    elif isinstance(tick_raw_ts, (int, float)):
+                        tick_age = t_now - float(tick_raw_ts)
+                    else:
+                        dt = datetime.fromisoformat(str(tick_raw_ts).replace("Z", "+00:00"))
+                        tick_age = t_now - dt.timestamp()
+                    ws_tick_fresh = (0 <= tick_age < 15.0)
+                except Exception:
+                    ws_tick_fresh = False
+            else:
+                last_ts = getattr(orch, "_last_tick_timestamps", {}).get(256265)
+                if last_ts:
+                    ws_tick_fresh = (t_now - last_ts) < 15.0
+                else:
+                    ws_tick_fresh = True
+
+        source_type = "UNAVAILABLE"
+
+        # Tier 1: Fresh WebSocket Tick
+        if ws_tick_fresh and nifty_tick and float(nifty_tick.get("last_price", 0.0) or 0.0) > 0:
             spot = float(nifty_tick.get("last_price", 0.0))
             ltp = spot
             volume = int(nifty_tick.get("volume", 0))
@@ -418,6 +458,7 @@ class MarketContextBuilder:
             spread = round(ask - bid, 2)
             ts = nifty_tick.get("timestamp")
             last_tick_time = str(ts) if ts else now_str
+            source_type = "WEBSOCKET_STREAM"
 
             tick_ohlc = nifty_tick.get("ohlc") or {}
             if tick_ohlc.get("open") is not None and float(tick_ohlc.get("open")) > 0:
@@ -429,18 +470,20 @@ class MarketContextBuilder:
             if tick_ohlc.get("close") is not None and float(tick_ohlc.get("close")) > 0:
                 previous_close = float(tick_ohlc["close"])
 
-        source_type = "WEBSOCKET_STREAM" if (nifty_tick and spot > 0) else ("REST_POLL" if bs.is_connected() else "LAST_VALID_SESSION")
-        if bs.is_connected():
+        # Tier 2: Fresh REST Quote Fallback (runs if WebSocket is not fresh, disconnected, or absent)
+        if (source_type != "WEBSOCKET_STREAM" or spot <= 0.0) and bs.is_connected():
             try:
                 nq = bs.get_quote(["NSE:NIFTY 50"])
                 if nq and "NSE:NIFTY 50" in nq:
                     n_data = nq["NSE:NIFTY 50"]
-                    if spot <= 0.0:
-                        spot = float(n_data.get("last_price", 0.0))
-                        ltp = spot
-                        bid = spot
-                        ask = spot
+                    q_last = float(n_data.get("last_price", 0.0) or 0.0)
+                    if q_last > 0.0:
+                        spot = q_last
+                        ltp = q_last
+                        bid = q_last
+                        ask = q_last
                         last_tick_time = now_str
+                        source_type = "REST_POLL"
                     ohlc_obj = n_data.get("ohlc") or {}
                     prev_raw = ohlc_obj.get("close")
                     if prev_raw is not None and float(prev_raw) > 0:
@@ -451,6 +494,10 @@ class MarketContextBuilder:
                         high_price = float(ohlc_obj["high"])
                     if ohlc_obj.get("low") is not None and float(ohlc_obj.get("low")) > 0:
                         low_price = float(ohlc_obj["low"])
+                    if n_data.get("volume") is not None and int(n_data.get("volume")) > 0:
+                        volume = int(n_data["volume"])
+                    if n_data.get("oi") is not None and int(n_data.get("oi")) > 0:
+                        oi = int(n_data["oi"])
             except Exception:
                 pass
 
@@ -466,6 +513,14 @@ class MarketContextBuilder:
             pass
 
         if _candle_buffer:
+            # FIX 21: Seamlessly stitch latest live WebSocket tick into active forming 1m candle
+            if spot > 0 and len(_candle_buffer) > 0:
+                last_c = _candle_buffer[-1]
+                if isinstance(last_c, dict):
+                    last_c["high"] = max(float(last_c.get("high") or spot), spot)
+                    last_c["low"] = min(float(last_c.get("low") or spot), spot)
+                    last_c["close"] = spot
+
             if open_price is None and _candle_buffer[0].get("open") is not None:
                 open_price = float(_candle_buffer[0]["open"])
             if high_price is None:
@@ -477,79 +532,88 @@ class MarketContextBuilder:
                 if cand_lows:
                     low_price = min(cand_lows)
 
-        spot_change = round(spot - previous_close, 2) if (spot > 0 and previous_close and previous_close > 0) else None
-        spot_change_pct = round(spot_change / previous_close * 100.0, 4) if (spot_change is not None and previous_close and previous_close > 0) else None
+        # Build chart candles payload from _candle_buffer (bound strictly to single session date)
+        candles_payload = []
+        now_dt = datetime.now()
+        today_d = date.today()
+        is_live = is_market_hours(now_dt)
+        if is_live:
+            target_date_str = str(today_d)
+        else:
+            target_d = today_d if is_trading_day(today_d) else previous_trading_day(today_d)
+            if now_dt.hour < 9 or (now_dt.hour == 9 and now_dt.minute < 15):
+                target_d = previous_trading_day(target_d)
+            target_date_str = str(target_d)
 
-        vwap = _compute_vwap(_candle_buffer)
-        atr = _compute_atr(_candle_buffer)
-        closes = [float(c["close"]) for c in _candle_buffer if c.get("close") is not None]
+        session_candles = [
+            c for c in _candle_buffer
+            if (c.get("date").strftime("%Y-%m-%d") if hasattr(c.get("date"), "strftime") else str(c.get("date"))[:10]) == target_date_str
+        ]
+
+        # If live market but today's candles not yet in historical API buffer, synthesize forming 1m candle from spot
+        if is_live and not session_candles and spot > 0:
+            session_candles = [{
+                "date": now_dt,
+                "open": open_price or spot,
+                "high": high_price or spot,
+                "low": low_price or spot,
+                "close": spot,
+                "volume": volume or 0
+            }]
+        elif not session_candles and not is_live and _candle_buffer:
+            latest_c = _candle_buffer[-1]
+            latest_dt = latest_c.get("date")
+            latest_date_str = latest_dt.strftime("%Y-%m-%d") if hasattr(latest_dt, "strftime") else str(latest_dt)[:10]
+            session_candles = [
+                c for c in _candle_buffer
+                if (c.get("date").strftime("%Y-%m-%d") if hasattr(c.get("date"), "strftime") else str(c.get("date"))[:10]) == latest_date_str
+            ]
+
+        session_cand_highs = [float(c["high"]) for c in session_candles if c.get("high") is not None]
+        session_cand_lows = [float(c["low"]) for c in session_candles if c.get("low") is not None]
+
+        if high_price is None and session_cand_highs:
+            high_price = max(session_cand_highs)
+        if low_price is None and session_cand_lows:
+            low_price = min(session_cand_lows)
+        if open_price is None and session_candles and session_candles[0].get("open") is not None:
+            open_price = float(session_candles[0]["open"])
+
+        vwap = _compute_vwap(session_candles if session_candles else _candle_buffer, target_date_str if is_live else None)
+        if (vwap <= 0.0 or vwap is None) and spot > 0:
+            vwap = spot
+        atr = _compute_atr(session_candles if len(session_candles) >= 14 else _candle_buffer)
+        closes = [float(c["close"]) for c in session_candles if c.get("close") is not None]
         ema20 = _compute_ema(closes, 20)
         ema50 = _compute_ema(closes, 50)
         ema200 = _compute_ema(closes, 200)
         rsi = _compute_rsi(closes, 14)
         macd = _compute_macd(closes)
-        adx = _compute_adx(_candle_buffer, 14)
+        adx = _compute_adx(session_candles if session_candles else _candle_buffer, 14)
+        supports, resistances = _compute_support_resistance(spot, atr, open_price)
 
-        # Build chart candles payload from _candle_buffer (bound strictly to single session date)
-        candles_payload = []
-        if _candle_buffer:
-            # Determine target session date for candles
-            now_dt = datetime.now()
-            today_d = date.today()
-            if is_market_hours(now_dt):
-                target_date_str = str(today_d)
+        for c in session_candles:
+            dt_obj = c.get("date")
+            ts_sec = int(dt_obj.timestamp()) if hasattr(dt_obj, "timestamp") else None
+            if hasattr(dt_obj, "strftime"):
+                t_str = dt_obj.strftime("%H:%M")
+                iso_str = dt_obj.isoformat()
             else:
-                target_d = today_d if is_trading_day(today_d) else previous_trading_day(today_d)
-                if now_dt.hour < 9 or (now_dt.hour == 9 and now_dt.minute < 15):
-                    target_d = previous_trading_day(target_d)
-                target_date_str = str(target_d)
+                dt_val = str(dt_obj or "")
+                iso_str = dt_val
+                t_str = dt_val.split(" ")[1][:5] if " " in dt_val else (dt_val.split("T")[1][:5] if "T" in dt_val else dt_val[-8:-3])
 
-            session_candles = [
-                c for c in _candle_buffer
-                if (c.get("date").strftime("%Y-%m-%d") if hasattr(c.get("date"), "strftime") else str(c.get("date"))[:10]) == target_date_str
-            ]
-
-            # If target session candles absent in memory buffer, check latest date in buffer
-            if not session_candles and _candle_buffer:
-                latest_c = _candle_buffer[-1]
-                latest_dt = latest_c.get("date")
-                latest_date_str = latest_dt.strftime("%Y-%m-%d") if hasattr(latest_dt, "strftime") else str(latest_dt)[:10]
-                session_candles = [
-                    c for c in _candle_buffer
-                    if (c.get("date").strftime("%Y-%m-%d") if hasattr(c.get("date"), "strftime") else str(c.get("date"))[:10]) == latest_date_str
-                ]
-
-            session_cand_highs = [float(c["high"]) for c in session_candles if c.get("high") is not None]
-            session_cand_lows = [float(c["low"]) for c in session_candles if c.get("low") is not None]
-            if session_cand_highs:
-                high_price = max(session_cand_highs)
-            if session_cand_lows:
-                low_price = min(session_cand_lows)
-            if session_candles and session_candles[0].get("open") is not None:
-                open_price = float(session_candles[0]["open"])
-
-            for c in session_candles:
-                dt_obj = c.get("date")
-                ts_sec = int(dt_obj.timestamp()) if hasattr(dt_obj, "timestamp") else None
-                if hasattr(dt_obj, "strftime"):
-                    t_str = dt_obj.strftime("%H:%M")
-                    iso_str = dt_obj.isoformat()
-                else:
-                    dt_val = str(dt_obj or "")
-                    iso_str = dt_val
-                    t_str = dt_val.split(" ")[1][:5] if " " in dt_val else (dt_val.split("T")[1][:5] if "T" in dt_val else dt_val[-8:-3])
-
-                candles_payload.append({
-                    "time": t_str,
-                    "timestamp": ts_sec,
-                    "datetime": iso_str,
-                    "trading_date": (dt_obj.strftime("%Y-%m-%d") if hasattr(dt_obj, "strftime") else str(dt_obj)[:10]),
-                    "o": float(c.get("open", 0.0)),
-                    "h": float(c.get("high", 0.0)),
-                    "l": float(c.get("low", 0.0)),
-                    "c": float(c.get("close", 0.0)),
-                    "v": int(c.get("volume", 0))
-                })
+            candles_payload.append({
+                "time": t_str,
+                "timestamp": ts_sec,
+                "datetime": iso_str,
+                "trading_date": (dt_obj.strftime("%Y-%m-%d") if hasattr(dt_obj, "strftime") else str(dt_obj)[:10]),
+                "o": float(c.get("open", 0.0)),
+                "h": float(c.get("high", 0.0)),
+                "l": float(c.get("low", 0.0)),
+                "c": float(c.get("close", 0.0)),
+                "v": int(c.get("volume", 0))
+            })
 
         session_mode = "LIVE"
         if spot <= 0.0:
@@ -662,6 +726,9 @@ class MarketContextBuilder:
         }
         sectors = _kite_extensions.get("sectors") or []
         breadth_ratio = breadth.get("advance_decline_ratio") if breadth.get("status") == "READY" else None
+
+        spot_change = round(spot - previous_close, 2) if (spot is not None and previous_close is not None and previous_close > 0) else None
+        spot_change_pct = round(((spot - previous_close) / previous_close) * 100.0, 2) if (spot is not None and previous_close is not None and previous_close > 0) else None
 
         return {
             # Spot & Tick

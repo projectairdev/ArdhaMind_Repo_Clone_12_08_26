@@ -236,7 +236,7 @@ class PreMarketBriefingReport:
     evidence_cutoff_at: str
     status: str  # PREPARING | READY | FROZEN | MARKET_OPEN | VALIDATING | SESSION_COMPLETE | VALIDATED
     reference_session_date: str
-    reference_close: float
+    reference_close: Optional[float]  # None when no validated reference close is available
     source_state_sequence: int
     runtime_id: str
     generated_late: bool

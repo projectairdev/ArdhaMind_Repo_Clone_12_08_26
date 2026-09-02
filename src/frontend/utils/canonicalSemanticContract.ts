@@ -52,15 +52,40 @@ export interface TemporalPhrasing {
   sessionDescriptor: string;
 }
 
+export function getCanonicalIstNow(): { dateStr: string; hhmmss: string; isWeekday: boolean } {
+  const now = new Date();
+  const istStr = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(now);
+  const match = istStr.match(/(\d+)\/(\d+)\/(\d+),\s*(\d+):(\d+):(\d+)/);
+  if (match) {
+    const [, month, day, year, hour, minute, second] = match;
+    const dateStr = `${year}-${month}-${day}`;
+    const hhmmss = `${hour}:${minute}:${second}`;
+    const d = new Date(Date.UTC(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10)));
+    const isWeekday = d.getUTCDay() >= 1 && d.getUTCDay() <= 5;
+    return { dateStr, hhmmss, isWeekday };
+  }
+  const iso = now.toISOString();
+  return { dateStr: iso.slice(0, 10), hhmmss: "09:15:00", isWeekday: true };
+}
+
 /**
  * 1. Resolve Canonical Market Session State
  * Hierarchy:
- *   a. canonicalState.market_session.status
- *   b. marketContext.market_state / trading_session
- *   c. canonicalState.market_data.trading_session
- *   d. Fallback: IST Clock computation (09:15-15:30 IST weekdays)
+ *   a. IST Clock verification on trading days
+ *   b. Explicit session status override (HOLIDAY, OPEN, PRE_OPEN, POST_CLOSE)
+ *   c. Fallback: IST Clock computation (09:15-15:30 IST weekdays)
  */
 export function resolveMarketSessionState(canonicalState?: any, marketContext?: any): MarketSessionState {
+  const { hhmmss, isWeekday } = getCanonicalIstNow();
   const rawStatus = String(
     canonicalState?.market_session?.status ||
     marketContext?.market_state ||
@@ -68,6 +93,18 @@ export function resolveMarketSessionState(canonicalState?: any, marketContext?: 
     canonicalState?.market_data?.trading_session ||
     ""
   ).toUpperCase();
+
+  if (rawStatus === "HOLIDAY") {
+    return "CLOSED";
+  }
+
+  if (rawStatus === "EARLY_IDLE" || rawStatus === "OFF_MARKET") {
+    return "CLOSED";
+  }
+
+  if (!isWeekday) {
+    return "CLOSED";
+  }
 
   if (rawStatus === "OPEN" || rawStatus === "LIVE" || rawStatus === "LIVE_SESSION" || rawStatus === "MARKET_OPEN") {
     return "OPEN";
@@ -81,40 +118,19 @@ export function resolveMarketSessionState(canonicalState?: any, marketContext?: 
     return "POST_MARKET";
   }
 
-  if (rawStatus === "CLOSED" || rawStatus === "MARKET_CLOSED" || rawStatus === "HOLIDAY" || rawStatus === "WEEKEND") {
-    return "CLOSED";
+  // On a weekday, generic CLOSED must never misclassify morning as post-close
+  if (hhmmss < "08:45:00") {
+    return "CLOSED"; // Morning preparation / pre-market
   }
-
-  // Time-based fallback if state is unpopulated
-  try {
-    const now = new Date();
-    const istTimeStr = new Intl.DateTimeFormat("en-US", {
-      timeZone: "Asia/Kolkata",
-      hour12: false,
-      hour: "numeric",
-      minute: "numeric",
-      weekday: "short",
-    }).format(now);
-
-    const [dayName, timePart] = istTimeStr.split(", ");
-    if (dayName === "Sat" || dayName === "Sun") {
-      return "CLOSED";
-    }
-
-    if (timePart) {
-      const [h, m] = timePart.split(":").map(Number);
-      const totalMinutes = h * 60 + m;
-      if (totalMinutes >= 555 && totalMinutes <= 930) {
-        return "OPEN"; // 09:15 to 15:30 IST
-      }
-      if (totalMinutes >= 540 && totalMinutes < 555) {
-        return "PRE_MARKET"; // 09:00 to 09:15 IST
-      }
-      if (totalMinutes > 930 && totalMinutes <= 960) {
-        return "POST_MARKET"; // 15:30 to 16:00 IST
-      }
-    }
-  } catch {}
+  if (hhmmss >= "08:45:00" && hhmmss < "09:15:00") {
+    return "PRE_MARKET"; // Pre-open
+  }
+  if (hhmmss >= "09:15:00" && hhmmss < "15:30:00") {
+    return "OPEN"; // Live market session
+  }
+  if (hhmmss >= "15:30:00") {
+    return "POST_MARKET"; // Post-market session review
+  }
 
   return "CLOSED";
 }
@@ -422,6 +438,7 @@ export function formatDateGB(dateStr: string): string {
 }
 
 export function resolveSessionIdentity(canonicalState?: any, marketContext?: any): SessionIdentityModel {
+  const { dateStr: todayIstStr, hhmmss, isWeekday } = getCanonicalIstNow();
   const md = canonicalState?.market_data || {};
   const mc = marketContext || canonicalState?.marketContext || {};
   const report = canonicalState?.todays_analysis || canonicalState?.session_story?.todays_analysis || {};
@@ -435,10 +452,10 @@ export function resolveSessionIdentity(canonicalState?: any, marketContext?: any
     canonicalState?.market_session?.session_date ||
     md?.session_date ||
     mc?.session_date ||
-    "2026-08-19"
+    todayIstStr
   ).slice(0, 10);
 
-  const validRawDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) ? rawDate : "2026-08-19";
+  const validRawDate = rawDate.match(/^\d{4}-\d{2}-\d{2}$/) ? rawDate : todayIstStr;
 
   const sessStatus = String(
     mc?.market_state ||
@@ -446,57 +463,362 @@ export function resolveSessionIdentity(canonicalState?: any, marketContext?: any
     md?.trading_session ||
     ""
   ).toUpperCase();
-  const isOpen = sessStatus === "OPEN";
+  const isExplicitHoliday = sessStatus === "HOLIDAY";
+  const isPostClose = sessStatus === "POST_CLOSE" || sessStatus === "POST_MARKET" || (isWeekday && hhmmss >= "15:30:00");
 
+  let currentTradingDate: string;
   let completedSessionDate: string;
   let nextPlanningTargetDate: string;
   let previousSessionDate: string;
 
-  if (isOpen) {
+  if (isExplicitHoliday || !isWeekday) {
+    // Weekend or holiday: Last completed trading session + Next planning session
+    completedSessionDate = getPrevTradingDayStr(validRawDate > todayIstStr ? validRawDate : todayIstStr);
+    currentTradingDate = completedSessionDate;
+    nextPlanningTargetDate = getNextTradingDayStr(completedSessionDate);
+    previousSessionDate = getPrevTradingDayStr(completedSessionDate);
+  } else if (isPostClose) {
+    // Trading day after 15:30: Today's session is completed; planning targets next session
+    currentTradingDate = validRawDate;
+    completedSessionDate = validRawDate;
+    nextPlanningTargetDate = getNextTradingDayStr(validRawDate);
+    previousSessionDate = getPrevTradingDayStr(validRawDate);
+  } else {
+    // Trading day before 15:30 (Pre-Market, Pre-Open, or Live Intraday): Target is TODAY
+    currentTradingDate = validRawDate;
     completedSessionDate = getPrevTradingDayStr(validRawDate);
     nextPlanningTargetDate = getNextTradingDayStr(validRawDate);
     previousSessionDate = getPrevTradingDayStr(completedSessionDate);
-  } else {
-    // Post-close / overnight / pre-market
-    if (validRawDate >= "2026-08-20") {
-      nextPlanningTargetDate = validRawDate;
-      completedSessionDate = getPrevTradingDayStr(validRawDate);
-      previousSessionDate = getPrevTradingDayStr(completedSessionDate);
-    } else {
-      completedSessionDate = validRawDate;
-      nextPlanningTargetDate = getNextTradingDayStr(completedSessionDate);
+  }
+
+  // Only override explicit reference session for morning briefing when before market close
+  if (!isPostClose && !isExplicitHoliday && isWeekday) {
+    const explicitRef = String(briefing?.reference_session_date || report?.reference_session_date || "").slice(0, 10);
+    if (explicitRef.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      completedSessionDate = explicitRef;
       previousSessionDate = getPrevTradingDayStr(completedSessionDate);
     }
   }
 
-  // Override explicit reference session if present in briefing or report
-  const explicitRef = String(briefing?.reference_session_date || report?.reference_session_date || "").slice(0, 10);
-  if (explicitRef.match(/^\d{4}-\d{2}-\d{2}$/)) {
-    completedSessionDate = explicitRef;
-    previousSessionDate = getPrevTradingDayStr(completedSessionDate);
-  }
-
-  const currentFormatted = formatDateGB(isOpen ? validRawDate : completedSessionDate);
+  const currentFormatted = formatDateGB(currentTradingDate);
   const completedFormatted = formatDateGB(completedSessionDate);
   const prevFormatted = formatDateGB(previousSessionDate);
   const nextTargetFormatted = formatDateGB(nextPlanningTargetDate);
+  const refCloseFormatted = formatDateGB(completedSessionDate);
 
-  let instDate = "17 Aug 2026";
+  let instDate = completedFormatted;
   if (flows && flows.length > 0 && flows[0]?.trade_date) {
     const rawF = String(flows[0].trade_date).slice(0, 10);
     instDate = formatDateGB(rawF);
   }
 
   return {
-    currentSessionDate: validRawDate,
+    currentSessionDate: currentTradingDate,
     currentSessionDateFormatted: currentFormatted,
     completedSessionDate,
     completedSessionDateFormatted: completedFormatted,
     previousSessionDate,
     previousSessionDateFormatted: prevFormatted,
-    referenceCloseDateFormatted: prevFormatted,
+    referenceCloseDateFormatted: refCloseFormatted,
     nextPlanningTargetDate,
     nextPlanningTargetDateFormatted: nextTargetFormatted,
     institutionalFlowDateFormatted: instDate,
   };
+}
+
+export interface SessionProvenance {
+  source_date: string;
+  source_type: "CANONICAL_COMPLETED_SESSION" | "CANDLE_STREAM" | "HISTORICAL_REPLAY" | "UNAVAILABLE";
+  finalized_at: string;
+  field_origin: string;
+}
+
+export interface CompletedSessionMetrics {
+  isAvailable: boolean;
+  tradingDate: string;
+  tradingDateFormatted: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  previousClose: number | null;
+  change: number | null;
+  changePercent: number | null;
+  range: number | null;
+  trendLabel: string;
+  dayCharacterLabel: string;
+  closeLocationLabel: string;
+  breadthStateLabel: string;
+  institutionalFlowLabel: string;
+  advances: number | null;
+  declines: number | null;
+  unchanged: number | null;
+  provenance: SessionProvenance;
+}
+
+export function parseCandleTimeEpoch(c: any): number | null {
+  if (typeof c.timestamp === "number" && c.timestamp > 0) {
+    return c.timestamp < 10000000000 ? c.timestamp : Math.floor(c.timestamp / 1000);
+  }
+  const rawStr = c.datetime || c.date || c.time;
+  if (typeof rawStr === "string" && rawStr.length > 0) {
+    if (rawStr.includes("T") || rawStr.includes("-")) {
+      const parsed = Date.parse(rawStr);
+      if (!isNaN(parsed)) return Math.floor(parsed / 1000);
+    }
+    if (rawStr.includes(":")) {
+      const parts = rawStr.split(":").map(Number);
+      if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+        const hStr = String(parts[0]).padStart(2, "0");
+        const mStr = String(parts[1]).padStart(2, "0");
+        const iso = `${todayStr}T${hStr}:${mStr}:00+05:30`;
+        const parsed = Date.parse(iso);
+        if (!isNaN(parsed)) return Math.floor(parsed / 1000);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolves completed session metrics for a specific target trading date strictly without cross-session pollution.
+ */
+export function getCompletedSession(
+  targetDate: string,
+  canonicalState?: any,
+  marketContext?: any
+): CompletedSessionMetrics {
+  const dateFormatted = formatDateGB(targetDate);
+  const prevDate = getPrevTradingDayStr(targetDate);
+
+  const rawCandles = Array.isArray(marketContext?.candles)
+    ? marketContext.candles
+    : Array.isArray(canonicalState?.market_data?.candles)
+    ? canonicalState.market_data.candles
+    : [];
+
+  const targetCandles = rawCandles.filter((c: any) => {
+    const cTradeDate =
+      c.trading_date ||
+      (typeof c.datetime === "string" ? c.datetime.slice(0, 10) : null) ||
+      (typeof c.date === "string" ? c.date.slice(0, 10) : null);
+    if (cTradeDate) return cTradeDate === targetDate;
+    const tSec = parseCandleTimeEpoch(c);
+    if (tSec != null) {
+      const dStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(tSec * 1000));
+      return dStr === targetDate;
+    }
+    return false;
+  });
+
+  const prevCandles = rawCandles.filter((c: any) => {
+    const cTradeDate =
+      c.trading_date ||
+      (typeof c.datetime === "string" ? c.datetime.slice(0, 10) : null) ||
+      (typeof c.date === "string" ? c.date.slice(0, 10) : null);
+    if (cTradeDate) return cTradeDate === prevDate;
+    const tSec = parseCandleTimeEpoch(c);
+    if (tSec != null) {
+      const dStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(tSec * 1000));
+      return dStr === prevDate;
+    }
+    return false;
+  });
+
+  let prevCloseFromCandles: number | null = null;
+  if (prevCandles.length > 0) {
+    const lastPrevC = prevCandles[prevCandles.length - 1];
+    prevCloseFromCandles = Number(lastPrevC.close ?? lastPrevC.c);
+  }
+
+  const comp = canonicalState?.completed_session || marketContext?.completed_session || {};
+
+  // During EARLY_IDLE / PRE_MARKET / PRE_OPEN, canonical market_data may still
+  // represent the explicitly identified completed reference session.
+  // Only permit this fallback when the pre-market report proves the date match.
+  const preMarketReport =
+    canonicalState?.pre_market_report ||
+    canonicalState?.session_story?.pre_market_report ||
+    canonicalState?.unified_intelligence?.pre_market_report ||
+    {};
+
+  const marketData = canonicalState?.market_data || {};
+  const marketDataMatchesCompletedSession =
+    String(preMarketReport?.reference_session_date || "").slice(0, 10) === targetDate;
+
+  const completedSource =
+    Object.keys(comp).length > 0
+      ? comp
+      : marketDataMatchesCompletedSession
+      ? marketData
+      : {};
+
+  let open: number | null = completedSource.open != null && Number(completedSource.open) > 0 ? Number(completedSource.open) : null;
+  let high: number | null = completedSource.high != null && Number(completedSource.high) > 0 ? Number(completedSource.high) : null;
+  let low: number | null = completedSource.low != null && Number(completedSource.low) > 0 ? Number(completedSource.low) : null;
+  let close: number | null = completedSource.close != null && Number(completedSource.close) > 0 ? Number(completedSource.close) : null;
+
+  let previousClose: number | null = completedSource.previous_close != null && Number(completedSource.previous_close) > 0
+    ? Number(completedSource.previous_close)
+    : prevCloseFromCandles != null && prevCloseFromCandles > 0
+    ? prevCloseFromCandles
+    : marketContext?.previous_close != null && Number(marketContext.previous_close) > 0
+    ? Number(marketContext.previous_close)
+    : canonicalState?.market_data?.previous_close != null && Number(canonicalState.market_data.previous_close) > 0
+    ? Number(canonicalState.market_data.previous_close)
+    : null;
+
+  if (targetCandles.length > 0) {
+    const firstC = targetCandles[0];
+    const lastC = targetCandles[targetCandles.length - 1];
+    open = Number(firstC.open ?? firstC.o);
+    const highs = targetCandles.map((c) => Number(c.high ?? c.h)).filter(Number.isFinite);
+    const lows = targetCandles.map((c) => Number(c.low ?? c.l)).filter(Number.isFinite);
+    if (highs.length > 0) high = Math.max(...highs);
+    if (lows.length > 0) low = Math.min(...lows);
+    close = Number(lastC.close ?? lastC.c);
+  }
+
+  const isAvailable = close != null && open != null && high != null && low != null;
+  const range = (high != null && low != null) ? Number((high - low).toFixed(2)) : null;
+  const change = (close != null && previousClose != null) ? Number((close - previousClose).toFixed(2)) : null;
+  const changePercent = (change != null && previousClose != null && previousClose > 0)
+    ? Number(((change / previousClose) * 100).toFixed(2))
+    : null;
+
+  let trendLabel = "Completed: UNAVAILABLE";
+  if (change != null) {
+    if (change <= -50.0) trendLabel = "Completed: BEARISH";
+    else if (change < 0) trendLabel = "Completed: MILD BEARISH";
+    else if (change >= 50.0) trendLabel = "Completed: BULLISH";
+    else if (change > 0) trendLabel = "Completed: MILD BULLISH";
+    else trendLabel = "Completed: NEUTRAL";
+  }
+
+  let dayCharacterLabel = "Unavailable";
+  if (open != null && close != null && previousClose != null) {
+    if (close < open && close < previousClose) {
+      dayCharacterLabel = "Bearish Trend / Intraday Fade";
+    } else if (close > open && close > previousClose) {
+      dayCharacterLabel = "Bullish Expansion / Trend";
+    } else if (close < open && close > previousClose) {
+      dayCharacterLabel = "Gap-Up Fade / Consolidation";
+    } else if (close > open && close < previousClose) {
+      dayCharacterLabel = "Gap-Down Recovery / Rebound";
+    } else {
+      dayCharacterLabel = "Range-Bound / Neutral";
+    }
+  }
+
+  let closeLocationLabel = "Unavailable";
+  if (range != null && range > 0 && close != null && low != null) {
+    const locPct = ((close - low) / range) * 100;
+    if (locPct >= 70) {
+      closeLocationLabel = "Upper 30% of Range";
+    } else if (locPct <= 30) {
+      closeLocationLabel = "Lower 30% of Range";
+    } else {
+      closeLocationLabel = `Mid Range (${Math.round(locPct)}%)`;
+    }
+  }
+
+  const advances = marketContext?.breadth?.advances ?? canonicalState?.market_breadth?.advances ?? null;
+  const declines = marketContext?.breadth?.declines ?? canonicalState?.market_breadth?.declines ?? null;
+  const unchanged = marketContext?.breadth?.unchanged ?? canonicalState?.market_breadth?.unchanged ?? null;
+
+  let breadthStateLabel = "Breadth Unavailable";
+  if (advances != null && declines != null) {
+    if (advances > declines * 1.5) {
+      breadthStateLabel = "Broad Advance";
+    } else if (declines > advances * 1.5) {
+      breadthStateLabel = "Decline Dominated";
+    } else if (advances > declines) {
+      breadthStateLabel = "Mild Advance";
+    } else if (declines > advances) {
+      breadthStateLabel = "Mild Decline";
+    } else {
+      breadthStateLabel = "Balanced";
+    }
+  }
+
+  let institutionalFlowLabel = "Institutional Flows Unavailable";
+  const macro = canonicalState?.macro_intelligence || {};
+  const flows = macro?.institutional_flows || [];
+  if (flows && flows.length > 0) {
+    const fii = flows[0]?.fii_net_crores ?? flows[0]?.fii_net;
+    const dii = flows[0]?.dii_net_crores ?? flows[0]?.dii_net;
+    if (fii != null && dii != null) {
+      institutionalFlowLabel = `FII: ${Number(fii) >= 0 ? "+" : ""}${fii} Cr | DII: ${Number(dii) >= 0 ? "+" : ""}${dii} Cr`;
+    }
+  }
+
+  return {
+    isAvailable,
+    tradingDate: targetDate,
+    tradingDateFormatted: dateFormatted,
+    open,
+    high,
+    low,
+    close,
+    previousClose,
+    change,
+    changePercent,
+    range,
+    trendLabel,
+    dayCharacterLabel,
+    closeLocationLabel,
+    breadthStateLabel,
+    institutionalFlowLabel,
+    advances,
+    declines,
+    unchanged,
+    provenance: {
+      source_date: targetDate,
+      source_type: targetCandles.length > 0 ? "CANDLE_STREAM" : comp.close != null ? "CANONICAL_COMPLETED_SESSION" : "UNAVAILABLE",
+      finalized_at: `${targetDate} 15:30:00 IST`,
+      field_origin: "official_nse_recorded",
+    },
+  };
+}
+
+/**
+ * Resolves the immediately prior completed session for a given target date.
+ */
+export function getPreviousCompletedSession(
+  targetDate: string,
+  canonicalState?: any,
+  marketContext?: any
+): CompletedSessionMetrics {
+  const prevDate = getPrevTradingDayStr(targetDate);
+  return getCompletedSession(prevDate, canonicalState, marketContext);
+}
+
+export function resolveCompletedSessionMetrics(
+  canonicalState?: any,
+  marketContext?: any
+): CompletedSessionMetrics {
+  const sessionIdentity = resolveSessionIdentity(canonicalState, marketContext);
+  return getCompletedSession(sessionIdentity.completedSessionDate, canonicalState, marketContext);
+}
+
+/**
+ * Resolves option strike candidate distance and moneyness relative to spot price.
+ */
+export function resolveStrikeCandidateDistance(
+  candidate: { option_type?: string; strike?: number } | null | undefined,
+  spotPrice: number
+): { distance: number; distanceLabel: string; isItm: boolean; isAtm: boolean } {
+  if (!candidate || !candidate.strike || !spotPrice) {
+    return { distance: 0, distanceLabel: "—", isItm: false, isAtm: false };
+  }
+  const isCall = candidate.option_type === "CE";
+  const diff = spotPrice - candidate.strike;
+  const isItm = isCall ? diff > 0 : diff < 0;
+  const absDist = Math.abs(diff);
+  const isAtm = absDist < 25;
+  const distance = Number(absDist.toFixed(2));
+  const sign = isItm ? "+" : "-";
+  const label = `${sign}${distance.toFixed(2)} pts (${isItm ? "ITM" : "OTM"})`;
+  return { distance, distanceLabel: label, isItm, isAtm };
 }

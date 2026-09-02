@@ -30,8 +30,17 @@ class DeterministicFallback:
             nifty = _as_dict(hist.get("nifty_summary"))
             brd = _as_dict(hist.get("breadth"))
             answer_lines.append(f"Yesterday's session ({hist.get('date', '2026-08-20')}) was a {hist.get('directional_bias', 'BULLISH')} move in a {hist.get('regime', 'TREND EXPANSION')} regime.")
-            answer_lines.append(f"• **NIFTY Close**: {nifty.get('close', 24231.85)} ({nifty.get('change', '+76.65')}) with range {nifty.get('range', '165.20 pts')}")
-            answer_lines.append(f"• **Breadth**: {brd.get('advances', 38)} Advances / {brd.get('declines', 12)} Declines ({brd.get('trend', 'STRENGTHENING')})")
+            _close = nifty.get("close")
+            _chg = nifty.get("change")
+            _rng = nifty.get("range")
+            if _close is not None:
+                _chg_str = f" ({_chg})" if _chg is not None else ""
+                _rng_str = f" with range {_rng}" if _rng is not None else ""
+                answer_lines.append(f"• **NIFTY Close**: {_close}{_chg_str}{_rng_str}")
+            else:
+                answer_lines.append("• **NIFTY Close**: not available in canonical session history")
+            if brd.get("advances") is not None:
+                answer_lines.append(f"• **Breadth**: {brd.get('advances')} Advances / {brd.get('declines')} Declines ({brd.get('trend', 'STABLE')})")
             if hist.get("sectors"):
                 answer_lines.append(f"• **Leading Sectors**: {', '.join(hist.get('sectors'))}")
             if hist.get("session_story"):
@@ -98,16 +107,21 @@ class DeterministicFallback:
         # 2. Options / Derivatives Questions
         elif "OPTIONS_DERIVATIVES" in intents:
             deriv = ev.get("derivatives", {})
-            pcr = deriv.get("pcr", 1.25)
-            mp = deriv.get("max_pain", 24200)
-            cw = deriv.get("call_wall", 24300)
-            pw = deriv.get("put_wall", 24000)
-            verdict = deriv.get("options_bias", "SUPPORTIVE")
+            pcr = deriv.get("pcr")
+            mp = deriv.get("max_pain")
+            cw = deriv.get("call_wall")
+            pw = deriv.get("put_wall")
+            verdict = deriv.get("options_bias")
 
             answer_lines.append("**ArdhaMind Options & Derivatives Snapshot:**")
-            answer_lines.append(f"• **PCR**: {pcr:.2f} ({verdict})")
-            answer_lines.append(f"• **Max Pain**: {mp}")
-            answer_lines.append(f"• **Call / Put Walls**: {cw} / {pw}")
+            if pcr is not None:
+                answer_lines.append(f"• **PCR**: {float(pcr):.2f}" + (f" ({verdict})" if verdict else ""))
+            else:
+                answer_lines.append("• **PCR**: unavailable")
+            answer_lines.append(f"• **Max Pain**: {mp if mp is not None else 'unavailable'}")
+            answer_lines.append(
+                f"• **Call / Put Walls**: {cw if cw is not None else 'unavailable'} / {pw if pw is not None else 'unavailable'}"
+            )
 
         # 3. Market Summary & General State
         else:

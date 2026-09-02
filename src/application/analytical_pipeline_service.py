@@ -46,13 +46,23 @@ class AnalyticalPipelineService:
                         reason="validated NIFTY market context")
             return self._result(snapshot, stages)
         if options is None:
-            self._block(stages, "trade_context", "score", "opportunity", "strategy", "scenarios",
-                        "confidence", "risk", "decision_support", reason="validated option context")
-            stages["explanation"] = PipelineStageResult("degraded", {
-                "summary": "NIFTY market context is validated; option-dependent analysis is unavailable.",
-                "blocked_dependencies": ["validated option context"], "ai_provider": None,
-            })
-            return self._result(snapshot, stages)
+            # Construct synthetic degraded option context from market spot to allow downstream price-action analysis
+            expiry_str = market.current_expiry or date.today().isoformat()
+            atm_calc = round(market.current_spot / 50.0) * 50 if market.current_spot > 0 else 24000.0
+            options = OptionContext(
+                current_spot=market.current_spot,
+                atm_strike=atm_calc,
+                current_weekly_expiry=expiry_str,
+                current_monthly_expiry=expiry_str,
+                time_to_expiry=1,
+                pcr=1.0,
+                max_pain=atm_calc,
+                call_wall=atm_calc + 200,
+                put_wall=atm_calc - 200,
+                strike_universe=[],
+                option_chain_summary={"chain_length": 0, "status": "DEGRADED_SYNTHETIC"},
+            )
+            stages["options"] = PipelineStageResult("degraded", self._dict(options), source="degraded_synthesizer", warnings=["option context unavailable; analysis operating in price-action degraded mode"])
         try:
             trade_context = self._trade_context(market, options, snapshot)
             stages["trade_context"] = self._ready(trade_context)

@@ -324,7 +324,7 @@ class TradingEconomicsCalendarProvider(BaseEconomicCalendarProvider):
         if not key:
             self.status = "disabled"; self.rate_limit_state = "DISABLED"
             self.operational_error_reason = "api_key_not_configured"
-            self.failure_detail = "Optional structured calendar API is disabled because no server-side API key is configured."
+            self.failure_detail = "Awaiting Provider Configuration"
 
     def fetch_raw_data(self) -> List[Dict[str, Any]]:
         if not self.api_key:

@@ -13,7 +13,7 @@ Verifies:
 from pathlib import Path
 import pytest
 
-FRONTEND_ROOT = Path("/opt/ardhamind/staging/src/frontend")
+FRONTEND_ROOT = Path(__file__).resolve().parent.parent / "src" / "frontend"
 OPTIONS_SRC = (FRONTEND_ROOT / "components/OptionsWorkspace.tsx").read_text(encoding="utf-8")
 CHAIN_SRC = (FRONTEND_ROOT / "components/visualizations/OptionChainLadder.tsx").read_text(encoding="utf-8")
 

@@ -128,13 +128,11 @@ class TodayAnalysisEngine:
         if spot is None:
             return cls._build_insufficient_data_report(now_str, session_date, sess_status, breadth=breadth)
 
-        # Sanitize OHLC invariants (High >= max(Open, Spot), Low <= min(Open, Spot))
-        if open_price is not None:
-            high_price = max(high_price, open_price, spot) if high_price is not None else max(open_price, spot)
-            low_price = min(low_price, open_price, spot) if low_price is not None else min(open_price, spot)
-        else:
-            high_price = max(high_price, spot) if high_price is not None else spot
-            low_price = min(low_price, spot) if low_price is not None else spot
+        # Sanitize OHLC invariants if values are observed (do not invent high/low from spot if unobserved)
+        if high_price is not None:
+            high_price = max(high_price, open_price if open_price is not None else high_price, spot)
+        if low_price is not None:
+            low_price = min(low_price, open_price if open_price is not None else low_price, spot)
 
         change = round(spot - prev_close, 2) if (prev_close is not None and prev_close > 0) else None
         change_pct = round((change / prev_close) * 100, 2) if (prev_close is not None and prev_close > 0 and change is not None) else None

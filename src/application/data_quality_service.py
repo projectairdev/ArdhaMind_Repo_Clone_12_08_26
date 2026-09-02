@@ -121,7 +121,9 @@ class DataQualityService:
                 h = float(c.get("h", c.get("high", 0)))
                 l = float(c.get("l", c.get("low", 0)))
                 cl = float(c.get("c", c.get("close", 0)))
-                t = str(c.get("t", c.get("time", c.get("timestamp", ""))))
+                raw_t = c.get("datetime", c.get("date", c.get("start", c.get("t", c.get("time", c.get("timestamp", ""))))))
+                t = str(raw_t)
+                vol = float(c.get("v", c.get("volume", 0)))
             except (TypeError, ValueError):
                 errors.append(f"Candle {idx}: non-numeric OHLC values")
                 continue
@@ -136,9 +138,10 @@ class DataQualityService:
 
             seen_timestamps.add(t)
             valid_candles.append({
-                "o": o, "h": h, "l": l, "c": cl, "v": float(c.get("v", c.get("volume", 0))),
-                "time": t, "timestamp": t
+                "o": o, "h": h, "l": l, "c": cl, "v": vol,
+                "open": o, "high": h, "low": l, "close": cl, "volume": vol,
+                "time": t, "timestamp": t, "datetime": t, "start": t
             })
 
-        valid_candles.sort(key=lambda x: x["time"])
+        valid_candles.sort(key=lambda x: str(x.get("datetime") or x.get("start") or x.get("time") or ""))
         return valid_candles, errors

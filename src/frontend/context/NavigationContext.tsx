@@ -8,7 +8,7 @@ export type PrimaryModuleId =
   | "portfolio"
   | "settings";
 
-export type MarketSubTab = "nifty" | "metrics" | "options";
+export type MarketSubTab = "nifty" | "metrics" | "options" | "predictions";
 export type NewsSubTab = "live_news" | "catalysts" | "calendar";
 export type SettingsSubTab =
   | "overview"
@@ -93,7 +93,7 @@ export function NavigationProvider({ children }: { children: ReactNode }) {
 
   const [marketSubTab, setMarketSubTabState] = useState<MarketSubTab>(() => {
     const saved = localStorage.getItem("active_market_tab");
-    if (saved === "metrics" || saved === "options") return saved as MarketSubTab;
+    if (saved === "metrics" || saved === "options" || saved === "predictions") return saved as MarketSubTab;
     return "nifty";
   });
 

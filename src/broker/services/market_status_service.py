@@ -96,6 +96,7 @@ class MarketStatusService:
         is_trading = not is_h
 
         # Session Boundary Times (IST)
+        pre_market_start = dt_time(8, 45, 0)
         pre_open_start = dt_time(9, 0, 0)
         pre_open_end = dt_time(9, 15, 0)
         market_start = dt_time(9, 15, 0)
@@ -124,7 +125,15 @@ class MarketStatusService:
         elif is_h:
             status = "HOLIDAY"
         else:
-            if pre_open_start <= now_time < pre_open_end:
+            if now_time < pre_market_start:
+                status = "EARLY_IDLE"
+                target = datetime.combine(ist_now.date(), pre_market_start)
+                remaining_seconds = (target - ist_now).total_seconds()
+            elif pre_market_start <= now_time < pre_open_start:
+                status = "PRE_MARKET"
+                target = datetime.combine(ist_now.date(), pre_open_start)
+                remaining_seconds = (target - ist_now).total_seconds()
+            elif pre_open_start <= now_time < pre_open_end:
                 status = "PRE_OPEN"
                 target = datetime.combine(ist_now.date(), pre_open_end)
                 remaining_seconds = (target - ist_now).total_seconds()

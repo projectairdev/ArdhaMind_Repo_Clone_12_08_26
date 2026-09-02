@@ -197,7 +197,7 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-mono font-bold tracking-wider text-[13px] text-[#F1F3F5]">
-                  PRE-FLIGHT ORDER PREVIEW
+                  ADVISORY DECISION FRAME
                 </span>
                 <span
                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
@@ -229,11 +229,11 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
           <div className="flex items-center gap-2">
             <Lock size={14} className="shrink-0" />
             <span>
-              <strong>EXECUTION GATEWAY:</strong> Dual-Mode Server-Authoritative Execution
+              <strong>ADVISORY FRAME:</strong> Analytical Decision Model Bounds
             </span>
           </div>
           <span className="text-[10px] text-[#848E9C] font-bold">
-            Phase 3 Gateway
+            Advisory Only
           </span>
         </div>
 
@@ -255,7 +255,7 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
               {/* Lots selector */}
               <div>
                 <label className="block text-[10px] text-[#707987] font-mono mb-1.5 uppercase">
-                  Select Order Lots
+                  Select Position Scale (Lots)
                 </label>
                 <div className="flex items-center gap-1.5">
                   {[1, 2, 3, 5, 10].map((lot) => (
@@ -323,15 +323,15 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
             </div>
 
             <div className="bg-[#12151E] border border-[#1E2330] rounded-lg p-2.5">
-              <span className="text-[9px] text-[#707987] font-mono uppercase block">Stop Loss</span>
+              <span className="text-[9px] text-[#707987] font-mono uppercase block">Model Invalidation Level</span>
               <span className="text-[14px] font-bold font-mono text-rose-400">₹{stopLoss.toFixed(2)}</span>
               <span className="text-[9px] text-rose-400/80 font-mono block">(-₹{riskPerUnit.toFixed(1)}/unit)</span>
             </div>
 
             <div className="bg-[#12151E] border border-[#1E2330] rounded-lg p-2.5">
               <span className="text-[9px] text-[#707987] font-mono uppercase block">Max INR Risk</span>
-              <span className="text-[14px] font-bold font-mono text-rose-400">₹{totalRiskInr.toLocaleString()}</span>
-              <span className="text-[9px] text-[#707987] font-mono block">R:R 1:{proposal.risk_reward_ratio?.toFixed(1) || "1.8"}</span>
+              <span className="text-[14px] font-bold font-mono text-rose-400">₹{(totalRiskInr ?? 0).toLocaleString()}</span>
+              <span className="text-[9px] text-[#707987] font-mono block">R:R 1:{proposal.risk_reward_ratio != null && proposal.risk_reward_ratio > 0 ? proposal.risk_reward_ratio.toFixed(1) : "—"}</span>
             </div>
           </div>
 
@@ -369,7 +369,7 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
               <div>
                 <span className="text-[10px] text-[#707987] block">Required Margin:</span>
                 <span className="text-[13px] font-bold text-[#F1F3F5]">
-                  ₹{(marginData?.required_margin ?? approxRequiredMargin).toLocaleString()}
+                  ₹{(marginData?.required_margin ?? approxRequiredMargin ?? 0).toLocaleString()}
                 </span>
               </div>
 
@@ -394,7 +394,7 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
               <div className="flex items-center gap-2 p-2 rounded bg-rose-500/10 border border-rose-500/20 text-rose-400 text-[10px] font-mono">
                 <AlertTriangle size={14} className="shrink-0" />
                 <span>
-                  Available margin is below the required amount of ₹{(marginData?.required_margin ?? approxRequiredMargin).toLocaleString()}. Execution is blocked.
+                  Available margin is below the required amount of ₹{(marginData?.required_margin ?? approxRequiredMargin ?? 0).toLocaleString()}. Execution is blocked.
                 </span>
               </div>
             )}
@@ -405,14 +405,14 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
             <div className="p-3.5 rounded-lg bg-[#E5484D]/10 border border-[#E5484D]/30 space-y-2 text-[11px] font-mono animate-in fade-in duration-100">
               <div className="flex items-center gap-2 text-rose-400 font-bold">
                 <AlertTriangle size={16} />
-                <span>CONFIRM LIVE BROKER ORDER PLACEMENT</span>
+                <span>CONFIRM ADVISORY ACKNOWLEDGEMENT</span>
               </div>
               <p className="text-[#C2C7D0] text-[10.5px]">
-                You are about to route a <strong>LIVE REAL-MONEY ORDER</strong> to Zerodha Kite Connect:
+                You are reviewing the simulated parameters for advisory proposal:
                 <br />
-                <span className="text-[#38BDF8] font-bold">{proposal.contract_symbol}</span> • BUY {totalQuantity} units @ ₹{entryPrice} (NRML)
+                <span className="text-[#38BDF8] font-bold">{proposal.contract_symbol}</span> • {totalQuantity} units @ ₹{entryPrice} (NRML)
                 <br />
-                Max Risk: <span className="text-rose-400 font-bold">₹{totalRiskInr.toLocaleString()}</span>
+                Max Risk: <span className="text-rose-400 font-bold">₹{(totalRiskInr ?? 0).toLocaleString()}</span>
               </p>
               <div className="flex items-center gap-2 pt-1">
                 <button
@@ -422,7 +422,7 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
                   className="px-4 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold text-[11px] transition shadow flex items-center gap-1.5"
                 >
                   {isLiveExecuting ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
-                  Confirm & Dispatch to Zerodha
+                  Acknowledge Advisory Bounds
                 </button>
                 <button
                   type="button"
@@ -480,7 +480,7 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
               ) : (
                 <CheckCircle2 size={13} />
               )}
-              <span>Dry-Run Approval ({selectedLots} {selectedLots === 1 ? "Lot" : "Lots"})</span>
+              <span>Acknowledge Model Parameters ({selectedLots} {selectedLots === 1 ? "Lot" : "Lots"})</span>
             </button>
 
             {/* Live Broker Execution Trigger */}
@@ -488,7 +488,7 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
               <button
                 type="button"
                 disabled={isApproving || isLiveExecuting || isNoTrade || isInsufficientMargin || !brokerVerified}
-                title={!brokerVerified ? "Broker unverified — execution blocked" : "Submit Live Order (Kite)"}
+                title={!brokerVerified ? "Broker unverified — execution blocked" : "Acknowledge Advisory Frame"}
                 onClick={() => setShowLiveConfirmStep(true)}
                 className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg font-mono text-[11px] font-bold transition-all shadow-md ${
                   isInsufficientMargin || !brokerVerified
@@ -497,7 +497,7 @@ export const OrderPreviewModal: React.FC<OrderPreviewModalProps> = ({
                 }`}
               >
                 <Zap size={13} />
-                <span>{brokerVerified ? "Submit Live Order (Kite)" : "Broker Unverified (Disabled)"}</span>
+                <span>{brokerVerified ? "Acknowledge Advisory Frame" : "Broker Unverified (Disabled)"}</span>
               </button>
             )}
           </div>

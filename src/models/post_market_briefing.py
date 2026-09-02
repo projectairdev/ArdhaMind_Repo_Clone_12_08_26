@@ -18,9 +18,9 @@ class NiftySnapshot:
     open: float
     high_so_far: float
     low_so_far: float
-    previous_close: float
-    change_points: float
-    change_pct: float
+    previous_close: Optional[float]        # None when no real reference close is available
+    change_points: Optional[float]         # None when previous_close is unavailable
+    change_pct: Optional[float]            # None when previous_close is unavailable
     session_range_so_far: float
     official_close_value: Optional[float] = None
     official_close_available: bool = False

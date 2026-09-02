@@ -1,7 +1,7 @@
 import React from "react";
-import { useWorkstationState, useMarketData, useOptionIntelligence } from "../context/WorkstationStateContext";
+import { useWorkstationState, useMarketData, useOptionIntelligence, useLiveMarketPresentation } from "../context/WorkstationStateContext";
 import { MarketContext, OptionContext, DecisionReport } from "../types";
-import { AlertCircle, ArrowUpRight, TrendingUp, Cpu, Landmark, Clock, RefreshCw } from "lucide-react";
+import { AlertCircle, ArrowUpRight, TrendingUp, TrendingDown, Cpu, Landmark, Clock, RefreshCw } from "lucide-react";
 import {
   safeArray,
   safeNumber,
@@ -17,6 +17,10 @@ export function ExecutiveSummary() {
     syncing: loading,
     error
   } = useWorkstationState();
+  // useLiveMarketPresentation: session-gated live price source (OPEN → liveNiftyTick overlay,
+  // POST_MARKET/CLOSED → canonical final). Never raw market_data price fields.
+  const livePresentation = useLiveMarketPresentation();
+  // useMarketData: raw canonical analytical fields (regime, trend, breadth) — NOT for price.
   const { data: market } = useMarketData();
   const { data: option } = useOptionIntelligence();
 
@@ -35,7 +39,7 @@ export function ExecutiveSummary() {
     );
   }
 
-  if (error || !market || !option || !stateObj) {
+  if (error || !stateObj) {
     return (
       <div id="exec-summary-error" className="p-6 bg-slate-950 rounded-xl border border-rose-950 space-y-3 text-left">
         <div className="flex items-center gap-2 text-rose-400">
@@ -80,26 +84,45 @@ export function ExecutiveSummary() {
         <div className="p-4 bg-slate-900/60 rounded-lg border border-slate-800/80 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">NIFTY 50 Spot</span>
-            <TrendingUp size={14} className="text-emerald-400" />
+            {livePresentation.change != null && livePresentation.change >= 0
+              ? <TrendingUp size={14} className="text-emerald-400" />
+              : <TrendingDown size={14} className="text-rose-400" />}
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-mono font-bold text-white">
-              {formatCurrency(market.current_spot, 2)}
+              {livePresentation.currentSpot != null ? formatCurrency(livePresentation.currentSpot, 2) : "—"}
             </span>
-            <span className="text-xs text-emerald-400 font-mono font-medium">+0.48%</span>
+            {livePresentation.changePct != null && (
+              <span className={`text-xs font-mono font-medium ${livePresentation.changePct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {livePresentation.changePct >= 0 ? "+" : ""}{formatNumber(livePresentation.changePct, 2)}%
+              </span>
+            )}
+            <span className={`text-[9px] font-mono uppercase ml-1 ${
+              livePresentation.source === "LIVE_TICK" ? "text-emerald-500" :
+              livePresentation.source === "CANONICAL_FALLBACK" ? "text-amber-500" :
+              "text-slate-600"
+            }`}>
+              {livePresentation.source === "LIVE_TICK" ? "● LIVE" :
+               livePresentation.source === "CANONICAL_FALLBACK" ? "⊙ LAST" : "—"}
+            </span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             <span className="px-1.5 py-0.5 text-[10px] font-mono bg-slate-800 text-slate-300 rounded uppercase">
-              {safeString(market.market_regime, "NORMAL")}
+              {safeString(market?.market_regime, "NORMAL")}
             </span>
             <span className="px-1.5 py-0.5 text-[10px] font-mono bg-emerald-950/40 text-emerald-400 rounded uppercase">
-              {safeString(market.trend_direction, "SIDEWAYS")}
+              {safeString(market?.trend_direction, "SIDEWAYS")}
             </span>
           </div>
           <div className="border-t border-slate-800/60 pt-2.5 flex items-center justify-between text-[10px] font-mono text-slate-500">
             <span>NSE: 09:15 - 15:30 IST</span>
-            <span className="text-emerald-400 flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span> Active (No Holiday)
+            <span className={`flex items-center gap-1 ${
+              livePresentation.sessionBadge.isOpen ? "text-emerald-400" :
+              livePresentation.sessionBadge.isPreMarket ? "text-sky-400" :
+              "text-amber-400"
+            }`}>
+              <span className="h-1.5 w-1.5 rounded-full bg-current"></span>
+              {livePresentation.sessionBadge.label}
             </span>
           </div>
         </div>

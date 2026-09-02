@@ -196,11 +196,23 @@ def test_10_pre_corridor_cannot_become_primary_trigger_while_closer_live_level_e
 
 
 def test_11_pre_corridor_remains_reference_only():
-    """Verify pre-market reference corridor is tagged REFERENCE_ONLY in structural levels."""
+    """Pre-market reference corridor stays tagged REFERENCE_ONLY, and reports an
+    explicit 'Unavailable' when no real pre-market corridor was computed upstream
+    (no fabricated 24,284 – 24,291 fallback)."""
     state = {"market_data": {"current_spot": 24204.55}}
     result = StructuralLevelEngine.evaluate_levels(state)
     assert result["pre_market_reference_corridor"]["context"] == "PRE_MARKET_REFERENCE_ONLY"
-    assert result["pre_market_reference_corridor"]["corridor_str"] == "24,284 – 24,291"
+    assert result["pre_market_reference_corridor"]["corridor_str"] == "Unavailable"
+    assert result["pre_market_reference_corridor"]["low"] is None
+    assert result["pre_market_reference_corridor"]["high"] is None
+
+    # When a real decision corridor is supplied upstream, it is surfaced verbatim.
+    state_with_corridor = {
+        "market_data": {"current_spot": 24204.55},
+        "critical_levels": {"decision_corridor_lower": 24284.0, "decision_corridor_upper": 24291.0},
+    }
+    r2 = StructuralLevelEngine.evaluate_levels(state_with_corridor)["pre_market_reference_corridor"]
+    assert r2["corridor_str"] == "24,284 – 24,291"
 
 
 def test_12_ai_opportunities_trigger_matches_shared_structural_level_engine():

@@ -39,6 +39,41 @@ Always place imports at the top of the file, and utilize named imports rather th
 - **Incorrect**: `from src.models import *`
 - **Correct**: `from src.models import MarketScore, OptionContext`
 
+### 4. Prohibited Plausible Market Data Fallbacks (Frontend Rule & Code-Review Checklist)
+**Rule Intent**:
+> *"fallback values must never be plausible market data — always null/undefined so the UI can render an explicit awaiting-data state."*
+
+In the frontend codebase (React, TypeScript, view models, and adapters), never use `??` or `||` fallback expressions where the right-hand side is a numeric, date, percentage, or currency literal that mimics plausible market data. Fabricating fallback values risks misleading traders by presenting stale or synthetic quotes as real market context.
+
+#### ❌ Prohibited Patterns:
+```typescript
+// NEVER use plausible market data as fallback:
+const spotPrice = data.spot ?? 24080.40;          // ❌ Synthetic spot price
+const activeDate = data.date ?? "2026-09-01";     // ❌ Fabricated trading date
+const vixValue = data.vix ?? "10.68";             // ❌ Plausible VIX level
+const supportLevel = immediateSupport || "24,180";// ❌ Fabricated support strike
+const changePercent = data.changePct ?? 0.28;     // ❌ Fabricated percentage
+```
+
+#### ✅ Allowed / Compliant Patterns:
+```typescript
+// ALWAYS fall back to null/undefined or explicit UI empty state:
+const spotPrice = data.spot ?? null;              // ✅ Explicit null -> renders awaiting-data state
+const activeDate = data.date ?? null;             // ✅ Renders "--" or loading skeleton
+const vixValue = data.vix ?? null;                // ✅ Clean awaiting state
+
+// UI layout / array length fallbacks are acceptable when non-market constants:
+const itemCount = items.length || 0;              // ✅ Structural/UI constant
+const pageSize = config.limit ?? 10;              // ✅ Configuration default
+```
+
+#### 🔍 Fallback Review Linter:
+Run the AST-based fallback scanner before submitting code:
+```bash
+npm run lint:fallbacks
+```
+Flagged expressions are highlighted for peer review to ensure all market data attributes retain truthful temporal and awaiting-data provenance.
+
 ---
 
 ## 🧪 Testing Protocol & Regression Safety

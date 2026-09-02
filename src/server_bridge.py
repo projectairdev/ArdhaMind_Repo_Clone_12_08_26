@@ -7,7 +7,7 @@ import dataclasses
 import logging
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Support the documented direct launch (`python src/server_bridge.py`) as well as
 # module launch without changing application imports.
@@ -45,6 +45,33 @@ import threading
 
 _boot_start_time = time.time()
 _first_state_emitted = False
+
+# ── Thread-safe daemon protocol channel ──────────────────────────────────────
+# All daemon IPC output MUST go through emit_daemon_message().
+# Direct print(json.dumps(...)) in daemon mode is FORBIDDEN — print() is not
+# atomic: two concurrent threads can interleave bytes on the same physical
+# line producing invalid NDJSON that Node silently discards.
+_stdout_protocol_lock = threading.Lock()
+
+
+def emit_daemon_message(payload: dict) -> None:
+    """Emit exactly one NDJSON line to daemon stdout.
+
+    Thread-safe: the lock ensures json.dumps + write + flush is performed
+    as an uninterruptible unit so no two concurrent callers can interleave
+    characters on the same physical stdout line.
+
+    ONLY for daemon IPC protocol output.  CLI one-shot paths in main() are
+    single-threaded and do not need this helper.
+    """
+    try:
+        framed = json.dumps(payload, separators=(",", ":"), default=str) + "\n"
+    except Exception as _enc_err:  # pragma: no cover
+        logger.error("[EMIT] JSON serialization failed: %s", _enc_err)
+        return
+    with _stdout_protocol_lock:
+        sys.stdout.write(framed)
+        sys.stdout.flush()
 
 proposal_audit_storage = ProposalAuditStorage()
 safety_gatekeeper = SafetyGatekeeper()
@@ -234,6 +261,134 @@ def reject_execution_action(action: str):
         }
     return None
 
+
+def setup_real_ticks_callback(bs_instance=None):
+    """
+    Authoritative, idempotent registration of real tick streaming callback on BrokerService.
+    Can be safely called from OAuth completion, daemon startup, or reconnect handlers.
+    """
+    from src.broker.services.broker_service import BrokerService
+    from src.broker.services.streaming_service import STATIC_TOKENS
+    from src.broker.services.instrument_service import InstrumentService
+    from src.broker.utils.symbol_normalizer import normalize_instrument_key
+
+    target_bs = bs_instance or BrokerService.get_instance()
+    try:
+        orch = target_bs._get_orchestrator()
+    except Exception as exc:
+        logger.warning("Cannot setup real ticks callback: broker session unauthenticated (%s).", exc)
+        return
+    if getattr(orch, "_real_ticks_callback_set", False):
+        return
+    original_on_ticks = orch._on_tick_received
+
+    def new_on_ticks(raw_ticks):
+        if original_on_ticks:
+            original_on_ticks(raw_ticks)
+        t_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        runtime_id = getattr(WorkstationStateService, "_runtime_id", "ardhamind_runtime")
+        state_seq = getattr(WorkstationStateService, "_sequence", 1)
+
+        for raw in raw_ticks:
+            token = raw.get("instrument_token")
+            symbol = "N/A"
+            if token in STATIC_TOKENS:
+                symbol = STATIC_TOKENS[token]
+            else:
+                inst = InstrumentService.get_instance().lookup_instrument_by_token(token)
+                if inst:
+                    symbol = inst.get("tradingsymbol") or "N/A"
+            symbol = normalize_instrument_key(symbol)
+
+            last_price = float(raw.get("last_price", 0.0) or 0.0)
+            ohlc = raw.get("ohlc", {})
+            open_price = float(ohlc.get("open", 0.0) or 0.0)
+            high_price = float(ohlc.get("high", 0.0) or 0.0)
+            low_price = float(ohlc.get("low", 0.0) or 0.0)
+            close_price = float(ohlc.get("close", 0.0) or 0.0)
+            prev_close = close_price if close_price > 0 else (
+                (WorkstationStateService._final_session_record or {}).get("close")
+            )
+            change_pts = round(last_price - prev_close, 2) if (last_price > 0 and prev_close and prev_close > 0) else None
+            change_pct = round(change_pts / prev_close * 100.0, 4) if (change_pts is not None and prev_close and prev_close > 0) else None
+
+            raw_ts = raw.get("timestamp") or t_now
+            obs_ts = raw_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] if hasattr(raw_ts, "strftime") else str(raw_ts)
+
+            tick_payload = {
+                "type": "tick",
+                "symbol": symbol,
+                "data": {
+                    "instrument_token": token,
+                    "last_price": last_price,
+                    "volume": raw.get("volume", 0),
+                    "oi": raw.get("oi", 0),
+                    "ohlc": ohlc,
+                    "exchange_timestamp": obs_ts,
+                    "backend_receive_timestamp": t_now,
+                    "runtime_id": runtime_id,
+                    "state_sequence": state_seq
+                }
+            }
+            emit_daemon_message(tick_payload)
+
+            # Emit structured LiveMarketEvent for atomic streaming ingestion
+            if last_price > 0.0:
+                depth = raw.get("depth", {})
+                buy_depth = depth.get("buy") or []
+                sell_depth = depth.get("sell") or []
+                bid = float(buy_depth[0].get("price", 0.0)) if buy_depth else last_price
+                ask = float(sell_depth[0].get("price", 0.0)) if sell_depth else last_price
+
+                live_evt = {
+                    "type": "live_event",
+                    "data": {
+                        "runtime_id": runtime_id,
+                        "state_sequence": state_seq,
+                        "instrument_token": token,
+                        "symbol": symbol,
+                        "event_type": "TICK",
+                        "price": last_price,
+                        "open": open_price,
+                        "high": high_price,
+                        "low": low_price,
+                        "previous_close": prev_close,
+                        "change_points": round(change_pts, 2) if change_pts is not None else 0.0,
+                        "change_pct": round(change_pct, 2) if change_pct is not None else 0.0,
+                        "volume": int(raw.get("volume", 0) or 0),
+                        "oi": int(raw.get("oi", 0) or 0),
+                        "bid": bid,
+                        "ask": ask,
+                        "provider_observed_at": obs_ts,
+                        "backend_received_at": t_now,
+                        "canonical_committed_at": t_now,
+                        "freshness": "FRESH",
+                        "source": "ZERODHA_KITE"
+                    }
+                }
+                emit_daemon_message(live_evt)
+
+    orch._on_tick_received = new_on_ticks
+    orch._real_ticks_callback_set = True
+
+
+def getPreviousNseTradingDay(ref_date=None) -> str:
+    """Dynamically resolves the previous valid NSE trading day (accounting for weekends and holidays)."""
+    try:
+        from src.market_data.session.exchange_calendar import ExchangeCalendar
+        from src.broker.services.market_status_service import MarketStatusService
+        ist_now = MarketStatusService.get_ist_time()
+        cal = ExchangeCalendar()
+        ref = ref_date or ist_now.date()
+        prev_date = cal.get_previous_trading_date(ref)
+        return prev_date.strftime("%Y-%m-%d")
+    except Exception:
+        return "2026-08-28"
+
+
+get_previous_nse_trading_day = getPreviousNseTradingDay
+
+
 def handle_daemon_command(action, params, bs, wm):
     global cached_market_context, cached_option_context, active_trade_proposal, cached_news_sentiment, cached_macro_context, last_news_fetch_time, last_macro_fetch_time
     from datetime import datetime
@@ -413,7 +568,7 @@ def handle_daemon_command(action, params, bs, wm):
                 return {"success": True, "briefing": report.to_dict()}
 
         eval_state = {
-            "market_session": {"status": "CLOSED", "session_date": "2026-08-17"},
+            "market_session": {"status": "CLOSED", "session_date": getPreviousNseTradingDay()},
             "market_data": cached_market_context or {},
             "option_intelligence": cached_option_context or {},
             "macro_intelligence": cached_macro_context or {},
@@ -432,7 +587,7 @@ def handle_daemon_command(action, params, bs, wm):
         force_freeze = params.get("force_freeze", True)
         force_regenerate = params.get("force_regenerate", True)
         eval_state = {
-            "market_session": {"status": "CLOSED", "session_date": "2026-08-17"},
+            "market_session": {"status": "CLOSED", "session_date": getPreviousNseTradingDay()},
             "market_data": cached_market_context or {},
             "option_intelligence": cached_option_context or {},
             "macro_intelligence": cached_macro_context or {},
@@ -448,7 +603,7 @@ def handle_daemon_command(action, params, bs, wm):
     elif action == "validate_pre_market_briefing":
         from src.intelligence_engine.pre_market_briefing_engine import PreMarketBriefingEngine
         eval_state = {
-            "market_session": {"status": "CLOSED", "session_date": "2026-08-17"},
+            "market_session": {"status": "CLOSED", "session_date": getPreviousNseTradingDay()},
             "market_data": cached_market_context or {},
             "option_intelligence": cached_option_context or {},
             "macro_intelligence": cached_macro_context or {},
@@ -516,12 +671,12 @@ def handle_daemon_command(action, params, bs, wm):
         logger.info(f"[POST_AUTH_TIMING] A1 callback_received: {datetime.utcnow().isoformat()}Z")
 
         # Broadcast instant authentication progress event
-        print(json.dumps({
+        emit_daemon_message({
             "type": "auth_event",
             "brokerState": "CONNECTING",
             "feedState": "STARTING",
             "timestamp": datetime.utcnow().isoformat() + "Z"
-        }), flush=True)
+        })
 
         try:
             t_ex_start = time.time()
@@ -564,7 +719,7 @@ def handle_daemon_command(action, params, bs, wm):
                 nonlocal feed_ready
                 if connected:
                     try:
-                        setup_real_ticks_callback()
+                        setup_real_ticks_callback(bs)
                         bs.connect_stream()
                         bs.subscribe_stream([
                             "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
@@ -616,12 +771,12 @@ def handle_daemon_command(action, params, bs, wm):
             setattr(BrokerHealthEvaluator, "_last_post_auth_metrics", timing_metrics)
 
             # Broadcast final connected auth event
-            print(json.dumps({
+            emit_daemon_message({
                 "type": "auth_event",
                 "brokerState": final_broker_state,
                 "feedState": ("READY" if feed_ready else "STANDBY") if profile_ok else "STOPPED",
                 "timestamp": datetime.utcnow().isoformat() + "Z"
-            }), flush=True)
+            })
 
             # Force immediate canonical workstation state broadcast
             try:
@@ -644,7 +799,7 @@ def handle_daemon_command(action, params, bs, wm):
                 canonical_state = WorkstationStateService.build_from_legacy(
                     legacy_data, broker_state=final_broker_state, market_state="CLOSED"
                 )
-                print(json.dumps({"type": "state", "data": canonical_state.to_dict()}), flush=True)
+                emit_daemon_message({"type": "state", "data": canonical_state.to_dict()})
             except Exception as broadcast_err:
                 logger.error(f"Failed immediate post-login state broadcast: {broadcast_err}")
 
@@ -1812,7 +1967,7 @@ def handle_daemon_command(action, params, bs, wm):
             "options": cached_option_context or {},
             "news": cached_news_sentiment or {},
             "macro_intelligence": cached_macro_context or {},
-            "last_price": (cached_market_context or {}).get("current_spot", 24152.05),
+            "last_price": (cached_market_context or {}).get("current_spot"),
         }
         if trading_date:
             report = PostMarketBriefingEngine.load_persisted_report(trading_date)
@@ -1838,7 +1993,7 @@ def handle_daemon_command(action, params, bs, wm):
             "options": cached_option_context or {},
             "news": cached_news_sentiment or {},
             "macro_intelligence": cached_macro_context or {},
-            "last_price": (cached_market_context or {}).get("current_spot", 24152.05),
+            "last_price": (cached_market_context or {}).get("current_spot"),
         }
         report = PostMarketBriefingEngine.reconcile_official_close(t_date, s_dict, now_ist)
         return {"success": True, "data": report.to_dict() if hasattr(report, "to_dict") else report}
@@ -1852,7 +2007,7 @@ def handle_daemon_command(action, params, bs, wm):
             "options": cached_option_context or {},
             "news": cached_news_sentiment or {},
             "macro_intelligence": cached_macro_context or {},
-            "last_price": (cached_market_context or {}).get("current_spot", 24152.05),
+            "last_price": (cached_market_context or {}).get("current_spot"),
         }
         res = ActionableSuggestionEngine.analyze_and_suggest(s_dict)
         return {"success": True, "data": res}
@@ -1864,7 +2019,7 @@ def handle_daemon_command(action, params, bs, wm):
             "options": cached_option_context or {},
             "news": cached_news_sentiment or {},
             "macro_intelligence": cached_macro_context or {},
-            "last_price": (cached_market_context or {}).get("current_spot", 24152.05),
+            "last_price": (cached_market_context or {}).get("current_spot"),
         }
         res = ActionableSuggestionEngine.analyze_and_suggest(s_dict)
         return {"success": True, "data": [res]}
@@ -2013,6 +2168,13 @@ def handle_daemon_command(action, params, bs, wm):
             }
         }
 
+    elif action == "get_canonical_envelope":
+        envelope = WorkstationStateService.build_live_canonical_envelope(
+            market_context=cached_market_context,
+            option_context=cached_option_context
+        )
+        return {"success": True, "envelope": envelope}
+
     else:
         raise ValueError(f"Unknown daemon action: {action}")
 
@@ -2025,6 +2187,7 @@ def run_daemon(wm, bs):
     from datetime import datetime
     from src.broker.services.streaming_service import STATIC_TOKENS
     from src.broker.services.instrument_service import InstrumentService
+    from src.broker.utils.symbol_normalizer import normalize_instrument_key
 
     logger.info(f"[BOOT] Starting Python Bridge Daemon at {(time.time() - _boot_start_time)*1000:.1f}ms...")
 
@@ -2117,10 +2280,10 @@ def run_daemon(wm, bs):
                 params = req.get("params", {})
 
                 res = handle_daemon_command(action, params, bs, wm)
-                print(json.dumps({"type": "response", "requestId": req_id, "success": True, "data": res}), flush=True)
+                emit_daemon_message({"type": "response", "requestId": req_id, "success": True, "data": res})
             except Exception as e:
                 try:
-                    print(json.dumps({"type": "response", "requestId": req_id if 'req_id' in locals() else None, "success": False, "error": str(e)}), flush=True)
+                    emit_daemon_message({"type": "response", "requestId": req_id if 'req_id' in locals() else None, "success": False, "error": str(e)})
                 except Exception:
                     pass
 
@@ -2144,104 +2307,8 @@ def run_daemon(wm, bs):
                     "backend_receive_timestamp": timestamp_str
                 }
             }
-            print(json.dumps(tick_null), flush=True)
+            emit_daemon_message(tick_null)
             time.sleep(3.0)
-
-    def setup_real_ticks_callback():
-        try:
-            orch = bs._get_orchestrator()
-        except PermissionError:
-            logger.warning("Cannot setup real ticks callback: broker session unauthenticated.")
-            return
-        if getattr(orch, "_real_ticks_callback_set", False):
-            return
-        original_on_ticks = orch._on_tick_received
-
-        def new_on_ticks(raw_ticks):
-            if original_on_ticks:
-                original_on_ticks(raw_ticks)
-            t_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-            runtime_id = getattr(WorkstationStateService, "_runtime_id", "ardhamind_runtime")
-            state_seq = getattr(WorkstationStateService, "_sequence", 1)
-
-            for raw in raw_ticks:
-                token = raw.get("instrument_token")
-                symbol = "N/A"
-                if token in STATIC_TOKENS:
-                    symbol = STATIC_TOKENS[token]
-                else:
-                    inst = InstrumentService.get_instance().lookup_instrument_by_token(token)
-                    if inst:
-                        symbol = inst.get("tradingsymbol") or "N/A"
-
-                last_price = float(raw.get("last_price", 0.0) or 0.0)
-                ohlc = raw.get("ohlc", {})
-                open_price = float(ohlc.get("open", 0.0) or 0.0)
-                high_price = float(ohlc.get("high", 0.0) or 0.0)
-                low_price = float(ohlc.get("low", 0.0) or 0.0)
-                close_price = float(ohlc.get("close", 0.0) or 0.0)
-                prev_close = close_price if close_price > 0 else 24287.65
-                change_pts = (last_price - prev_close) if last_price > 0 and prev_close > 0 else 0.0
-                change_pct = (change_pts / prev_close * 100.0) if prev_close > 0 else 0.0
-
-                raw_ts = raw.get("timestamp") or t_now
-                obs_ts = raw_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] if hasattr(raw_ts, "strftime") else str(raw_ts)
-
-                tick_payload = {
-                    "type": "tick",
-                    "symbol": symbol,
-                    "data": {
-                        "instrument_token": token,
-                        "last_price": last_price,
-                        "volume": raw.get("volume", 0),
-                        "oi": raw.get("oi", 0),
-                        "ohlc": ohlc,
-                        "exchange_timestamp": obs_ts,
-                        "backend_receive_timestamp": t_now,
-                        "runtime_id": runtime_id,
-                        "state_sequence": state_seq
-                    }
-                }
-                print(json.dumps(tick_payload), flush=True)
-
-                # Emit structured LiveMarketEvent for atomic streaming ingestion
-                if last_price > 0.0:
-                    depth = raw.get("depth", {})
-                    buy_depth = depth.get("buy") or []
-                    sell_depth = depth.get("sell") or []
-                    bid = float(buy_depth[0].get("price", 0.0)) if buy_depth else last_price
-                    ask = float(sell_depth[0].get("price", 0.0)) if sell_depth else last_price
-
-                    live_evt = {
-                        "type": "live_event",
-                        "data": {
-                            "runtime_id": runtime_id,
-                            "state_sequence": state_seq,
-                            "instrument_token": token,
-                            "symbol": symbol,
-                            "event_type": "TICK",
-                            "price": last_price,
-                            "open": open_price,
-                            "high": high_price,
-                            "low": low_price,
-                            "previous_close": prev_close,
-                            "change_points": round(change_pts, 2),
-                            "change_pct": round(change_pct, 2),
-                            "volume": int(raw.get("volume", 0) or 0),
-                            "oi": int(raw.get("oi", 0) or 0),
-                            "bid": bid,
-                            "ask": ask,
-                            "provider_observed_at": obs_ts,
-                            "backend_received_at": t_now,
-                            "canonical_committed_at": t_now,
-                            "freshness": "FRESH",
-                            "source": "ZERODHA_KITE"
-                        }
-                    }
-                    print(json.dumps(live_evt), flush=True)
-
-        orch._on_tick_received = new_on_ticks
-        orch._real_ticks_callback_set = True
 
     instruments_df = None
     # Auto-restore valid Zerodha session at daemon startup
@@ -2303,9 +2370,10 @@ def run_daemon(wm, bs):
                     connected = bs.connect_stream()
                     if connected:
                         bs.subscribe_stream([
-                            "NIFTY", "NIFTY BANK", "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA",
-                            "NIFTY METAL", "NIFTY FMCG", "NIFTY REALTY", "NIFTY ENERGY",
-                            "NIFTY OIL AND GAS", "NIFTY FIN SERVICE", "INDIA VIX",
+                            "NIFTY", "NIFTY 50", "NSE:NIFTY 50", "NIFTY BANK", "NSE:NIFTY BANK",
+                            "NIFTY IT", "NIFTY AUTO", "NIFTY PHARMA", "NIFTY METAL", "NIFTY FMCG",
+                            "NIFTY REALTY", "NIFTY ENERGY", "NIFTY OIL AND GAS", "NIFTY FIN SERVICE",
+                            "NSE:NIFTY FIN SERVICE", "INDIA VIX", "NSE:INDIA VIX",
                         ])
                         logger.info("Auto-connected streaming feed for active broker session.")
                 except Exception as e:
@@ -2335,6 +2403,7 @@ def run_daemon(wm, bs):
             spot_banknifty = None
             spot_finnifty = None
             india_vix = None
+            effective_spot = 0.0
             orch = None
 
             # If connected, fetch dynamic spot prices immediately from orchestrator cache
@@ -2403,6 +2472,8 @@ def run_daemon(wm, bs):
                                             future_exp.append(e)
                                     except Exception:
                                         pass
+                                if not future_exp and expiries:
+                                    future_exp = expiries
                                 if future_exp:
                                     current_weekly = future_exp[0]
                                     if bs.is_connected():
@@ -2433,6 +2504,9 @@ def run_daemon(wm, bs):
                         finally:
                             bs._option_chain_loading = False
                     threading.Thread(target=_bg_update_option_chain, args=(effective_spot, india_vix), daemon=True).start()
+
+            if not effective_spot or effective_spot <= 0:
+                effective_spot = spot_nifty if (spot_nifty and spot_nifty > 0) else float((cached_market_context or {}).get("current_spot") or (cached_option_context or {}).get("underlying_spot") or 0.0)
 
             broker_account = defaultBrokerAccount
             broker_funds = defaultBrokerFunds
@@ -2640,7 +2714,7 @@ def run_daemon(wm, bs):
                         "marketDataSource": "LIVE",
                         "analyticsMode": "ENABLED",
                         "notificationMode": "ENABLED",
-                        "timestamp": datetime.utcnow().isoformat() + "Z"
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     },
                     "brokerAccount": broker_account,
                     "brokerFunds": broker_funds,
@@ -2662,7 +2736,7 @@ def run_daemon(wm, bs):
             m_comp = pipeline_result.compatibility_values().get("marketContext") or {}
             legacy_data.update(pipeline_result.compatibility_values())
             valid_m_comp = {k: v for k, v in m_comp.items() if v is not None}
-            now_iso = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] + "Z"
+            now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3] + "Z"
             latest_tick_nifty = orch.latest_ticks.get("NSE:NIFTY 50") if (orch and getattr(orch, "latest_ticks", None)) else None
             latest_obs_time = (latest_tick_nifty.get("timestamp") or latest_tick_nifty.get("exchange_timestamp") or now_iso) if latest_tick_nifty else now_iso
             legacy_data["marketContext"] = {
@@ -2678,6 +2752,22 @@ def run_daemon(wm, bs):
                 "spot_change_pct": valid_m_comp.get("spot_change_pct") or (cached_market_context or {}).get("spot_change_pct"),
                 "candles": (cached_market_context or {}).get("candles") or valid_m_comp.get("candles") or [],
             }
+            if effective_spot and effective_spot > 0:
+                legacy_data["marketContext"]["current_spot"] = effective_spot
+                legacy_data["marketContext"]["spot"] = effective_spot
+                if cached_market_context is not None:
+                    cached_market_context["current_spot"] = effective_spot
+                    cached_market_context["spot"] = effective_spot
+            if india_vix and india_vix > 0:
+                legacy_data["marketContext"]["india_vix"] = india_vix
+                legacy_data["marketContext"]["vix"] = india_vix
+                if cached_market_context is not None:
+                    cached_market_context["india_vix"] = india_vix
+                    cached_market_context["vix"] = india_vix
+            if spot_banknifty and spot_banknifty > 0:
+                legacy_data["marketContext"]["spot_banknifty"] = spot_banknifty
+            if spot_finnifty and spot_finnifty > 0:
+                legacy_data["marketContext"]["spot_finnifty"] = spot_finnifty
             legacy_data["optionContext"] = {**(cached_option_context or {}), **(pipeline_result.compatibility_values().get("optionContext") or {})}
             legacy_data["newsSentiment"] = cached_news_sentiment or get_initial_news_sentiment()
             legacy_data["macroIntelligence"] = cached_macro_context or get_initial_macro_context()
@@ -2710,19 +2800,42 @@ def run_daemon(wm, bs):
             except Exception as _pmb_err:
                 logger.warning(f"[POST_MARKET] Automatic tick processing warning: {_pmb_err}")
 
-            state_payload = {
-                "type": "state",
-                "data": canonical_state.to_dict()
-            }
-            print(json.dumps(state_payload), flush=True)
-            global _first_state_emitted
-            if not _first_state_emitted:
-                _first_state_emitted = True
-                logger.info(f"[BOOT] First canonical state emitted at {(time.time() - _boot_start_time)*1000:.1f}ms")
-        except Exception as err:
-            logger.exception(f"Daemon state generation failed: {err}")
+            try:
+                env = WorkstationStateService.build_live_canonical_envelope(
+                    market_context=cached_market_context,
+                    option_context=cached_option_context,
+                    pipeline_result=pipeline_result,
+                    runtime_snapshot=runtime_snapshot,
+                    legacy_state=canonical_state.to_dict() if hasattr(canonical_state, "to_dict") else canonical_state
+                )
+                emit_daemon_message({
+                    "type": "canonical_envelope",
+                    "data": env
+                })
+            except Exception as _env_ex:
+                logger.warning(f"Daemon canonical_envelope emission warning: {_env_ex}")
+        except Exception as e:
+            logger.error(f"Error in daemon cycle: {e}")
 
-        time.sleep(3.0)
+        # FIX 18: Dynamic cadence based on unified clock authority & session status
+        # Active window (08:45 - 18:30 IST on trading days or active session): fast 3.0s cadence
+        # Off-market / deep night / weekend hours: throttled 60.0s cadence
+        sleep_sec = 3.0
+        try:
+            from datetime import timezone as _dt_tz, timedelta as _dt_td
+            from src.utils.time_utils import is_trading_day as _is_td
+            _ist_tz = _dt_tz(_dt_td(hours=5, minutes=30))
+            _now_ist = datetime.now(_ist_tz)
+            _hhmm = _now_ist.strftime("%H:%M")
+            _is_active_window = _is_td(_now_ist.date()) and ("08:45" <= _hhmm <= "18:30")
+            _m_stat = bs.get_market_status() if bs else None
+            _is_market_active = bool(_m_stat and _m_stat.is_open)
+            if not _is_active_window and not _is_market_active:
+                sleep_sec = 60.0
+        except Exception:
+            sleep_sec = 3.0
+
+        time.sleep(sleep_sec)
 
 def main():
     parser = argparse.ArgumentParser(description="Python Backend Gateway Bridge")
@@ -3074,8 +3187,10 @@ def main():
                 broker_state=str(bs.get_session_state()).upper(),
                 market_state="CLOSED" if not bs.get_market_status().is_open else "OPEN"
             )
-            result = OpenAIInterpretationService.interpret_canonical_state(canonical_state.to_dict())
-            print(json.dumps(result))
+        elif args.action == "get_canonical_envelope":
+            from src.application.workstation_state_service import WorkstationStateService
+            envelope = WorkstationStateService.build_live_canonical_envelope()
+            print(json.dumps({"success": True, "envelope": envelope}))
 
         else:
             print(json.dumps({"error": f"Unknown action: {args.action}"}))

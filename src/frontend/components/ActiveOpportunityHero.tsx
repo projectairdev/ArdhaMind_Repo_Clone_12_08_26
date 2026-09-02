@@ -182,7 +182,25 @@ export const ActiveOpportunityHero: React.FC<ActiveOpportunityHeroProps> = () =>
     );
   }
 
-  const isNoTrade = !proposal || proposal.state === "NO_TRADE" || proposal.direction === "NEUTRAL";
+  const isNoTrade =
+    !proposal ||
+    proposal.state === "NO_TRADE" ||
+    proposal.state === "INSUFFICIENT_DATA" ||
+    proposal.direction === "NEUTRAL" ||
+    proposal.contract_symbol === "NO ACTIVE PROPOSAL" ||
+    proposal.setup_type === "NONE" ||
+    !proposal.entry_price ||
+    proposal.entry_price <= 0 ||
+    !proposal.strike ||
+    proposal.strike <= 0 ||
+    proposal.confidence_score == null ||
+    proposal.confidence_score <= 0 ||
+    proposal.quality_score == null ||
+    proposal.quality_score <= 0 ||
+    !proposal.stop_loss ||
+    proposal.stop_loss <= 0 ||
+    !proposal.target_1 ||
+    proposal.target_1 <= 0;
   const isBullish = proposal?.direction?.toUpperCase() === "BULLISH";
   const isApproved = proposal?.state === "DRY_RUN_RECORDED" || proposal?.state === "INTENT_PREPARED";
   const isSubmitted = proposal?.state === "SUBMITTED";
@@ -197,23 +215,26 @@ export const ActiveOpportunityHero: React.FC<ActiveOpportunityHeroProps> = () =>
   if (isNoTrade) {
     return (
       <>
-        <Surface className="p-3 bg-[#0B0D10] border border-[#191D23] rounded-[4px] font-sans text-left">
+        <Surface className="p-3.5 bg-[#0B0D10] border border-[#191D23] rounded-[4px] font-sans text-left">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <span className="p-1.5 rounded-[2px] bg-[#1E232B] text-[#707987]">
-                <ShieldCheck className="w-4 h-4" />
+            <div className="flex items-center gap-3">
+              <span className="p-2 rounded-[2px] bg-[#1E232B] text-[#707987]">
+                <ShieldCheck className="w-4 h-4 text-[#707987]" />
               </span>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold text-[#E6E8EB] uppercase tracking-wider font-mono">
-                    ACTIVE TRADE PROPOSAL: STANDBY
+                    ACTIVE ADVISORY FRAME: STANDBY
                   </span>
-                  <span className="px-1.5 py-0.2 rounded-[2px] bg-[#1E232B] text-[#A5ABB4] text-[9px] font-mono">
-                    NO HIGH-CONVICTION SETUP
+                  <span className="px-1.5 py-0.5 rounded-[2px] bg-[#1E232B] text-[#A5ABB4] text-[9px] font-mono font-bold tracking-wider uppercase">
+                    NO ACTIVE OPPORTUNITY
                   </span>
                 </div>
-                <p className="text-[11px] text-[#707987] mt-0.5">
-                  {proposal?.rationale?.[0] || "Deterministic scanning active. Awaiting structural edge with Priority ≥ 65."}
+                <p className="text-[11px] text-[#848E9C] mt-0.5">
+                  {proposal?.rationale?.[0] || "No high-conviction trade setup currently meets qualification thresholds (Confluence Score ≥ 65)."}
+                </p>
+                <p className="text-[10px] text-[#555E6D] mt-0.5 font-mono">
+                  Trade proposals are generated only when real market structure, active option chain liquidity, and validated risk/reward boundaries are verified.
                 </p>
               </div>
             </div>
@@ -345,7 +366,7 @@ export const ActiveOpportunityHero: React.FC<ActiveOpportunityHeroProps> = () =>
                   className="px-2.5 py-1 rounded-[2px] bg-[#1A1F2C] hover:bg-[#222838] text-[#38BDF8] font-bold text-[10px] font-mono border border-[#38BDF8]/30 hover:border-[#38BDF8] transition flex items-center gap-1"
                 >
                   <Eye className="w-3 h-3" />
-                  Preview Order
+                  View Advisory Frame
                 </button>
 
                 <button
@@ -359,7 +380,7 @@ export const ActiveOpportunityHero: React.FC<ActiveOpportunityHeroProps> = () =>
                   ) : (
                     <Zap className="w-3 h-3" />
                   )}
-                  Approve ({selectedLots} {selectedLots === 1 ? "Lot" : "Lots"})
+                  Acknowledge Frame ({selectedLots} {selectedLots === 1 ? "Lot" : "Lots"})
                 </button>
               </>
             )}
@@ -367,14 +388,14 @@ export const ActiveOpportunityHero: React.FC<ActiveOpportunityHeroProps> = () =>
             {isSubmitted && (
               <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#38BDF8] bg-[#38BDF8]/10 border border-[#38BDF8]/30 px-2.5 py-0.5 rounded-[2px]">
                 <Activity className="w-3.5 h-3.5" />
-                ORDER SUBMITTED TO BROKER
+                ADVISORY BOUNDS RECORDED
               </span>
             )}
 
             {isApproved && (
               <span className="flex items-center gap-1.5 text-[10px] font-mono text-[#00C896] bg-[#00C896]/10 border border-[#00C896]/30 px-2.5 py-0.5 rounded-[2px]">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                DRY-RUN RECORDED ({selectedLots} {selectedLots === 1 ? "Lot" : "Lots"})
+                MODEL PARAMETERS ACKNOWLEDGED ({selectedLots} {selectedLots === 1 ? "Lot" : "Lots"})
               </span>
             )}
 
@@ -397,7 +418,7 @@ export const ActiveOpportunityHero: React.FC<ActiveOpportunityHeroProps> = () =>
           </div>
 
           <div className="px-3 py-2">
-            <div className="text-[#707987] text-[9px] uppercase">Stop-Loss</div>
+            <div className="text-[#707987] text-[9px] uppercase">Invalidation Floor</div>
             <div className="text-[13px] font-bold text-[#E5484D] mt-0.5">
               ₹{formatNumber(proposal.stop_loss, 2)}
             </div>

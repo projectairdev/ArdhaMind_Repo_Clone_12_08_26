@@ -72,12 +72,12 @@ class EvidenceRouter:
                     "target_session": "PREVIOUS_COMPLETED_SESSION",
                     "date": "2026-08-20",
                     "nifty_summary": {
-                        "open": post_snap.get("open", 24155.20),
-                        "high": post_snap.get("high", 24285.60),
-                        "low": post_snap.get("low", 24120.40),
-                        "close": post_snap.get("close", 24231.85),
-                        "change": post_snap.get("change", "+76.65 (+0.32%)"),
-                        "range": "165.20 pts"
+                        "open": post_snap.get("open"),
+                        "high": post_snap.get("high"),
+                        "low": post_snap.get("low"),
+                        "close": post_snap.get("close"),
+                        "change": post_snap.get("change"),
+                        "range": post_snap.get("session_range_so_far"),
                     },
                     "regime": intel.get("regime", "TREND EXPANSION"),
                     "directional_bias": intel.get("directional_bias", "BULLISH"),
@@ -94,10 +94,10 @@ class EvidenceRouter:
                         "Closed near high of day with broad participation"
                     ],
                     "derivatives_closing": {
-                        "pcr": options.get("pcr", 1.25),
-                        "max_pain": options.get("max_pain", 24200),
-                        "call_wall": options.get("call_wall", 24300),
-                        "put_wall": options.get("put_wall", 24000)
+                        "pcr": options.get("pcr"),
+                        "max_pain": options.get("max_pain"),
+                        "call_wall": options.get("call_wall"),
+                        "put_wall": options.get("put_wall")
                     }
                 }
 
@@ -112,8 +112,8 @@ class EvidenceRouter:
                     "expected_open_range": "24,180 – 24,220",
                     "confidence": pmb_cc.get("confidence") or 78,
                     "global_tone": "POSITIVE",
-                    "carry_support": 24180,
-                    "carry_resistance": 24300,
+                    "carry_support": intel.get("carry_support"),
+                    "carry_resistance": intel.get("carry_resistance"),
                     "vix": options.get("vix", 13.85),
                     "decision_corridor": dec_zone,
                     "action_at_open": "Wait for 09:15 open and 15m candle breadth confirmation before entering CE pullback."
@@ -168,11 +168,11 @@ class EvidenceRouter:
             elif intent == UserIntent.OPTIONS_DERIVATIVES:
                 opt_summary = _as_dict(intel.get("options_summary"))
                 evidence["derivatives"] = {
-                    "pcr": options.get("pcr") or opt_summary.get("pcr") or 1.25,
-                    "max_pain": options.get("max_pain") or 24200,
-                    "call_wall": options.get("call_wall") or 24300,
-                    "put_wall": options.get("put_wall") or 24000,
-                    "options_bias": options.get("options_bias") or "BULLISH_SUPPORTIVE",
+                    "pcr": options.get("pcr") or opt_summary.get("pcr"),
+                    "max_pain": options.get("max_pain") or opt_summary.get("max_pain"),
+                    "call_wall": options.get("call_wall") or opt_summary.get("call_wall"),
+                    "put_wall": options.get("put_wall") or opt_summary.get("put_wall"),
+                    "options_bias": options.get("options_bias") or opt_summary.get("options_bias"),
                     "vix": options.get("vix") or 13.85,
                 }
 

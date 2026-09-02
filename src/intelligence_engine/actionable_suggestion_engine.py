@@ -22,6 +22,24 @@ IST = timezone(timedelta(hours=5, minutes=30))
 CACHE_DIR = Path("/opt/ardhamind/staging/data/cache")
 
 
+def _pnum(*values: Any) -> Optional[float]:
+    """First positive, finite float among the candidates, else None.
+
+    Missing real market data must surface as None (and a NO_DATA snapshot),
+    never as a fabricated placeholder price/level.
+    """
+    for v in values:
+        try:
+            if v is None:
+                continue
+            f = float(v)
+            if f > 0 and f == f:
+                return f
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 class ActionableSuggestionEngine:
     """
     Hardened Trader-Grade Actionable Intelligence Engine for AIR ArdhaMind.
@@ -50,13 +68,35 @@ class ActionableSuggestionEngine:
 
         # Extract core market inputs
         m_data = state.get("market_data") or state.get("marketContext") or {}
-        spot = float(m_data.get("current_spot") or state.get("last_price") or 24152.05)
-        open_val = float(m_data.get("open") or spot)
-        high_val = float(m_data.get("high") or spot)
-        low_val = float(m_data.get("low") or spot)
-        prev_close = float(m_data.get("previous_close") or 24078.3)
-        chg_pts = round(spot - prev_close, 2)
-        chg_pct = round((chg_pts / prev_close) * 100.0, 2) if prev_close > 0 else 0.0
+        spot = _pnum(m_data.get("current_spot"), state.get("last_price"))
+        if spot is None:
+            # No real spot at all — emit an explicit no-data snapshot rather than
+            # scanning against fabricated price levels.
+            return {
+                "session_date": session_date,
+                "timestamp": now_iso,
+                "runtime_id": runtime_id,
+                "state_sequence": state_sequence,
+                "data_status": "NO_MARKET_DATA",
+                "spot": None,
+                "primary_suggestion": {
+                    "state": SuggestionState.NO_TRADE.value,
+                    "contract_symbol": "NO ACTIVE TRADE SUGGESTION",
+                    "qualification_reason": "Live NIFTY spot unavailable — opportunity scanning suspended.",
+                },
+                "watchlist_candidates": [],
+            }
+        prev_close = _pnum(m_data.get("previous_close"))
+        open_val = _pnum(m_data.get("open")) or spot
+        high_val = _pnum(m_data.get("high")) or spot
+        low_val = _pnum(m_data.get("low")) or spot
+        # Session change vs the real previous close; None when no real reference
+        # close is available (no fabricated 24,078-style fallback).
+        chg_pts = round(spot - prev_close, 2) if prev_close is not None else None
+        chg_pct = round((chg_pts / prev_close) * 100.0, 2) if (chg_pts is not None and prev_close and prev_close > 0) else None
+        # Real intraday momentum proxy (change from the session open) used only for
+        # deterministic regime/progression bucketing when prev-close is absent.
+        mom = chg_pts if chg_pts is not None else round(spot - open_val, 2)
 
         # Session Actionability Classification
         status_str = str(m_data.get("status") or "").lower()
@@ -98,7 +138,7 @@ class ActionableSuggestionEngine:
         elif regime == "TRENDING_EXPANSION_BEAR":
             bias = "BEARISH"
         else:
-            bias = "BULLISH" if chg_pts >= 0 else "BEARISH"
+            bias = "BULLISH" if mom >= 0 else "BEARISH"
 
         # Rolling Decision Corridors
         tech = state.get("technical_analysis") or {}
@@ -116,10 +156,26 @@ class ActionableSuggestionEngine:
 
         # Options Intelligence
         opts = state.get("options") or state.get("option_intelligence") or {}
-        pcr = float(opts.get("pcr") or 1.25)
-        max_pain = float(opts.get("max_pain") or 24200.0)
-        call_wall = float(opts.get("call_wall") or 24300.0)
-        put_wall = float(opts.get("put_wall") or 24000.0)
+        pcr = _pnum(opts.get("pcr"))
+        max_pain = _pnum(opts.get("max_pain"))
+        call_wall = _pnum(opts.get("call_wall"))
+        put_wall = _pnum(opts.get("put_wall"))
+        # Real ATM CE premium — required before any ₹-denominated entry/stop/target
+        # bracket can be produced. No live premium ⇒ no priced candidate.
+        atm_ce_premium = _pnum(
+            opts.get("atm_ce_ltp"),
+            opts.get("atm_ce_premium"),
+            opts.get("atm_premium"),
+            (opts.get("atm") or {}).get("ce_ltp") if isinstance(opts.get("atm"), dict) else None,
+        )
+        if atm_ce_premium is None:
+            _atm_guess = int(round(spot / 50.0) * 50)
+            _rows = opts.get("strikes") or opts.get("option_chain") or opts.get("chain") or []
+            if isinstance(_rows, list):
+                for _r in _rows:
+                    if isinstance(_r, dict) and _pnum(_r.get("strike")) == float(_atm_guess):
+                        atm_ce_premium = _pnum(_r.get("ce_ltp"), _r.get("call_ltp"), _r.get("callLtp"))
+                        break
 
         # ── FAIL-CLOSED LOT SIZE RESOLUTION ──
         resolved_db_lot = resolve_lot_size("NIFTY", default=65)
@@ -129,11 +185,11 @@ class ActionableSuggestionEngine:
         # Dynamic Market Progression & Setup Archetype
         if regime in ["TRENDING_EXPANSION_BULL", "TRENDING_EXPANSION_BEAR"] and abs(spot - vwap_val) <= 15.0:
             market_progression = "TREND_PULLBACK_VWAP"
-        elif chg_pts > 50 and spot >= high_val - 10:
+        elif mom > 50 and spot >= high_val - 10:
             market_progression = "BREAKOUT_ACCEPTANCE"
-        elif chg_pts > 20 and spot > open_val:
+        elif mom > 20 and spot > open_val:
             market_progression = "CONTINUATION"
-        elif abs(chg_pts) <= 20:
+        elif abs(mom) <= 20:
             market_progression = "COMPRESSION"
         else:
             market_progression = "PULLBACK_RETEST"
@@ -141,20 +197,26 @@ class ActionableSuggestionEngine:
         # Candidate Generation
         candidates: List[Dict[str, Any]] = []
 
-        if bias == "BULLISH" and adv > dec:
+        if bias == "BULLISH" and adv > dec and atm_ce_premium is not None:
             atm_strike = int(round(spot / 50.0) * 50)
             option_symbol = f"NIFTY {atm_strike} CE"
 
-            cand_score = 82.0 if breadth_ratio >= 65 else 74.0
-            cand_conf = 78.0 if pcr >= 1.0 else 68.0
+            # Real multi-factor confluence score (0.40 structure / 0.30 options /
+            # 0.20 breadth / 0.10 macro) — not a two-value bucket.
+            structure_score = float(trend_strength_val) if trend_strength_val is not None else 0.0
+            options_score = max(0.0, min(100.0, (pcr / 1.5) * 100.0)) if pcr is not None else 0.0
+            breadth_score = float(breadth_ratio)
+            cand_score = calculate_confluence_score(structure_score, options_score, breadth_score, 0.0)
+            cand_conf = cand_score
 
             contract_symbol_val = option_symbol
-            est_entry_low = round(140.0, 2)
-            est_entry_high = round(145.0, 2)
+            # Entry/stop/target bracket derived from the real live ATM CE premium.
+            est_entry_low = round(atm_ce_premium, 2)
+            est_entry_high = round(atm_ce_premium * 1.035, 2)
             entry_zone_val = f"₹{est_entry_low:.2f} – ₹{est_entry_high:.2f}"
-            sl_val = round(118.0, 2)
-            t1_val = round(175.0, 2)
-            t2_val = round(205.0, 2)
+            sl_val = round(atm_ce_premium * 0.84, 2)
+            t1_val = round(atm_ce_premium * 1.25, 2)
+            t2_val = round(atm_ce_premium * 1.46, 2)
             risk_pts = est_entry_low - sl_val
             reward_pts = t1_val - est_entry_low
             rr_val = round(reward_pts / max(1.0, risk_pts), 2)
@@ -260,12 +322,13 @@ class ActionableSuggestionEngine:
                 "premium_ltp": ltp_val,
                 "rationale": [
                     f"Positive NIFTY breadth with {adv} advances vs {dec} decliners ({breadth_ratio}% advance ratio).",
-                    f"Option chain PCR at {pcr:.2f} confirms solid put writing support at {put_wall:.0f}.",
+                    (f"Option chain PCR at {pcr:.2f}" + (f" with put writing support at {put_wall:.0f}." if put_wall is not None else "."))
+                    if pcr is not None else "Option chain PCR unavailable.",
                     f"Structural momentum in {market_progression} phase above {imm_supp:.0f} decision zone.",
                 ],
                 "opposing_evidence": [
                     f"Approaching call resistance wall at {call_wall:.0f}."
-                ] if spot > call_wall - 50 else [],
+                ] if (call_wall is not None and spot > call_wall - 50) else [],
                 "invalidation_condition": f"NIFTY spot closes 15-min candle below {imm_supp - 15:.0f} or PCR drops below 0.85.",
                 "qualification_reason": qual_reason,
                 "next_trigger": next_trig_val,
@@ -381,7 +444,7 @@ class ActionableSuggestionEngine:
             spot_change_pct=chg_pct,
             directional_bias=bias,
             regime=regime,
-            trend_strength=72.0 if chg_pts > 0 else 45.0,
+            trend_strength=72.0 if mom > 0 else 45.0,
             volatility_regime=v_regime,
             breadth_summary={
                 "advances": adv,
@@ -404,7 +467,7 @@ class ActionableSuggestionEngine:
                 "max_pain": max_pain,
                 "call_wall": call_wall,
                 "put_wall": put_wall,
-                "options_bias": "BULLISH_SUPPORT" if pcr >= 1.0 else "BEARISH_RESISTANCE"
+                "options_bias": ("BULLISH_SUPPORT" if pcr >= 1.0 else "BEARISH_RESISTANCE") if pcr is not None else "UNAVAILABLE"
             },
             confidence=primary_suggestion.confidence,
             evidence_quality=primary_suggestion.evidence_quality,
@@ -440,7 +503,13 @@ class ActionableSuggestionEngine:
         Guarantees non-live suggestions (ARMED_FOR_NEXT_SESSION / PRE_OPEN_WATCH) are blocked from proposal creation.
         """
         s_dict = suggestion.to_dict() if hasattr(suggestion, "to_dict") else suggestion
-        
+
+        strike_raw = s_dict.get("strike")
+        if strike_raw is None:
+            # Fail closed: a proposal cannot be constructed without a resolved
+            # strike. No fabricated default strike is substituted.
+            raise ValueError("Cannot map suggestion to proposal: no resolved strike present.")
+
         is_qualified = s_dict.get("state") == SuggestionState.QUALIFIED.value
         state_val = ProposalState.PROPOSED.value if is_qualified else ProposalState.NO_TRADE.value
 
@@ -450,7 +519,7 @@ class ActionableSuggestionEngine:
             underlying=s_dict.get("underlying", "NIFTY"),
             setup_type=s_dict.get("strategy", "NONE"),
             direction=s_dict.get("direction", "NEUTRAL"),
-            strike=int(s_dict.get("strike") or 24150),
+            strike=int(strike_raw),
             option_type=s_dict.get("option_type") or "NONE",
             contract_symbol=s_dict.get("contract_symbol", "NO ACTIVE PROPOSAL"),
             entry_price=float(s_dict.get("premium_ltp") or 0.0),

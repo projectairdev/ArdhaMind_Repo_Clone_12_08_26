@@ -186,7 +186,9 @@ export function IntradayAssistant() {
         reply = `In the last 15m window (${lastWin.window_start}–${lastWin.window_end}): NIFTY change was ${lastWin.price_change_points} pts. Headline: ${lastWin.headline}`;
       }
     } else if (textToSend.toLowerCase().includes("option")) {
-      reply = `Option Context: PCR is ${safeNumber(state?.option_intelligence?.pcr, 1.15).toFixed(2)}. ATM strike near ${spot ? Math.round(spot / 50) * 50 : 24500}.`;
+      const pcrVal = state?.option_intelligence?.pcr != null ? Number(state.option_intelligence.pcr).toFixed(2) : "Unavailable";
+      const atmVal = spot ? `${Math.round(spot / 50) * 50}` : "ATM Unavailable";
+      reply = `Option Context: PCR is ${pcrVal}. ATM strike near ${atmVal}.`;
     } else if (textToSend.toLowerCase().includes("breadth")) {
       reply = mData?.breadth?.advances != null && mData?.breadth?.declines != null
         ? `Constituent Breadth: ${mData.breadth.advances} Advances / ${mData.breadth.declines} Declines.`

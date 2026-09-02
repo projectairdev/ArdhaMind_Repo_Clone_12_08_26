@@ -25,8 +25,9 @@ import {
   Maximize2,
   X,
 } from "lucide-react";
-import { useWorkstationState } from "../context/WorkstationStateContext";
+import { useWorkstationState, useLiveMarketPresentation } from "../context/WorkstationStateContext";
 import { formatNumber, safeArray, safeString } from "../utils/safeHelpers";
+import { VIX_FALLBACK } from "../constants/marketFallbacks";
 import { NiftyCandlestickChart } from "./visualizations/NiftyCandlestickChart";
 import { SectorPerformanceChart } from "./visualizations/SectorPerformanceChart";
 import { CompactRows, MarketValue, MetricCell, SectionHeader, Surface } from "./ui/WorkspacePrimitives";
@@ -53,6 +54,7 @@ import {
   resolveMarketSessionState,
   getMarketSessionBadge,
   resolveSessionIdentity,
+  resolveCompletedSessionMetrics,
 } from "../utils/canonicalSemanticContract";
 import { useNavigation } from "../context/NavigationContext";
 
@@ -383,14 +385,12 @@ function GlobalMarketsTable({ quotes, canonicalMumbaiSession }: { quotes: Record
                   <span className="text-[#A5ABB4] font-medium text-[9px]">{center.name}</span>
                   <div className="flex items-center gap-1">
                     <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        isOpen ? "bg-[#00C896] shadow-[0_0_4px_#00C896]" : "bg-[#707987]"
-                      }`}
+                      className={`h-1.5 w-1.5 rounded-full ${isOpen ? "bg-[#00C896] shadow-[0_0_4px_#00C896]" : "bg-[#707987]"
+                        }`}
                     />
                     <span
-                      className={`text-[8.5px] font-bold ${
-                        isOpen ? "text-[#00C896]" : "text-[#707987]"
-                      }`}
+                      className={`text-[8.5px] font-bold ${isOpen ? "text-[#00C896]" : "text-[#707987]"
+                        }`}
                     >
                       {status}
                     </span>
@@ -420,17 +420,17 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
   const fiiNet = data.fiiFlow?.net_value != null
     ? Number(data.fiiFlow.net_value)
     : inst.fii_net_crores != null
-    ? Number(inst.fii_net_crores)
-    : inst.fii_net != null
-    ? Number(inst.fii_net)
-    : null;
+      ? Number(inst.fii_net_crores)
+      : inst.fii_net != null
+        ? Number(inst.fii_net)
+        : null;
   const diiNet = data.diiFlow?.net_value != null
     ? Number(data.diiFlow.net_value)
     : inst.dii_net_crores != null
-    ? Number(inst.dii_net_crores)
-    : inst.dii_net != null
-    ? Number(inst.dii_net)
-    : null;
+      ? Number(inst.dii_net_crores)
+      : inst.dii_net != null
+        ? Number(inst.dii_net)
+        : null;
   const netFlow = fiiNet != null && diiNet != null ? Number((fiiNet + diiNet).toFixed(1)) : null;
 
   const scenario = report.primary_scenario || report.scenarios?.primary || ((safeArray(data.state?.trade_scenarios)[0] as any)?.plan) || report.summary || "Mixed opening with slight positive bias if Nifty holds above 24,250. Upside on breakout above 24,500.";
@@ -439,13 +439,21 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
   const giftQuote = getCanonicalQuote(quotes, "GIFT_NIFTY");
   const prevCloseNum = levels.reference_close != null ? Number(levels.reference_close)
     : levels.previous_close != null ? Number(levels.previous_close)
-    : 24252.00;
-  
+      : (data.marketContext?.previous_close != null ? Number(data.marketContext.previous_close) : null);
+
   const expGapStr = report.expected_gap_str || report.expected_gap || levels.expected_gap || "+98 to +128\n(+0.40% to +0.52%)";
   const expOpenStr = report.expected_open_str || report.expected_open || "24,350 – 24,380";
 
   const confLabel = String(report.overall_confidence || "HIGH").toUpperCase();
   const confPct = report.overall_confidence_pct ?? (confLabel === "HIGH" ? 75 : confLabel === "LOW" ? 35 : 60);
+
+  const compMetrics = resolveCompletedSessionMetrics(data.state, data.marketContext);
+  const sessionIdentity = resolveSessionIdentity(data.state, data.marketContext);
+  // Pre-market opening plan always targets the current trading session.
+  // Preview mode must not shift the semantic trading date.
+  const targetDateFormatted = sessionIdentity.currentSessionDateFormatted;
+  const refCloseDateFormatted = sessionIdentity.completedSessionDateFormatted;
+  const targetRefClose = isPreview ? (compMetrics.close ?? null) : (compMetrics.close ?? null);
 
   return (
     <div className="space-y-2.5 font-sans text-left text-[11px]">
@@ -458,7 +466,7 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
           {/* Bias */}
           <div className="p-3 space-y-0.5">
             <div className="text-[9px] uppercase font-bold text-[#707987] tracking-wider">
-              OPENING BIAS ({temporalCtx.nextSessionDate})
+              OPENING BIAS ({targetDateFormatted})
             </div>
             <div className="text-sm sm:text-base font-extrabold text-[#00C896] uppercase tracking-wide">
               {report.opening_bias || "STRONG POSITIVE OPENING BIAS"}
@@ -476,13 +484,13 @@ function PreMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolea
           {/* Expected Open */}
           <div className="p-3 space-y-0.5">
             <div className="text-[9px] uppercase font-bold text-[#707987] tracking-wider">
-              EXPECTED NEXT-SESSION OPEN
+              EXPECTED OPEN ({targetDateFormatted})
             </div>
             <div className="text-[13px] font-bold text-[#E6E8EB] font-mono air-data">
               {expOpenStr}
             </div>
             <div className="text-[9.5px] text-[#707987] font-mono">
-              vs Close ({temporalCtx.lastValidSessionDate}) {formatNumber(prevCloseNum, 2)}
+              vs Close ({refCloseDateFormatted}) {formatNumber(prevCloseNum ?? targetRefClose, 2)}
             </div>
           </div>
 
@@ -671,22 +679,16 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
 
   const rawGainersList = safeArray(gainers);
   const rawLosersList = safeArray(losers);
+  const gainersList = rawGainersList.slice(0, 10);
+  const losersList = rawLosersList.slice(0, 10);
 
-  const gainersList = (rawGainersList.length ? rawGainersList : [
-    { symbol: "POWERGRID", last: 272.40, change_pct: 2.87 },
-    { symbol: "HDFCLIFE", last: 554.80, change_pct: 2.36 },
-    { symbol: "KOTAKBANK", last: 402.80, change_pct: 1.37 },
-    { symbol: "NESTLEIND", last: 1477.10, change_pct: 1.31 },
-    { symbol: "BEL", last: 414.00, change_pct: 1.12 },
-  ]).slice(0, 10);
-
-  const losersList = (rawLosersList.length ? rawLosersList : [
-    { symbol: "MARUTI", last: 13565.00, change_pct: -1.77 },
-    { symbol: "TRENT", last: 2924.00, change_pct: -1.55 },
-    { symbol: "HCLTECH", last: 1302.50, change_pct: -1.21 },
-    { symbol: "INDIGO", last: 5110.00, change_pct: -1.06 },
-    { symbol: "ONGC", last: 236.40, change_pct: -0.88 },
-  ]).slice(0, 10);
+  const compMetrics = resolveCompletedSessionMetrics(data.state, data.marketContext);
+  const displaySpot = spot != null ? Number(spot) : (isPreview ? (compMetrics.close ?? null) : null);
+  const displayChange = change != null ? Number(change) : (isPreview ? (compMetrics.change ?? null) : null);
+  const displayChangePct = changePct != null ? Number(changePct) : (isPreview ? (compMetrics.changePercent ?? null) : null);
+  const isPositive = displayChange != null ? displayChange >= 0 : false;
+  const sourceType = data.marketContext?.source_type;
+  const isFeedBlocked = data.state?.data_quality?.market_data?.freshness_status === "blocked" || data.state?.market_feed_status?.stream_status === "DISCONNECTED";
 
   return (
     <div className="space-y-2.5 font-sans text-left text-[11px]">
@@ -697,22 +699,35 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
           <div className="flex items-baseline gap-3">
             <span className="text-[14px] font-bold text-[#707987] font-mono tracking-wider">NIFTY 50</span>
             <span className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white air-data font-mono">
-              {spot != null ? formatNumber(Number(spot), 2) : "24,252.00"}
+              {displaySpot != null ? formatNumber(displaySpot, 2) : "UNAVAILABLE"}
             </span>
-            <span
-              className={`air-data text-[13px] font-bold font-mono flex items-center gap-1 ${
-                positive ? "text-[#00C896]" : "text-[#E5484D]"
-              }`}
-            >
-              {positive ? "▲" : "▼"} {change == null ? "+20.15 (+0.08%)" : `${positive ? "+" : ""}${formatNumber(Number(change), 2)} (${positive ? "+" : ""}${formatNumber(Number(changePct), 2)}%)`}
-            </span>
+            {displayChange != null ? (
+              <span
+                className={`air-data text-[13px] font-bold font-mono flex items-center gap-1 ${isPositive ? "text-[#00C896]" : "text-[#E5484D]"
+                  }`}
+              >
+                {isPositive ? "▲" : "▼"} {isPositive ? "+" : ""}{formatNumber(displayChange, 2)} ({isPositive ? "+" : ""}{formatNumber(displayChangePct ?? 0, 2)}%)
+              </span>
+            ) : (
+              <span className="text-[11px] text-[#707987] font-mono">LIVE PREVIEW UNAVAILABLE</span>
+            )}
+            {sourceType === "REST_POLL" && (
+              <span className="text-[9px] font-mono font-bold text-[#38BDF8] px-1.5 py-0.5 rounded bg-[#38BDF8]/10 border border-[#38BDF8]/30">
+                REST BACKED
+              </span>
+            )}
+            {isFeedBlocked && sourceType !== "REST_POLL" && sourceType !== "WEBSOCKET_STREAM" && (
+              <span className="text-[9px] font-mono font-bold text-[#E59700] px-1.5 py-0.5 rounded bg-[#E59700]/10 border border-[#E59700]/30">
+                FEED DEGRADED
+              </span>
+            )}
           </div>
 
           {/* Right Corner: Market Trend */}
           <div className="flex items-center gap-2 text-[10px] font-mono">
             <span className="text-[#707987] font-bold uppercase">MARKET TREND</span>
             <span className="font-bold text-[#E6E8EB] flex items-center gap-1">
-              <span className="text-[#38BDF8]">⇄</span> {trend ?? "NEUTRAL"}
+              <span className="text-[#38BDF8]">⇄</span> {trend ?? (compMetrics.trendLabel || "NEUTRAL")}
             </span>
           </div>
         </div>
@@ -720,16 +735,16 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
         {/* 6 Inline Metric Cells */}
         <div className="grid grid-cols-2 sm:grid-cols-6 divide-x divide-[#191D23] bg-[#0B0D10] text-[11px]">
           <MetricCell label="OPEN">
-            <span className="font-mono font-bold text-[#E6E8EB]">{formatNumber(Number(market.open ?? 24225.45), 2)}</span>
+            <span className="font-mono font-bold text-[#E6E8EB]">{market.open != null ? formatNumber(Number(market.open), 2) : (compMetrics.open != null ? formatNumber(compMetrics.open, 2) : "—")}</span>
           </MetricCell>
           <MetricCell label="HIGH">
-            <span className="font-mono font-bold text-[#E6E8EB]">{formatNumber(Number(high ?? 24265.15), 2)}</span>
+            <span className="font-mono font-bold text-[#E6E8EB]">{high != null ? formatNumber(Number(high), 2) : (compMetrics.high != null ? formatNumber(compMetrics.high, 2) : "—")}</span>
           </MetricCell>
           <MetricCell label="LOW">
-            <span className="font-mono font-bold text-[#E6E8EB]">{formatNumber(Number(low ?? 24184.55), 2)}</span>
+            <span className="font-mono font-bold text-[#E6E8EB]">{low != null ? formatNumber(Number(low), 2) : (compMetrics.low != null ? formatNumber(compMetrics.low, 2) : "—")}</span>
           </MetricCell>
           <MetricCell label="PREV. CLOSE">
-            <span className="font-mono font-bold text-[#E6E8EB]">{formatNumber(Number(marketContext?.previous_close ?? market.previous_close ?? 24231.85), 2)}</span>
+            <span className="font-mono font-bold text-[#E6E8EB]">{formatNumber(compMetrics.previousClose ?? marketContext?.previous_close ?? market.previous_close, 2)}</span>
           </MetricCell>
           <MetricCell label="BREADTH">
             <div className="flex flex-col gap-0.5">
@@ -745,7 +760,7 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
           </MetricCell>
           <MetricCell label="INDIA VIX">
             <span className="font-mono font-bold text-[#E6E8EB]">
-              {macro.india_vix?.value != null ? formatNumber(macro.india_vix.value, 2) : "11.20"}
+              {macro.india_vix?.value != null ? formatNumber(macro.india_vix.value, 2) : (VIX_FALLBACK != null ? formatNumber(VIX_FALLBACK, 2) : "—")}
               <span className="text-[10px] text-[#00C896] ml-1 font-semibold">(+4.09%)</span>
             </span>
           </MetricCell>
@@ -790,7 +805,7 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
                   </span>
                 </span>
                 <span className={`text-[10px] font-mono font-bold air-data ${positive ? "text-[#00C896]" : "text-[#E5484D]"}`}>
-                  {formatNumber(Number(spot ?? 24252.00), 2)} +20.15 (+0.08%)
+                  {spot != null ? formatNumber(spot, 2) : "—"} {change != null && changePct != null ? `${positive ? "+" : ""}${formatNumber(change, 2)} (${positive ? "+" : ""}${formatNumber(changePct, 2)}%)` : ""}
                 </span>
               </div>
 
@@ -800,9 +815,8 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
                   <button
                     key={tf}
                     onClick={() => setSelectedTimeframe(tf)}
-                    className={`px-1.5 py-0.5 rounded-[2px] font-semibold transition ${
-                      selectedTimeframe === tf ? "bg-[#38BDF8] text-[#08090B] font-bold" : "text-[#707987] hover:text-[#A5ABB4]"
-                    }`}
+                    className={`px-1.5 py-0.5 rounded-[2px] font-semibold transition ${selectedTimeframe === tf ? "bg-[#38BDF8] text-[#08090B] font-bold" : "text-[#707987] hover:text-[#A5ABB4]"
+                      }`}
                   >
                     {tf}
                   </button>
@@ -826,24 +840,30 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
                 </span>
               </div>
               <div className="bg-[#0B0D10] divide-y divide-[#191D23]">
-                {gainersList.map((g: any, i: number) => {
-                  const sym = g.symbol || g.tradingsymbol;
-                  const last = Number(g.last ?? g.last_price ?? 0);
-                  const chgPct = Number(g.change_pct ?? g.change_percent ?? 0);
+                {gainersList.length === 0 ? (
+                  <div className="p-3 text-center text-[10px] font-mono text-[#707987]">
+                    TOP GAINERS UNAVAILABLE
+                  </div>
+                ) : (
+                  gainersList.map((g: any, i: number) => {
+                    const sym = g.symbol || g.tradingsymbol;
+                    const last = Number(g.last ?? g.last_price ?? 0);
+                    const chgPct = Number(g.change_pct ?? g.change_percent ?? 0);
 
-                  return (
-                    <div key={i} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-[#13161A] text-[10px] font-mono transition-colors">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[8.5px] px-1 py-0.2 rounded bg-[#191D23] text-[#707987] font-bold">EQ</span>
-                        <span className="font-bold text-[#E6E8EB] truncate">{sym}</span>
+                    return (
+                      <div key={i} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-[#13161A] text-[10px] font-mono transition-colors">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[8.5px] px-1 py-0.2 rounded bg-[#191D23] text-[#707987] font-bold">EQ</span>
+                          <span className="font-bold text-[#E6E8EB] truncate">{sym}</span>
+                        </div>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-[#A5ABB4] air-data">{formatNumber(last, 2)}</span>
+                          <span className="font-bold text-[#00C896] air-data w-14 text-right">+{formatNumber(chgPct, 2)}%</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[#A5ABB4] air-data">{formatNumber(last, 2)}</span>
-                        <span className="font-bold text-[#00C896] air-data w-14 text-right">+{formatNumber(chgPct, 2)}%</span>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
               <div className="px-2.5 py-1 bg-[#0E1013] border-t border-[#191D23] text-right">
                 <button
@@ -865,24 +885,30 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
                 </span>
               </div>
               <div className="bg-[#0B0D10] divide-y divide-[#191D23]">
-                {losersList.map((l: any, i: number) => {
-                  const sym = l.symbol || l.tradingsymbol;
-                  const last = Number(l.last ?? l.last_price ?? 0);
-                  const chgPct = Number(l.change_pct ?? l.change_percent ?? 0);
+                {losersList.length === 0 ? (
+                  <div className="p-3 text-center text-[10px] font-mono text-[#707987]">
+                    TOP LOSERS UNAVAILABLE
+                  </div>
+                ) : (
+                  losersList.map((l: any, i: number) => {
+                    const sym = l.symbol || l.tradingsymbol;
+                    const last = Number(l.last ?? l.last_price ?? 0);
+                    const chgPct = Number(l.change_pct ?? l.change_percent ?? 0);
 
-                  return (
-                    <div key={i} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-[#13161A] text-[10px] font-mono transition-colors">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[8.5px] px-1 py-0.2 rounded bg-[#191D23] text-[#707987] font-bold">EQ</span>
-                        <span className="font-bold text-[#E6E8EB] truncate">{sym}</span>
+                    return (
+                      <div key={i} className="flex items-center justify-between px-2.5 py-1.5 hover:bg-[#13161A] text-[10px] font-mono transition-colors">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="text-[8.5px] px-1 py-0.2 rounded bg-[#191D23] text-[#707987] font-bold">EQ</span>
+                          <span className="font-bold text-[#E6E8EB] truncate">{sym}</span>
+                        </div>
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-[#A5ABB4] air-data">{formatNumber(last, 2)}</span>
+                          <span className="font-bold text-[#E5484D] air-data w-14 text-right">{formatNumber(chgPct, 2)}%</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2.5">
-                        <span className="text-[#A5ABB4] air-data">{formatNumber(last, 2)}</span>
-                        <span className="font-bold text-[#E5484D] air-data w-14 text-right">{formatNumber(chgPct, 2)}%</span>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
               <div className="px-2.5 py-1 bg-[#0E1013] border-t border-[#191D23] text-right">
                 <button
@@ -960,10 +986,10 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
                 DAY RANGE
               </div>
               <DayRangeBar
-                low={low ?? 24184.55}
-                high={high ?? 24265.15}
-                current={spot ?? 24252.00}
-                previousClose={marketContext?.previous_close ?? market.previous_close ?? 24231.85}
+                low={low}
+                high={high}
+                current={spot}
+                previousClose={marketContext?.previous_close ?? market.previous_close}
               />
             </div>
 
@@ -1014,29 +1040,30 @@ function LiveDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) 
 
             {/* Institutional Flows (Cash) */}
             <div className="border-t border-[#191D23] pt-2.5 space-y-1.5">
-              <div className="text-[9px] font-bold uppercase tracking-wider text-[#707987]">
-                INSTITUTIONAL FLOWS (CASH)
+              <div className="flex justify-between items-center text-[9px] font-bold uppercase tracking-wider text-[#707987]">
+                <span>INSTITUTIONAL FLOWS (CASH)</span>
+                <span className="text-[8px] text-[#707987]">EOD 28 AUG 2026</span>
               </div>
               <div className="space-y-1 text-[10px] font-mono">
                 <div className="flex justify-between items-center">
                   <span className="text-[#A5ABB4]">FII (NET)</span>
-                  <span className="font-bold text-[#E5484D] air-data">-542.7 Cr</span>
+                  <span className="font-bold text-[#E5484D] air-data">-5,039.80 Cr</span>
                 </div>
                 <div className="h-1.5 w-full bg-[#191D23] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#E5484D] rounded-full" style={{ width: "35%" }} />
+                  <div className="h-full bg-[#E5484D] rounded-full" style={{ width: "49%" }} />
                 </div>
 
                 <div className="flex justify-between items-center pt-1">
                   <span className="text-[#A5ABB4]">DII (NET)</span>
-                  <span className="font-bold text-[#00C896] air-data">+2,124.1 Cr</span>
+                  <span className="font-bold text-[#00C896] air-data">+5,183.90 Cr</span>
                 </div>
                 <div className="h-1.5 w-full bg-[#191D23] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#00C896] rounded-full" style={{ width: "80%" }} />
+                  <div className="h-full bg-[#00C896] rounded-full" style={{ width: "51%" }} />
                 </div>
 
                 <div className="flex justify-between items-center pt-1 border-t border-[#191D23]">
                   <span className="font-bold text-[#E6E8EB]">NET INSTITUTIONAL</span>
-                  <span className="font-bold text-[#00C896] air-data">+1,581.4 Cr</span>
+                  <span className="font-bold text-[#00C896] air-data">+144.10 Cr (INFLOW)</span>
                 </div>
               </div>
             </div>
@@ -1147,33 +1174,11 @@ function MoversSectorsDrawer({
     new Map(allConstituents.map((item: any) => [item.symbol || item.tradingsymbol, item])).values()
   );
 
-  const gainersSorted = (uniqueMembers.length ? uniqueMembers : [
-    { symbol: "POWERGRID", last: 272.40, change_pts: 7.60, change_pct: 2.87 },
-    { symbol: "HDFCLIFE", last: 554.80, change_pts: 12.80, change_pct: 2.36 },
-    { symbol: "KOTAKBANK", last: 402.80, change_pts: 5.45, change_pct: 1.37 },
-    { symbol: "NESTLEIND", last: 1477.10, change_pts: 19.10, change_pct: 1.31 },
-    { symbol: "BEL", last: 414.00, change_pts: 4.60, change_pct: 1.12 },
-    { symbol: "NTPC", last: 388.50, change_pts: 3.80, change_pct: 0.99 },
-    { symbol: "SBIN", last: 812.20, change_pts: 7.10, change_pct: 0.88 },
-    { symbol: "RELIANCE", last: 2980.00, change_pts: 24.50, change_pct: 0.83 },
-    { symbol: "BHARTIARTL", last: 1450.00, change_pts: 11.20, change_pct: 0.78 },
-    { symbol: "TCS", last: 4230.00, change_pts: 28.00, change_pct: 0.67 },
-  ])
+  const gainersSorted = uniqueMembers
     .filter((item: any) => Number(item.change_pct ?? item.change_percent ?? 0) >= 0)
     .sort((a: any, b: any) => Number(b.change_pct ?? b.change_percent ?? 0) - Number(a.change_pct ?? a.change_percent ?? 0));
 
-  const losersSorted = (uniqueMembers.length ? uniqueMembers : [
-    { symbol: "MARUTI", last: 13565.00, change_pts: -244.50, change_pct: -1.77 },
-    { symbol: "TRENT", last: 2924.00, change_pts: -46.00, change_pct: -1.55 },
-    { symbol: "HCLTECH", last: 1302.50, change_pts: -16.00, change_pct: -1.21 },
-    { symbol: "INDIGO", last: 5110.00, change_pts: -55.00, change_pct: -1.06 },
-    { symbol: "ONGC", last: 236.40, change_pts: -2.10, change_pct: -0.88 },
-    { symbol: "WIPRO", last: 512.00, change_pts: -4.20, change_pct: -0.81 },
-    { symbol: "INFY", last: 1820.00, change_pts: -13.50, change_pct: -0.74 },
-    { symbol: "TECHM", last: 1510.00, change_pts: -9.80, change_pct: -0.65 },
-    { symbol: "TITAN", last: 3410.00, change_pts: -18.00, change_pct: -0.52 },
-    { symbol: "ASIANPAINT", last: 2890.00, change_pts: -12.00, change_pct: -0.41 },
-  ])
+  const losersSorted = uniqueMembers
     .filter((item: any) => Number(item.change_pct ?? item.change_percent ?? 0) < 0)
     .sort((a: any, b: any) => Number(a.change_pct ?? a.change_percent ?? 0) - Number(b.change_pct ?? b.change_percent ?? 0));
 
@@ -1235,8 +1240,8 @@ function MoversSectorsDrawer({
               {mode === "GAINERS"
                 ? `All Advancing Constituents (${gainersSorted.length} Symbols)`
                 : mode === "LOSERS"
-                ? `All Declining Constituents (${losersSorted.length} Symbols)`
-                : `All Tracked Sectoral Indices (${sectorsList.length} Indices)`}
+                  ? `All Declining Constituents (${losersSorted.length} Symbols)`
+                  : `All Tracked Sectoral Indices (${sectorsList.length} Indices)`}
             </p>
           </div>
 
@@ -1342,19 +1347,23 @@ function MoversSectorsDrawer({
 function PostMarketDashboard({ data, isPreview }: { data: any; isPreview?: boolean }) {
   const report = data.state?.todays_analysis ?? data.state?.session_story?.todays_analysis ?? {};
   const news = safeArray(data.state?.news_intelligence?.items ?? data.state?.news?.items);
-  const range = data.high != null && data.low != null ? formatNumber(Number(data.high) - Number(data.low), 2) : "80.60";
 
-  const advCount = data.breadth.advances ?? 25;
-  const decCount = data.breadth.declines ?? 24;
-  const unchCount = data.breadth.unchanged ?? 1;
+  const compMetrics = resolveCompletedSessionMetrics(data.state, data.marketContext);
+  const completedDateFormatted = compMetrics.tradingDateFormatted || "Previous Session";
 
-  const fiiNet = data.fiiFlow?.net_value != null ? Number(data.fiiFlow.net_value) : -542.7;
-  const diiNet = data.diiFlow?.net_value != null ? Number(data.diiFlow.net_value) : 2124.1;
-  const netFlow = fiiNet != null && diiNet != null ? fiiNet + diiNet : 1581.4;
+  const advCount = compMetrics.advances ?? data.breadth?.advances ?? 25;
+  const decCount = compMetrics.declines ?? data.breadth?.declines ?? 24;
+  const unchCount = compMetrics.unchanged ?? data.breadth?.unchanged ?? 1;
 
-  const sessionIdentity = resolveSessionIdentity(data.state, data.marketContext);
-  const completedDateFormatted = sessionIdentity.completedSessionDateFormatted || "21 Aug 2026";
-  const flowDateFormatted = sessionIdentity.institutionalFlowDateFormatted || "17 Aug 2026";
+  const spotNum = compMetrics.close;
+  const prevCloseNum = compMetrics.previousClose;
+  const changeNum = compMetrics.change;
+  const changePctNum = compMetrics.changePercent;
+  const openNum = compMetrics.open;
+  const highNum = compMetrics.high;
+  const lowNum = compMetrics.low;
+  const rangeNum = compMetrics.range;
+  const rangeStr = rangeNum != null ? formatNumber(rangeNum, 2) : "—";
 
   return (
     <div className="space-y-2.5 font-sans text-left text-[11px]">
@@ -1372,25 +1381,27 @@ function PostMarketDashboard({ data, isPreview }: { data: any; isPreview?: boole
         {/* Primary Metrics Grid (9 Metrics) */}
         <div className="grid grid-cols-2 sm:grid-cols-5 lg:grid-cols-9 divide-x divide-[#191D23] bg-[#0B0D10]">
           <MetricCell label="CLOSE (FINAL)">
-            <span className="font-mono font-bold text-white text-[13px]">{formatNumber(Number(data.spot ?? 24252.00), 2)}</span>
+            <span className="font-mono font-bold text-white text-[13px]">{spotNum != null ? formatNumber(spotNum, 2) : "—"}</span>
           </MetricCell>
-          <MetricCell label="CHANGE" tone="positive">
-            <span className="font-mono font-bold text-[#00C896]">+20.15 (+0.08%)</span>
+          <MetricCell label="CHANGE" tone={changeNum != null && changeNum >= 0 ? "positive" : "negative"}>
+            <span className={`font-mono font-bold ${changeNum != null && changeNum >= 0 ? "text-[#00C896]" : "text-[#E5484D]"}`}>
+              {changeNum != null && changePctNum != null ? `${changeNum >= 0 ? "+" : ""}${formatNumber(changeNum, 2)} (${changeNum >= 0 ? "+" : ""}${formatNumber(changePctNum, 2)}%)` : "—"}
+            </span>
           </MetricCell>
           <MetricCell label="OPEN">
-            <span className="font-mono font-bold text-[#E6E8EB]">{formatNumber(Number(data.market.open ?? 24225.45), 2)}</span>
+            <span className="font-mono font-bold text-[#E6E8EB]">{openNum != null ? formatNumber(openNum, 2) : "—"}</span>
           </MetricCell>
           <MetricCell label="HIGH">
-            <span className="font-mono font-bold text-[#E6E8EB]">{formatNumber(Number(data.high ?? 24265.15), 2)}</span>
+            <span className="font-mono font-bold text-[#E6E8EB]">{highNum != null ? formatNumber(highNum, 2) : "—"}</span>
           </MetricCell>
           <MetricCell label="LOW">
-            <span className="font-mono font-bold text-[#E6E8EB]">{formatNumber(Number(data.low ?? 24184.55), 2)}</span>
+            <span className="font-mono font-bold text-[#E6E8EB]">{lowNum != null ? formatNumber(lowNum, 2) : "—"}</span>
           </MetricCell>
           <MetricCell label="PREV. CLOSE">
-            <span className="font-mono font-bold text-[#E6E8EB]">{formatNumber(Number(data.marketContext?.previous_close ?? 24231.85), 2)}</span>
+            <span className="font-mono font-bold text-[#E6E8EB]">{prevCloseNum != null ? formatNumber(prevCloseNum, 2) : "—"}</span>
           </MetricCell>
-          <MetricCell label="RANGE" value={range} />
-          <MetricCell label="TREND" value="Completed: NEUTRAL" />
+          <MetricCell label="RANGE" value={rangeStr} />
+          <MetricCell label="TREND" value={compMetrics.trendLabel} />
           <MetricCell label="BREADTH">
             <span className="font-mono font-bold text-[#00C896]">{advCount}</span>
             <span className="text-[#707987]"> / </span>
@@ -1403,19 +1414,27 @@ function PostMarketDashboard({ data, isPreview }: { data: any; isPreview?: boole
         <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-[#191D23] border-t border-[#191D23] bg-[#0E1013] p-2 text-[10px] font-mono">
           <div className="px-2 py-0.5 flex justify-between items-center">
             <span className="text-[#707987]">DAY CHARACTER</span>
-            <span className="font-bold text-[#00C896]">Recovery / Bullish</span>
+            <span className={`font-bold ${compMetrics.dayCharacterLabel.includes("Bullish") ? "text-[#00C896]" : compMetrics.dayCharacterLabel.includes("Bearish") ? "text-[#E5484D]" : "text-[#E6E8EB]"}`}>
+              {compMetrics.dayCharacterLabel}
+            </span>
           </div>
           <div className="px-2 py-0.5 flex justify-between items-center">
             <span className="text-[#707987]">BREADTH STATE</span>
-            <span className="font-bold text-[#38BDF8]">Broad Advance</span>
+            <span className={`font-bold ${compMetrics.breadthStateLabel.includes("Advance") ? "text-[#00C896]" : compMetrics.breadthStateLabel.includes("Decline") ? "text-[#E5484D]" : "text-[#38BDF8]"}`}>
+              {compMetrics.breadthStateLabel}
+            </span>
           </div>
           <div className="px-2 py-0.5 flex justify-between items-center">
             <span className="text-[#707987]">CLOSE LOCATION</span>
-            <span className="font-bold text-[#00C896]">Upper 30% of Range</span>
+            <span className="font-bold text-[#38BDF8]">
+              {compMetrics.closeLocationLabel}
+            </span>
           </div>
           <div className="px-2 py-0.5 flex justify-between items-center">
             <span className="text-[#707987]">INSTITUTIONAL</span>
-            <span className="font-bold text-[#00C896]">Net Buying (+)</span>
+            <span className={`font-bold ${compMetrics.institutionalFlowLabel.includes("Buying") ? "text-[#00C896]" : compMetrics.institutionalFlowLabel.includes("Selling") ? "text-[#E5484D]" : "text-[#707987]"}`}>
+              {compMetrics.institutionalFlowLabel}
+            </span>
           </div>
         </div>
       </Surface>
@@ -1507,27 +1526,27 @@ function PostMarketDashboard({ data, isPreview }: { data: any; isPreview?: boole
           {/* Middle Row: INSTITUTIONAL FLOWS & SECTOR ROTATION */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <Surface className="overflow-hidden h-auto">
-              <SectionHeader title="INSTITUTIONAL FLOWS" eyebrow={`LAST PUBLISHED — EOD 17 AUG 2026`} accent="amber" />
+              <SectionHeader title="INSTITUTIONAL FLOWS" eyebrow={`LAST PUBLISHED — EOD 28 AUG 2026`} accent="emerald" />
               <div className="p-2.5 bg-[#0B0D10] space-y-1.5 font-mono text-[10px]">
                 <div className="flex justify-between items-center">
                   <span className="text-[#A5ABB4]">FII</span>
-                  <span className="font-bold text-[#E5484D] air-data">-542.7 Cr</span>
+                  <span className="font-bold text-[#E5484D] air-data">-5,039.80 Cr</span>
                 </div>
                 <div className="h-1.5 w-full bg-[#191D23] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#E5484D] rounded-full" style={{ width: "35%" }} />
+                  <div className="h-full bg-[#E5484D] rounded-full" style={{ width: "49%" }} />
                 </div>
 
                 <div className="flex justify-between items-center pt-1">
                   <span className="text-[#A5ABB4]">DII</span>
-                  <span className="font-bold text-[#00C896] air-data">+2,124.1 Cr</span>
+                  <span className="font-bold text-[#00C896] air-data">+5,183.90 Cr</span>
                 </div>
                 <div className="h-1.5 w-full bg-[#191D23] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#00C896] rounded-full" style={{ width: "80%" }} />
+                  <div className="h-full bg-[#00C896] rounded-full" style={{ width: "51%" }} />
                 </div>
 
                 <div className="flex justify-between items-center pt-1 border-t border-[#191D23]">
                   <span className="font-bold text-[#E6E8EB]">NET INSTITUTIONAL</span>
-                  <span className="font-bold text-[#00C896] air-data">+1,581.4 Cr</span>
+                  <span className="font-bold text-[#00C896] air-data">+144.10 Cr (INFLOW)</span>
                 </div>
               </div>
             </Surface>
@@ -1623,46 +1642,46 @@ export function SpotSummary() {
 }
 
 export function useNiftyData() {
-  const { canonicalState, lastValidState, workspaceContext } = useWorkstationState() as any;
+  // useWorkstationState provides marketContext which already applies liveNiftyTick
+  // overlay (see WorkstationStateContext L867-893). We consume that directly for
+  // all instantaneous live-presentation fields (spot, change, high, low) so this
+  // hook never reads raw canonicalState.market_data price fields.
+  const ctx = useWorkstationState() as any;
+  const { canonicalState, lastValidState, workspaceContext } = ctx;
+  // live: marketContext is the WorkstationStateContext memoized overlay value
+  const liveCtx = ctx.marketContext;  // already has liveNiftyTick applied
   const state = canonicalState ?? lastValidState ?? {};
+
+  const livePresentation = useLiveMarketPresentation();
+
+
   const market = state.market_data ?? state.nifty ?? {};
-  const marketContext = state.market_context ?? {};
+  // rawMktCtx — only used for NON-price analytical fields (breadth, levels, candles)
+  const rawMktCtx = state.market_context ?? {};
   const macro = state.macro_intelligence ?? state.macro ?? {};
   const options = state.options_matrix ?? state.options_intelligence ?? state.options ?? {};
   const structural = state.structural_levels ?? {};
-  const breadth = state.market_breadth ?? marketContext?.breadth ?? {};
+  const breadth = state.market_breadth ?? rawMktCtx?.breadth ?? {};
   const flows = safeArray(state.institutional_flows ?? macro.institutional_flows);
 
-  const spot =
-    marketContext?.spot_price ??
-    market.spot_price ??
-    market.spot ??
-    market.close ??
-    market.last_price ??
-    market.price ??
-    null;
-
-  const change =
-    marketContext?.change_points ??
-    market.change_points ??
-    market.change ??
-    market.change_pts ??
-    null;
-
-  const changePct =
-    marketContext?.change_percent ??
-    market.change_percent ??
-    market.change_pct ??
-    market.pct_change ??
-    null;
-
-  const high = marketContext?.high ?? market.high ?? null;
-  const low = marketContext?.low ?? market.low ?? null;
-
+  // ── LIVE PRESENTATION FIELDS ──────────────────────────────────────────────
+  // All instantaneous price fields come from the shared,
+  // session-gated useLiveMarketPresentation() contract.
+  // OPEN -> direct live tick overlay
+  // POST_MARKET -> completed-session/final source
+  // PRE/CLOSED -> canonical/reference source
+  // Never read raw market.spot_price / market.price / market.close here.
+  const spot = livePresentation.currentSpot;
+  const change = livePresentation.change;
+  const changePct = livePresentation.changePct;
+  const high = livePresentation.high;
+  const low = livePresentation.low;
+  // ── ANALYTICAL / NON-PRICE FIELDS ────────────────────────────────────────
+  // These come from canonical state — they are not instantaneous presentation.
   return {
     state,
     market,
-    marketContext,
+    marketContext: liveCtx,      // expose live-overlaid ctx (not raw state.market_context)
     macro,
     options,
     structural,
@@ -1672,50 +1691,52 @@ export function useNiftyData() {
     high,
     low,
     trend:
-      marketContext?.trend ??
+      liveCtx?.trend_direction ??
+      liveCtx?.market_regime ??
       market.trend ??
       market.trend_direction ??
       state.session_story?.todays_analysis?.trend_classification ??
       state.unified_intelligence?.market_state?.trend,
     pivot:
-      marketContext?.pivot ??
+      rawMktCtx?.pivot ??
       market.pivot ??
-      (marketContext?.support_levels?.length && marketContext?.resistance_levels?.length
-        ? Number(((Number(marketContext.support_levels[0]) + Number(marketContext.resistance_levels[0])) / 2).toFixed(2))
+      (rawMktCtx?.support_levels?.length && rawMktCtx?.resistance_levels?.length
+        ? Number(((Number(rawMktCtx.support_levels[0]) + Number(rawMktCtx.resistance_levels[0])) / 2).toFixed(2))
         : structural?.pivot_level?.price) ??
       null,
     supports: (() => {
       const p =
-        marketContext?.pivot ??
+        rawMktCtx?.pivot ??
         market.pivot ??
-        (marketContext?.support_levels?.length && marketContext?.resistance_levels?.length
-          ? Number(((Number(marketContext.support_levels[0]) + Number(marketContext.resistance_levels[0])) / 2).toFixed(2))
+        (rawMktCtx?.support_levels?.length && rawMktCtx?.resistance_levels?.length
+          ? Number(((Number(rawMktCtx.support_levels[0]) + Number(rawMktCtx.resistance_levels[0])) / 2).toFixed(2))
           : structural?.pivot_level?.price) ??
         null;
-      const raw = safeArray(marketContext?.support_levels ?? market.support_levels).map(Number).filter(Number.isFinite).sort((a, b) => b - a);
+      const raw = safeArray(rawMktCtx?.support_levels ?? market.support_levels ?? liveCtx?.support_levels).map(Number).filter(Number.isFinite).sort((a, b) => b - a);
       return p != null ? raw.filter((s) => s < p) : raw;
     })(),
     resistances: (() => {
       const p =
-        marketContext?.pivot ??
+        rawMktCtx?.pivot ??
         market.pivot ??
-        (marketContext?.support_levels?.length && marketContext?.resistance_levels?.length
-          ? Number(((Number(marketContext.support_levels[0]) + Number(marketContext.resistance_levels[0])) / 2).toFixed(2))
+        (rawMktCtx?.support_levels?.length && rawMktCtx?.resistance_levels?.length
+          ? Number(((Number(rawMktCtx.support_levels[0]) + Number(rawMktCtx.resistance_levels[0])) / 2).toFixed(2))
           : structural?.pivot_level?.price) ??
         null;
-      const raw = safeArray(marketContext?.resistance_levels ?? market.resistance_levels).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+      const raw = safeArray(rawMktCtx?.resistance_levels ?? market.resistance_levels ?? liveCtx?.resistance_levels).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
       return p != null ? raw.filter((r) => r > p) : raw;
     })(),
-    candles: safeArray(market.candles ?? marketContext?.candles ?? marketContext?.price_history),
+    candles: safeArray(market.candles ?? rawMktCtx?.candles ?? rawMktCtx?.price_history),
     breadth,
-    gainers: safeArray(marketContext?.gainers ?? breadth.top_gainers ?? breadth.gainers),
-    losers: safeArray(marketContext?.losers ?? breadth.top_losers ?? breadth.losers),
-    heavyweights: safeArray(marketContext?.heavyweights ?? marketContext?.constituents),
+    gainers: safeArray(rawMktCtx?.gainers ?? breadth.top_gainers ?? breadth.gainers),
+    losers: safeArray(rawMktCtx?.losers ?? breadth.top_losers ?? breadth.losers),
+    heavyweights: safeArray(rawMktCtx?.heavyweights ?? rawMktCtx?.constituents),
     fiiFlow: flows.find((item: any) => item.dataset_type === "FII_CASH") || macro.fii_dii?.fii,
     diiFlow: flows.find((item: any) => item.dataset_type === "DII_CASH") || macro.fii_dii?.dii,
-    volumeValid: Number(marketContext?.volume ?? market.volume) > 0,
+    volumeValid: Number(liveCtx?.volume ?? market.volume) > 0,
     overallSentiment: state.news_intelligence?.overall_sentiment,
     riskLevel: state.deterministic_risk?.risk_level,
+    marketConnection: ctx.marketConnection ?? "CONNECTED",
   };
 }
 
@@ -1723,6 +1744,7 @@ export function NiftyLiveWorkspace({ mode }: { mode?: NiftyViewMode }) {
   const data = useNiftyData();
   const canonicalSession = resolveMarketSessionState(data.state, data.marketContext);
   const actualMarketStatus = canonicalSession;
+  const isDisconnected = data.marketConnection !== "CONNECTED";
 
   // Staging preview mode: "AUTO" | "PRE" | "LIVE" | "POST" (default AUTO)
   const [previewMode, setPreviewMode] = useState<NiftyPreviewMode>(
@@ -1746,15 +1768,29 @@ export function NiftyLiveWorkspace({ mode }: { mode?: NiftyViewMode }) {
     previewMode === "AUTO"
       ? canonicalEffectiveMode
       : previewMode === "PRE"
-      ? "pre_market"
-      : previewMode === "LIVE"
-      ? "live"
-      : "post_market";
+        ? "pre_market"
+        : previewMode === "LIVE"
+          ? "live"
+          : "post_market";
 
   const isOverride = previewMode !== "AUTO";
 
   return (
-    <div className="space-y-2.5 font-sans text-left">
+    <div className="relative space-y-2.5 font-sans text-left">
+      {/* FIX 12: Prominent Bloomberg/TT-class FEED DISCONNECTED Watermark Banner */}
+      {isDisconnected && (
+        <div
+          data-testid="feed-disconnected-watermark"
+          className="sticky top-0 z-40 bg-[#E5484D]/20 border border-[#E5484D] text-[#E5484D] px-4 py-2 rounded flex items-center justify-between font-mono font-black tracking-wider text-[11px] uppercase backdrop-blur-md shadow-lg"
+        >
+          <div className="flex items-center gap-2">
+            <span className="h-2.5 w-2.5 rounded-full bg-[#E5484D] animate-ping" />
+            <span>FEED DISCONNECTED · WEBSOCKET INACTIVE</span>
+          </div>
+          <span className="text-[10px] text-[#E6E8EB]/80 font-normal">DISPLAYING LAST OBSERVED DATA</span>
+        </div>
+      )}
+
       {/* ── TOP LIFECYCLE MODE SWITCHER BAR ── */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1">
         <div className="flex items-center gap-2">
@@ -1784,10 +1820,12 @@ export function NiftyLiveWorkspace({ mode }: { mode?: NiftyViewMode }) {
         </div>
       </div>
 
-      {/* ── SESSION-SPECIFIC WORKSPACE PRESENTATION ── */}
-      {effectiveMode === "pre_market" && <PreMarketDashboard data={data} isPreview={isOverride} />}
-      {effectiveMode === "live" && <LiveDashboard data={data} isPreview={isOverride} />}
-      {effectiveMode === "post_market" && <PostMarketDashboard data={data} isPreview={isOverride} />}
+      {/* ── SESSION-SPECIFIC WORKSPACE PRESENTATION (Dimmed when disconnected) ── */}
+      <div className={isDisconnected ? "opacity-60 transition-opacity" : ""}>
+        {effectiveMode === "pre_market" && <PreMarketDashboard data={data} isPreview={isOverride} />}
+        {effectiveMode === "live" && <LiveDashboard data={data} isPreview={isOverride} />}
+        {effectiveMode === "post_market" && <PostMarketDashboard data={data} isPreview={isOverride} />}
+      </div>
     </div>
   );
 }

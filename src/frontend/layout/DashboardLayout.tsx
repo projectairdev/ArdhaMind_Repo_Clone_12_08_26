@@ -1,23 +1,23 @@
 // src/frontend/layout/DashboardLayout.tsx
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useState } from "react";
 import { Calendar, Sliders } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 import { useWorkstationState } from "../context/WorkstationStateContext";
 import { useNavigation, PrimaryModuleId } from "../context/NavigationContext";
 import { WorkstationTopBar } from "../components/WorkstationTopBar";
-import { NiftyLiveWorkspace } from "../components/NiftyLiveWorkspace";
 import { SettingsWorkspace } from "../components/PhaseOneWorkspaces";
 import { MarketPulseWorkspace } from "../components/MarketPulseWorkspace";
-import { OptionsWorkspace } from "../components/OptionsWorkspace";
 import { PortfolioWorkspace } from "../components/PortfolioWorkspace";
-import { MarketIntelligenceWorkspace } from "../components/MarketIntelligenceWorkspace";
-import { NewsWorkspace, NewsSubTab } from "../components/news/NewsWorkspace";
-import { ArdhaPerformanceWorkspace } from "../components/ArdhaPerformanceWorkspace";
+import { NewsWorkspace } from "../components/news/NewsWorkspace";
 import { InspectionSelection, MarketDeepDive, MarketInspectionProvider } from "../context/MarketInspectionContext";
 import { MarketGlyph, IntelligenceGlyph, PortfolioGlyph, JournalGlyph } from "../components/ui/VisualAssets";
 import LiveAssistantPanel from "../components/LiveAssistantPanel";
-import { resolveBriefingPresentationMode } from "../utils/briefingTimeResolver";
 import { WorkspaceErrorBoundary } from "../components/ui/WorkspaceErrorBoundary";
+import { useCanonicalState } from "../context/CanonicalStateContext";
+import { MarketWorkspace as CanonicalMarketWorkspace } from "../components/canonical/MarketWorkspace";
+import { MarketIntelligenceWorkspace as CanonicalMarketIntelligenceWorkspace } from "../components/canonical/MarketIntelligenceWorkspace";
+import { OptionsIntelligenceWorkspace as CanonicalOptionsWorkspace } from "../components/canonical/OptionsIntelligenceWorkspace";
+import { PredictionChartView } from "../components/intelligence/PredictionChartView";
 
 // Primary sidebar modules (4 Official Primary Trading Modules ONLY)
 export const PRIMARY_MODULES = [
@@ -65,12 +65,12 @@ export const PRIMARY_WORKSPACES = [
 ] as const;
 
 export type WorkspaceId = (typeof PRIMARY_WORKSPACES)[number]["id"];
-export type MarketSubTab = "nifty" | "metrics" | "options";
+export type MarketSubTab = "nifty" | "metrics" | "options" | "predictions";
 export type NiftySessionMode = "auto" | "pre_market" | "live" | "post_market";
 
 export function DashboardLayout() {
   const { fontClasses } = useTheme();
-  const { workspaceContext, marketContext, canonicalState, lastValidState } = useWorkstationState() as any;
+  const { workspaceContext, marketContext } = useWorkstationState() as any;
   const {
     activeModule,
     marketSubTab,
@@ -84,55 +84,18 @@ export function DashboardLayout() {
     setSettingsSubTab,
   } = useNavigation();
 
-  const isStagingMode = (import.meta as any).env?.VITE_STAGING_MODE === "true";
+  const { envelope, isFixtureData, isReplayMode, previewPhase } = useCanonicalState();
 
-  const [niftyModeOverride, setNiftyModeOverride] = useState<NiftySessionMode>("auto");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [deepDive, setDeepDive] = useState<InspectionSelection | null>(null);
 
-  // Compute canonical session mode for dynamic workspaces
-  const computedNiftyMode = useMemo<"pre_market" | "live" | "post_market">(() => {
-    if (niftyModeOverride !== "auto" && isStagingMode) return niftyModeOverride;
+  const fixtureDateDisplay =
+    envelope?.session?.completed_session_date ||
+    envelope?.session?.active_trading_date ||
+    envelope?.session?.calendar_date ||
+    "2026-09-01";
 
-    const stateObj = canonicalState ?? lastValidState;
-    const mStatus = stateObj?.market_session?.status || "closed";
-    const isClosed = Boolean(
-      stateObj?.market_session?.is_closed || mStatus === "closed" || mStatus === "holiday" || mStatus === "weekend"
-    );
-
-    const now = new Date();
-    const istTimeStr = new Intl.DateTimeFormat("en-US", {
-      timeZone: "Asia/Kolkata",
-      hour12: false,
-      hour: "numeric",
-      minute: "numeric",
-    }).format(now);
-    const [h, m] = istTimeStr.split(":").map(Number);
-    const totalMinutes = h * 60 + m;
-
-    if (mStatus === "pre_open" || (totalMinutes >= 360 && totalMinutes < 555 && !mStatus.includes("open"))) {
-      return "pre_market";
-    }
-    if (mStatus === "open" || (totalMinutes >= 555 && totalMinutes <= 930 && !isClosed)) {
-      return "live";
-    }
-    return "post_market";
-  }, [niftyModeOverride, canonicalState, lastValidState, isStagingMode]);
-
-  const [nowTick, setNowTick] = useState(new Date());
-
-  useEffect(() => {
-    const timer = setInterval(() => setNowTick(new Date()), 10000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const briefingPresentationMode = useMemo(() => {
-    const stateObj = canonicalState ?? lastValidState;
-    return resolveBriefingPresentationMode({
-      customDate: nowTick,
-      marketSessionState: stateObj?.market_session,
-    });
-  }, [nowTick, canonicalState, lastValidState]);
+  const isFixtureSubstituted = isFixtureData || isReplayMode;
 
   // Unified Authoritative Navigation Handlers
   const navigateModule = (id: PrimaryModuleId) => {
@@ -167,11 +130,33 @@ export function DashboardLayout() {
           settingsOpen={settingsOpen}
         />
 
+        {/* High-Contrast Fixture / Historical Replay Banner (Explicit Replay Only) */}
+        {isFixtureSubstituted && (
+          <div
+            data-testid="fixture-substitution-banner"
+            className="border-b border-[#F59E0B]/60 bg-[#F59E0B]/20 px-3.5 py-1.5 text-[11px] text-[#FDE68A] flex items-center justify-between font-mono shrink-0 shadow-md"
+          >
+            <div className="flex items-center gap-2">
+              <span className="rounded bg-[#F59E0B] px-1.5 py-0.5 text-[9px] font-black text-black uppercase tracking-wider">
+                FIXTURE DATA ACTIVE
+              </span>
+              <span>
+                <strong>DATA SOURCE:</strong> Fixture reference session (<strong>{fixtureDateDisplay}</strong>). This is <strong>NOT LIVE MARKET DATA</strong>.
+              </span>
+            </div>
+            {previewPhase !== "AUTO" && (
+              <span className="text-[10px] text-[#FDE68A] uppercase font-bold">
+                Preview Override: {previewPhase}
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Expiry / Session Warning Banner */}
         {workspaceContext.brokerState === "TOKEN_EXPIRED" && (
           <div className="border-b border-[#E5484D]/40 bg-[#E5484D]/10 px-3 py-1.5 text-[11px] text-[#E5484D] flex items-center justify-between font-mono shrink-0">
             <div>
-              <strong>KITE SESSION EXPIRED.</strong> Last update: {marketContext.last_tick_time || "Unavailable"}. Live
+              <strong>KITE SESSION EXPIRED.</strong> Last update: {marketContext.last_tick_time || "—"}. Live
               analysis paused.
             </div>
             <button onClick={openSettingsConsole} className="underline text-red-200 hover:text-white font-bold">
@@ -182,7 +167,7 @@ export function DashboardLayout() {
 
         {/* Main Workspace Frame: Sidebar + Content */}
         <div className="flex min-h-0 flex-1 bg-[#050607]">
-          {/* Primary Sidebar Module Navigation (5 Primary Modules ONLY - Slim 200px Width) */}
+          {/* Primary Sidebar Module Navigation (4 Primary Modules ONLY - Slim 200px Width) */}
           <aside
             id="workstation-sidebar"
             className={`${
@@ -253,6 +238,15 @@ export function DashboardLayout() {
                     >
                       OPTIONS
                     </button>
+                    <button
+                      onClick={() => navigateMarketSubTab("predictions")}
+                      className={`relative h-full px-1 transition ${marketSubTab === "predictions"
+                          ? "text-[#E6E8EB] font-bold after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-[#F59E0B]"
+                          : "text-[#707987] hover:text-[#A5ABB4]"
+                        }`}
+                    >
+                      PREDICTIONS
+                    </button>
                   </div>
                 )}
               </div>
@@ -282,13 +276,18 @@ export function DashboardLayout() {
                    (activeModule as string) === "intelligence" ||
                    (activeModule as string) === "pre_market_briefing" ||
                    (activeModule as string) === "market_insights" ? (
-                  <MarketIntelligenceWorkspace />
+                  <CanonicalMarketIntelligenceWorkspace />
+                ) : marketSubTab === "predictions" ? (
+                  <PredictionChartView />
+                ) : marketSubTab === "options" ? (
+                  <CanonicalOptionsWorkspace
+                    options={envelope.options}
+                    candidateStrike={envelope.decision?.strike_candidates?.[0]}
+                  />
                 ) : marketSubTab === "metrics" ? (
                   <MarketPulseWorkspace />
-                ) : marketSubTab === "options" ? (
-                  <OptionsWorkspace />
                 ) : (
-                  <NiftyLiveWorkspace />
+                  <CanonicalMarketWorkspace />
                 )}
               </WorkspaceErrorBoundary>
             </main>

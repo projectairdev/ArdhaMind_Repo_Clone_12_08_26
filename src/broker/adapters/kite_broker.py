@@ -594,66 +594,13 @@ class KiteBrokerGateway(IBrokerGateway):
             raise AuthenticationManager._map_exception(e)
 
     def place_order(self, **kwargs) -> str:
-        """
-        Executes an order on Zerodha Kite Connect when ENABLE_LIVE_EXECUTION=true.
-        """
-        enable_live = os.environ.get("ENABLE_LIVE_EXECUTION", "false").lower() in ("true", "1", "yes")
-        if not enable_live:
-            raise PermissionError("Live execution is disabled. Set ENABLE_LIVE_EXECUTION=true in staging environment.")
-
-        if not self._connected or not self._kite_client:
-            raise SessionMissingError("Broker not connected. Active session is required to place order.")
-
-        try:
-            variety = kwargs.get("variety", getattr(self._kite_client, "VARIETY_REGULAR", "regular"))
-            exchange = kwargs.get("exchange", "NFO")
-            tradingsymbol = kwargs.get("tradingsymbol")
-            transaction_type = kwargs.get("transaction_type", "BUY")
-            quantity = int(kwargs.get("quantity", 1))
-            product = kwargs.get("product", "NRML")
-            order_type = kwargs.get("order_type", "LIMIT")
-            price = float(kwargs.get("price", 0.0)) if kwargs.get("price") else None
-            trigger_price = float(kwargs.get("trigger_price", 0.0)) if kwargs.get("trigger_price") else None
-            tag = kwargs.get("tag", "ardhamind")
-
-            import sys
-            print(f"\n[Kite]\nLive Order Placement Request: {tradingsymbol} {transaction_type} {quantity} @ {price}...", file=sys.stderr, flush=True)
-
-            order_id = self._kite_client.place_order(
-                variety=variety,
-                exchange=exchange,
-                tradingsymbol=tradingsymbol,
-                transaction_type=transaction_type,
-                quantity=quantity,
-                product=product,
-                order_type=order_type,
-                price=price,
-                trigger_price=trigger_price,
-                tag=tag,
-            )
-            print(f"\n✓ Success: Broker Order ID = {order_id}", file=sys.stderr, flush=True)
-            return str(order_id)
-        except Exception as e:
-            if isinstance(e, BrokerError):
-                raise e
-            raise AuthenticationManager._map_exception(e)
+        raise PermissionError("AIR ArdhaMind is read only; order placement is unavailable")
 
     def modify_order(self, **kwargs) -> Any:
         raise PermissionError("AIR ArdhaMind is read only; order modification is unavailable")
 
-    def cancel_order(self, order_id: str, variety: str = "regular") -> bool:
-        enable_live = os.environ.get("ENABLE_LIVE_EXECUTION", "false").lower() in ("true", "1", "yes")
-        if not enable_live:
-            raise PermissionError("Live execution is disabled. Set ENABLE_LIVE_EXECUTION=true in staging environment.")
-
-        if not self._connected or not self._kite_client:
-            raise SessionMissingError("Broker not connected.")
-
-        try:
-            self._kite_client.cancel_order(variety=variety, order_id=order_id)
-            return True
-        except Exception as e:
-            raise AuthenticationManager._map_exception(e)
+    def cancel_order(self, order_id: str = "", variety: str = "regular") -> bool:
+        raise PermissionError("AIR ArdhaMind is read only; order cancellation is unavailable")
 
     def get_order_status(self, broker_order_id: str) -> Dict[str, Any]:
         if not self._connected or not self._kite_client:
@@ -694,47 +641,7 @@ class KiteBrokerGateway(IBrokerGateway):
             raise AuthenticationManager._map_exception(e)
 
     def exit_position(self, **kwargs) -> str:
-        """
-        Places an offsetting order to exit an open position.
-        """
-        enable_live = os.environ.get("ENABLE_LIVE_EXECUTION", "false").lower() in ("true", "1", "yes")
-        if not enable_live:
-            raise PermissionError("Live execution is disabled. Set ENABLE_LIVE_EXECUTION=true in staging environment.")
-
-        if not self._connected or not self._kite_client:
-            raise SessionMissingError("Broker not connected.")
-
-        try:
-            tradingsymbol = kwargs.get("tradingsymbol")
-            exchange = kwargs.get("exchange", "NFO")
-            transaction_type = kwargs.get("transaction_type", "SELL")
-            quantity = int(kwargs.get("quantity", 1))
-            product = kwargs.get("product", "NRML")
-            order_type = kwargs.get("order_type", "MARKET")
-            price = float(kwargs.get("price", 0.0)) if kwargs.get("price") else None
-            variety = kwargs.get("variety", "regular")
-            tag = kwargs.get("tag", "ardhamind_exit")
-
-            import sys
-            print(f"\n[Kite]\nPosition Exit Request: {tradingsymbol} {transaction_type} {quantity} ({product})...", file=sys.stderr, flush=True)
-
-            order_id = self._kite_client.place_order(
-                variety=variety,
-                exchange=exchange,
-                tradingsymbol=tradingsymbol,
-                transaction_type=transaction_type,
-                quantity=quantity,
-                product=product,
-                order_type=order_type,
-                price=price,
-                tag=tag,
-            )
-            print(f"\n✓ Success: Exit Broker Order ID = {order_id}", file=sys.stderr, flush=True)
-            return str(order_id)
-        except Exception as e:
-            if isinstance(e, BrokerError):
-                raise e
-            raise AuthenticationManager._map_exception(e)
+        raise PermissionError("AIR ArdhaMind is read only; position exit is unavailable")
 
     # --- Task 4 Broker Health Integration ---
 

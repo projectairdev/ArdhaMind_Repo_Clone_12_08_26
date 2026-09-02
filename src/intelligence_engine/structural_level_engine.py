@@ -59,8 +59,8 @@ class StructuralLevelEngine:
         spot = float(spot_raw) if spot_raw is not None else None
         prev_close_raw = m_data.get("previous_close") or m_data.get("prev_close")
         prev_close = float(prev_close_raw) if prev_close_raw is not None else None
-        prev_high = float(m_data["high"]) if (m_data.get("high") is not None and float(m_data["high"]) > 0) else (24269.65 if spot else None)
-        prev_low = float(m_data["low"]) if (m_data.get("low") is not None and float(m_data["low"]) > 0) else (24154.90 if spot else None)
+        prev_high = float(m_data["high"]) if (m_data.get("high") is not None and float(m_data["high"]) > 0) else None
+        prev_low = float(m_data["low"]) if (m_data.get("low") is not None and float(m_data["low"]) > 0) else None
         prev_open = float(m_data["open"]) if (m_data.get("open") is not None and float(m_data["open"]) > 0) else spot
 
         # GIFT Nifty reference
@@ -213,8 +213,8 @@ class StructuralLevelEngine:
                 "confidence": "HIGH",
                 "description": f"Put OI concentration support at {highest_put_oi:,.2f}."
             }
-        else:
-            imm_sup_price = round(ref_spot - 50.0, 2) if ref_spot > 0 else 24200.0
+        elif ref_spot > 0:
+            imm_sup_price = round(ref_spot - 50.0, 2)
             imm_sup = {
                 "price": imm_sup_price,
                 "type": "SUPPORT",
@@ -225,13 +225,24 @@ class StructuralLevelEngine:
                 "confidence": "MODERATE",
                 "description": f"Intraday baseline support at {imm_sup_price:,.2f}."
             }
+        else:
+            imm_sup = {
+                "price": None,
+                "type": "SUPPORT",
+                "strength": "UNAVAILABLE",
+                "evidence_count": 0,
+                "sources": [],
+                "as_of": now_str,
+                "confidence": "UNAVAILABLE",
+                "description": "Immediate support unavailable — no validated spot reference."
+            }
 
         # Major Support (structural level below immediate support)
-        imm_sup_p = imm_sup.get("price") or (ref_spot - 50.0 if ref_spot > 0 else 24200.0)
-        deeper_supports = [l for l in below_spot if l.price < (imm_sup_p - 10.0)]
+        imm_sup_p = imm_sup.get("price") or (round(ref_spot - 50.0, 2) if ref_spot > 0 else None)
+        deeper_supports = [l for l in below_spot if imm_sup_p is not None and l.price < (imm_sup_p - 10.0)]
         if deeper_supports:
             maj_sup = deeper_supports[0].to_dict()
-        elif highest_put_oi and highest_put_oi < imm_sup_p:
+        elif imm_sup_p is not None and highest_put_oi and highest_put_oi < imm_sup_p:
             maj_sup = {
                 "price": highest_put_oi,
                 "type": "MAJOR_SUPPORT",
@@ -242,7 +253,7 @@ class StructuralLevelEngine:
                 "confidence": "HIGH",
                 "description": f"Put OI concentration major support at {highest_put_oi:,.2f}."
             }
-        else:
+        elif imm_sup_p is not None:
             maj_sup_p = round(imm_sup_p - 75.0, 2)
             maj_sup = {
                 "price": maj_sup_p,
@@ -253,6 +264,13 @@ class StructuralLevelEngine:
                 "as_of": now_str,
                 "confidence": "MODERATE",
                 "description": f"Deeper structural support at {maj_sup_p:,.2f}."
+            }
+        else:
+            maj_sup = {
+                "price": None, "type": "MAJOR_SUPPORT", "strength": "UNAVAILABLE",
+                "evidence_count": 0, "sources": [], "as_of": now_str,
+                "confidence": "UNAVAILABLE",
+                "description": "Major support unavailable — no validated spot reference."
             }
 
         # Immediate Resistance (closest level above spot)
@@ -280,8 +298,8 @@ class StructuralLevelEngine:
                 "confidence": "HIGH",
                 "description": f"Call OI concentration resistance at {highest_call_oi:,.2f}."
             }
-        else:
-            imm_res_price = round(ref_spot + 50.0, 2) if ref_spot > 0 else 24350.0
+        elif ref_spot > 0:
+            imm_res_price = round(ref_spot + 50.0, 2)
             imm_res = {
                 "price": imm_res_price,
                 "type": "RESISTANCE",
@@ -292,13 +310,20 @@ class StructuralLevelEngine:
                 "confidence": "MODERATE",
                 "description": f"Intraday baseline resistance at {imm_res_price:,.2f}."
             }
+        else:
+            imm_res = {
+                "price": None, "type": "RESISTANCE", "strength": "UNAVAILABLE",
+                "evidence_count": 0, "sources": [], "as_of": now_str,
+                "confidence": "UNAVAILABLE",
+                "description": "Immediate resistance unavailable — no validated spot reference."
+            }
 
         # Major Resistance (structural level above immediate resistance)
-        imm_res_p = imm_res.get("price") or (ref_spot + 50.0 if ref_spot > 0 else 24350.0)
-        higher_resistances = [l for l in above_spot if l.price > (imm_res_p + 10.0)]
+        imm_res_p = imm_res.get("price") or (round(ref_spot + 50.0, 2) if ref_spot > 0 else None)
+        higher_resistances = [l for l in above_spot if imm_res_p is not None and l.price > (imm_res_p + 10.0)]
         if higher_resistances:
             maj_res = higher_resistances[0].to_dict()
-        elif highest_call_oi and highest_call_oi > imm_res_p:
+        elif imm_res_p is not None and highest_call_oi and highest_call_oi > imm_res_p:
             maj_res = {
                 "price": highest_call_oi,
                 "type": "MAJOR_RESISTANCE",
@@ -309,7 +334,7 @@ class StructuralLevelEngine:
                 "confidence": "HIGH",
                 "description": f"Call OI concentration major resistance at {highest_call_oi:,.2f}."
             }
-        else:
+        elif imm_res_p is not None:
             maj_res_p = round(imm_res_p + 75.0, 2)
             maj_res = {
                 "price": maj_res_p,
@@ -320,6 +345,13 @@ class StructuralLevelEngine:
                 "as_of": now_str,
                 "confidence": "MODERATE",
                 "description": f"Higher structural resistance at {maj_res_p:,.2f}."
+            }
+        else:
+            maj_res = {
+                "price": None, "type": "MAJOR_RESISTANCE", "strength": "UNAVAILABLE",
+                "evidence_count": 0, "sources": [], "as_of": now_str,
+                "confidence": "UNAVAILABLE",
+                "description": "Major resistance unavailable — no validated spot reference."
             }
 
         pivot_level = pivots[0].to_dict() if pivots else {
@@ -345,24 +377,46 @@ class StructuralLevelEngine:
         live_decision_zone = {
             "low": zone_low,
             "high": zone_high,
-            "corridor_str": f"{zone_low:,.0f} – {zone_high:,.0f}" if (zone_low and zone_high) else "24,200 – 24,250",
+            "corridor_str": (f"{zone_low:,.0f} – {zone_high:,.0f}" if (zone_low and zone_high) else "Unavailable"),
             "is_inside": is_inside_live_zone,
             "spot_relation": spot_relation
         }
 
-        # Frozen Pre-Market Corridor Reference
-        pre_corridor_low = 24284.0
-        pre_corridor_high = 24291.0
+        # Pre-Market Corridor Reference — only surfaced from a real pre-market
+        # corridor computed upstream; never a frozen hardcoded band.
+        def _pos(v: Any) -> Optional[float]:
+            try:
+                f = float(v)
+                return f if f > 0 else None
+            except (TypeError, ValueError):
+                return None
+
+        pre_corridor_low = _pos(
+            crit.get("decision_corridor_lower")
+            or pm_report.get("decision_corridor_lower")
+            or (crit.get("decision_corridor") or {}).get("lower")
+        )
+        pre_corridor_high = _pos(
+            crit.get("decision_corridor_upper")
+            or pm_report.get("decision_corridor_upper")
+            or (crit.get("decision_corridor") or {}).get("upper")
+        )
+        pre_corridor_available = (
+            pre_corridor_low is not None and pre_corridor_high is not None and pre_corridor_low < pre_corridor_high
+        )
         spot_inside_pre = (
-            spot is not None and pre_corridor_low <= spot <= pre_corridor_high
+            pre_corridor_available and spot is not None and pre_corridor_low <= spot <= pre_corridor_high
         )
         pre_market_reference_corridor = {
             "low": pre_corridor_low,
             "high": pre_corridor_high,
-            "corridor_str": "24,284 – 24,291",
+            "corridor_str": (f"{pre_corridor_low:,.0f} – {pre_corridor_high:,.0f}" if pre_corridor_available else "Unavailable"),
             "context": "PRE_MARKET_REFERENCE_ONLY",
-            "is_inside": spot_inside_pre,
-            "spot_relation": "INSIDE" if spot_inside_pre else ("BELOW" if (spot is not None and spot < pre_corridor_low) else "ABOVE")
+            "is_inside": spot_inside_pre if pre_corridor_available else None,
+            "spot_relation": (
+                "INSIDE" if spot_inside_pre
+                else ("BELOW" if (pre_corridor_available and spot is not None and spot < pre_corridor_low) else ("ABOVE" if pre_corridor_available else None))
+            )
         }
 
         return {

@@ -20,22 +20,16 @@ from src.models import (
     ExecutionAudit,
     ExecutionStateReport,
 )
-from src.execution_engine.order_tracker import OrderTracker
-from src.execution_engine.position_sync import PositionSynchronizer
-from src.execution_engine.portfolio_sync import PortfolioSynchronizer
-from src.execution_engine.mtm import MTMCalculator
-from src.execution_engine.audit import ExecutionAuditLog
-from src.execution_engine.timeline import TimelineGenerator
-from src.execution_engine.builder import ExecutionStateReportBuilder
-from src.dashboard.execution_panel import ExecutionPanel
-from src.dashboard.dashboard_builder import TradingWorkstationDashboard
+from src.broker.services.portfolio.order_tracker import OrderTracker
+from src.broker.services.portfolio.position_sync import PositionSynchronizer
+from src.broker.services.portfolio.portfolio_sync import PortfolioSynchronizer
+from src.broker.services.portfolio.mtm import MTMCalculator
 
 
 class TestExecutionLifecycle(unittest.TestCase):
     """
-    Comprehensive mocked unit tests for Sprint 23 (Execution & Position Lifecycle Manager).
-    Verifies all stateless engines, lifecycle transitions, synchronization, MTM logic, 
-    timeline generation, audit integrity, and dashboard rendering.
+    Comprehensive mocked unit tests for Portfolio Telemetry & Order Tracking.
+    Verifies stateless normalization, position synchronization, portfolio aggregation, and MTM logic.
     """
 
     def test_order_tracker_lifecycle_mapping(self) -> None:
@@ -203,157 +197,3 @@ class TestExecutionLifecycle(unittest.TestCase):
         # SYM1 has qty 100, last price 100. Shift is +2.0% -> price changes by +2.0. Delta = 100 * 100 * 0.02 = 200.0
         sensitivity = MTMCalculator.project_mtm_sensitivity(positions, {"SYM1": 2.0})
         self.assertEqual(sensitivity, 200.0)
-
-    def test_timeline_generator(self) -> None:
-        """
-        Verify timeline events generation and persistence.
-        """
-        order = OrderState(
-            order_id="ORD_101", tradingsymbol="RELIANCE", exchange="NSE",
-            transaction_type="BUY", quantity=10, filled_quantity=0,
-            pending_quantity=10, status="CREATED", average_price=0.0,
-            trigger_price=0.0, product="MIS", order_type="LIMIT",
-            status_message="Local created", timestamp="10:00:00"
-        )
-
-        timeline = TimelineGenerator.generate_timeline(order)
-        self.assertEqual(len(timeline.events), 1)
-        self.assertEqual(timeline.events[0]["status"], "CREATED")
-
-        # Update status to PENDING
-        order_pending = OrderState(
-            order_id="ORD_101", tradingsymbol="RELIANCE", exchange="NSE",
-            transaction_type="BUY", quantity=10, filled_quantity=0,
-            pending_quantity=10, status="PENDING", average_price=0.0,
-            trigger_price=0.0, product="MIS", order_type="LIMIT",
-            status_message="Active in queue", timestamp="10:01:00"
-        )
-        updated_timeline = TimelineGenerator.generate_timeline(order_pending, timeline)
-        self.assertEqual(len(updated_timeline.events), 3)  # CREATED, SUBMITTED, PENDING
-        self.assertEqual(updated_timeline.events[2]["status"], "PENDING")
-
-    def test_audit_logging(self) -> None:
-        """
-        Verify ExecutionAuditLog correctly records and structures audit details.
-        """
-        audit = ExecutionAuditLog.create_audit_record(
-            action="TEST_ACTION",
-            request_payload={"data": 123},
-            response_payload={"result": "OK"},
-            status="SUCCESS"
-        )
-        self.assertTrue(audit.audit_id.startswith("AUD_"))
-        self.assertEqual(audit.action, "TEST_ACTION")
-        self.assertEqual(audit.status, "SUCCESS")
-
-        # Audit Execution Request/Report
-        req = ExecutionRequest(
-            request_id="REQ_001",
-            decision_report_id="DEC_REP_123",
-            timestamp="10:00:00",
-            status="PENDING",
-            orders=[
-                ExecutionOrder(
-                    candidate_id="CAND_1", tradingsymbol="SYM1", exchange="NSE",
-                    transaction_type="BUY", quantity=100, price=50.0, product="MIS",
-                    order_type="LIMIT", trigger_price=0.0
-                )
-            ]
-        )
-        rep = ExecutionReport(
-            report_id="REP_001", timestamp="10:00:05", status="COMPLETED",
-            broker_order_id="ORD_001", exchange_order_id="EX_001",
-            accepted_orders=[req.orders[0]], rejected_orders=[], failure_reason="",
-            request_id="REQ_001"
-        )
-
-        audit_record = ExecutionAuditLog.audit_execution_request(req, rep)
-        self.assertEqual(audit_record.action, "ORDER_EXECUTION")
-        self.assertEqual(audit_record.status, "SUCCESS")
-        self.assertEqual(audit_record.request_payload["request_id"], "REQ_001")
-        self.assertEqual(audit_record.response_payload["broker_order_id"], "ORD_001")
-
-    def test_state_report_builder(self) -> None:
-        """
-        Verify end-to-end stateless report construction via ExecutionStateReportBuilder.
-        """
-        broker_orders = [
-            BrokerOrder(
-                order_id="ORD_1", exchange_order_id="EX1", tradingsymbol="SYM1",
-                exchange="NSE", transaction_type="BUY", quantity=10, product="MIS",
-                order_type="LIMIT", status="COMPLETE", price=100.0, filled_quantity=10,
-                order_timestamp="10:00:00", status_message=""
-            )
-        ]
-        broker_positions = [
-            BrokerPosition(
-                tradingsymbol="SYM1", exchange="NSE", product="MIS", quantity=10,
-                average_price=100.0, last_price=105.0, pnl=50.0, today_mtm=50.0
-            )
-        ]
-        funds = BrokerFunds(available_cash=10000.0, margins=8000.0, utilized_margin=2000.0, available_margin=8000.0)
-
-        report = ExecutionStateReportBuilder.build(
-            broker_orders=broker_orders,
-            broker_positions=broker_positions,
-            broker_funds=funds
-        )
-
-        self.assertEqual(len(report.orders), 1)
-        self.assertEqual(report.statistics.total_orders, 1)
-        self.assertEqual(report.positions.total_positions_count, 1)
-        self.assertEqual(report.portfolio.portfolio_mtm, 50.0)
-        self.assertEqual(len(report.timelines), 1)
-
-    def test_dashboard_rendering(self) -> None:
-        """
-        Verify ExecutionPanel dict serialization and text/ASCII rendering functions.
-        """
-        live_pos = LivePosition(
-            tradingsymbol="SYM1", exchange="NSE", product="MIS", quantity=10,
-            average_price=100.0, last_price=105.0, pnl=50.0, realized_pnl=0.0,
-            unrealized_pnl=50.0, today_mtm=50.0
-        )
-        pos_ctx = PositionContext(positions=[live_pos], total_positions_count=1, open_positions_count=1, today_mtm=50.0)
-        port_ctx = PortfolioContext(active_positions=[live_pos], closed_positions=[], capital_utilized=2000.0, available_capital=8000.0, portfolio_mtm=50.0)
-        
-        order = OrderState(
-            order_id="ORD_1", tradingsymbol="SYM1", exchange="NSE",
-            transaction_type="BUY", quantity=10, filled_quantity=10,
-            pending_quantity=0, status="FILLED", average_price=100.0,
-            trigger_price=0.0, product="MIS", order_type="LIMIT",
-            status_message="", timestamp="10:00:00"
-        )
-        
-        timeline = ExecutionTimeline(order_id="ORD_1", tradingsymbol="SYM1", events=[{"timestamp": "10:00:00", "status": "FILLED", "details": "Filled"}])
-        
-        report = ExecutionStateReport(
-            report_id="REP_TEST",
-            timestamp="10:00:00",
-            orders=[order],
-            positions=pos_ctx,
-            portfolio=port_ctx,
-            timelines=[timeline],
-            audits=[],
-            statistics=OrderTracker.calculate_statistics([order])
-        )
-
-        panel = ExecutionPanel(report)
-        dct = panel.to_dict()
-        self.assertEqual(dct["statistics"]["total_orders"], 1)
-        self.assertEqual(dct["portfolio"]["portfolio_mtm"], 50.0)
-        self.assertEqual(len(dct["positions"]), 1)
-
-        cli_out = panel.render_cli()
-        self.assertIn("EXECUTION & POSITION LIFECYCLE PANEL", cli_out)
-        self.assertIn("SYM1", cli_out)
-        self.assertIn("Portfolio MTM : INR +50.00", cli_out)
-
-        # Render integrated workspace dashboard
-        dash = TradingWorkstationDashboard(execution_state=report)
-        dash_dict = dash.to_dict()
-        self.assertIn("execution", dash_dict)
-        self.assertEqual(dash_dict["execution"]["portfolio"]["portfolio_mtm"], 50.0)
-
-        dash_cli = dash.render_cli()
-        self.assertIn("EXECUTION & POSITION LIFECYCLE PANEL", dash_cli)

@@ -1,0 +1,55 @@
+{
+  "schema_name": "SESSION_CLOSE_CORE",
+  "schema_version": "1.2.0",
+  "session_date": "2026-09-02",
+  "session_type": "REGULAR_TRADING",
+  "finalized_at": "2026-09-02T23:09:49.926341Z",
+  "finalization_generation": 1,
+  "idempotency_key": "",
+  "session_vwap": 23855.22,
+  "or_high": 23882.95,
+  "or_low": 23786.8,
+  "market_ohlcv": {
+    "open": 23858.0,
+    "high": 23914.45,
+    "low": 23786.8,
+    "close": 23914.45,
+    "volume": 0,
+    "previous_close": null,
+    "change_points": null,
+    "change_percent": null,
+    "session_range_points": 127.65
+  },
+  "structural_levels": {
+    "pivot": 23871.9,
+    "r1": 23957.0,
+    "r2": 23999.55,
+    "r3": null,
+    "s1": 23829.35,
+    "s2": 23744.25,
+    "s3": null,
+    "raw_atr_14": null,
+    "local_atr_upper": null,
+    "local_atr_lower": null
+  },
+  "market_regime": {
+    "regime": "RANGE_BOUND",
+    "day_character": "UNKNOWN",
+    "momentum": "NEUTRAL",
+    "volatility_regime": "UNKNOWN"
+  },
+  "closing_vix": null,
+  "closing_breadth": null,
+  "institutional_flows": null,
+  "session_story": {
+    "headline": "",
+    "primary_driver": "",
+    "carry_forward_thesis": "",
+    "key_takeaways": []
+  },
+  "provenance": {
+    "provider": "LOCAL_CANDLE_CACHE_RECOVERY",
+    "reconciliation_policy": "v1.0-standard",
+    "reconciliation_status": "AUTO_RECOVERED"
+  }
+}

@@ -98,9 +98,36 @@ def read_jsonl(target_path: Path) -> List[Dict[str, Any]]:
                     continue
                 try:
                     records.append(json.loads(line_str))
-                except json.JSONDecodeError:
+                except Exception:
                     continue
-        return records
     except Exception as exc:
         logger.warning(f"[AtomicStore] Failed reading jsonl {target_path}: {exc}")
-        return []
+    return records
+
+
+def cleanup_orphaned_tmp_files(root_dir: Path | str, max_age_seconds: float = 300.0) -> int:
+    """
+    Boot-time and maintenance sweep that unlinks orphaned *.tmp.* files in root_dir.
+    Age-gated: only removes temp files older than max_age_seconds (default 5 minutes)
+    to prevent racing active in-flight atomic writes.
+    """
+    import time
+    removed_count = 0
+    now = time.time()
+    try:
+        p = Path(root_dir).resolve()
+        if not p.exists():
+            return 0
+        for tmp_file in p.rglob("*.tmp.*"):
+            try:
+                if tmp_file.is_file():
+                    stat = tmp_file.stat()
+                    if (now - stat.st_mtime) >= max_age_seconds:
+                        tmp_file.unlink()
+                        removed_count += 1
+                        logger.info(f"[AtomicStore] Cleaned up orphaned temp file: {tmp_file.name}")
+            except Exception as e:
+                logger.debug(f"[AtomicStore] Could not unlink temp file {tmp_file}: {e}")
+    except Exception as exc:
+        logger.warning(f"[AtomicStore] Error during orphan temp file sweep: {exc}")
+    return removed_count

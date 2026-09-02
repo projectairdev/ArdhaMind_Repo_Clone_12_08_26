@@ -9,8 +9,6 @@ from src.broker.models.trading_mode import TradingMode, BrokerType
 from src.broker.models.health import BrokerHealth
 from src.broker.utils.cache_manager import InstrumentCacheManager
 import src.broker.utils.cache_manager as cache_manager
-from tests.support.mock_broker_gateway import MockBrokerGateway
-from tests.support.fake_kiteconnect import FakeKiteConnect
 from src.broker.adapters.kite_broker import KiteBrokerGateway
 from src.broker.services.broker_service import BrokerService
 from src.broker.services.authentication import AuthenticationManager
@@ -220,30 +218,29 @@ class TestBrokerFoundationLayer(unittest.TestCase):
         err2 = ExpiredAccessTokenError("Expired token")
         self.assertEqual(err2.error_code, "EXPIRED_ACCESS_TOKEN")
 
-    def test_mock_broker_gateway(self):
-        """Verifies MockBrokerGateway adapter wrapping ConnectionManager."""
-        gateway = MockBrokerGateway()
-        # Explicit test-only client: production resolution remains the official package.
-        import src.broker.compat.connection as connection_module
-        original = connection_module.KiteConnect
-        connection_module.KiteConnect = FakeKiteConnect
+    @patch("src.broker.services.session_manager.SessionManager.is_session_expired", return_value=False)
+    @patch("src.broker.services.session_manager.SessionManager.load_session", return_value={"login_timestamp": 1700000000, "expires_at": 1800000000})
+    @patch("src.broker.adapters.kite_broker.KiteConnect")
+    def test_mock_broker_gateway(self, mock_kite_cls, mock_load_session, mock_is_expired):
+        """Verifies KiteBrokerGateway connection cycle, profile fetch, and health metrics."""
+        mock_kite = MagicMock()
+        mock_kite.profile.return_value = {"user_id": "TEST_CLIENT", "user_name": "Test User"}
+        mock_kite_cls.return_value = mock_kite
 
-        # Test connection cycle
-        try:
-            connected = gateway.connect(api_key="TEST_API_KEY")
-        finally:
-            connection_module.KiteConnect = original
+        gateway = KiteBrokerGateway()
+        connected = gateway.connect(api_key="TEST_API_KEY", access_token="TEST_ACCESS_TOKEN")
         self.assertTrue(connected)
         self.assertTrue(gateway.is_connected())
 
         # Profile fetch
         profile = gateway.get_profile()
-        self.assertEqual(profile["client_id"], "MOCK_CLIENT")
+        self.assertEqual(profile.get("user_id"), "TEST_CLIENT")
 
         # Health metrics
         health = gateway.health()
+        self.assertEqual(health.broker_name, "Zerodha KiteConnect")
         self.assertEqual(health.connection_status, "CONNECTED")
-        self.assertEqual(health.trading_mode, "PAPER_TRADING")
+        self.assertEqual(health.trading_mode, "LIVE_ZERODHA")
         self.assertEqual(health.health_score, 100.0)
 
     def test_broker_service_singleton_and_proxy(self):

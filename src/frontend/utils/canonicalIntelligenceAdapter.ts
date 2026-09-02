@@ -1,6 +1,9 @@
 import { formatNumber, safeArray, safeString } from "./safeHelpers";
 export { formatNumber, safeArray, safeString };
 import { IntelligenceExplanation, ExplanationEvidence } from "../components/ui/IntelligenceDetails";
+import { resolveAuthoritativeMarketState } from "./resolveAuthoritativeMarketState";
+import type { CanonicalPredictionSnapshot } from "../types/canonical";
+import { ATR_FALLBACK, PCR_FALLBACK } from "../constants/marketFallbacks";
 
 export interface IntelligenceVerdict {
   code: string;
@@ -105,27 +108,27 @@ export interface CanonicalIntelligencePresentation {
     status: string;
   };
   nseMarketBreadth: {
-    advances: number;
-    declines: number;
-    ratio: string;
+    advances: number | null;
+    declines: number | null;
+    ratio: string | null;
   };
-  vixValue: number;
-  vixChangePct: number;
+  vixValue: number | null;
+  vixChangePct: number | null;
   vixRegime: string;
-  pcr: number;
+  pcr: number | null;
   pcrFormatted: string;
   maxPain: number;
   atmStrike: number;
-  atmIv: number;
+  atmIv: number | null;
   atmIvFormatted: string;
   optionsBias: string;
   callWall: number;
   putWall: number;
-  fiiCashNet: number;
+  fiiCashNet: number | null;
   fiiCashFormatted: string;
-  diiCashNet: number;
+  diiCashNet: number | null;
   diiCashFormatted: string;
-  netInstitutionalCash: number;
+  netInstitutionalCash: number | null;
   netInstitutionalFormatted: string;
   institutionalDateStr: string;
   globalQuotes: Record<string, any>;
@@ -252,7 +255,10 @@ export function getCanonicalIntelligencePresentation(
     Number(high),
     Number(low),
     Number(prevClose),
-    24158.42, 24200, 24223.03, 24250, 24284, 24287.65, 24291.57, 24350, 24356.18, 24400, 24424.72
+    Math.floor(currentSpotRef / 50) * 50,
+    Math.ceil(currentSpotRef / 50) * 50,
+    Math.floor(currentSpotRef / 100) * 100,
+    Math.ceil(currentSpotRef / 100) * 100,
   ].filter((v): v is number => Number.isFinite(v) && v > 0);
 
   const uniqueCandidates = Array.from(new Set(rawCandidates.map(c => Number(c.toFixed(2))))).sort((a, b) => a - b);
@@ -317,28 +323,37 @@ export function getCanonicalIntelligencePresentation(
   const expectedOpenStr = report?.expected_open_str ?? `${formatNumber(expectedOpenLow, 0)} – ${formatNumber(expectedOpenHigh, 0)}`;
   const gapZoneStr = expectedOpenStr;
 
-  // 6. Market Breadth
+  // 6. Market Breadth (Single Source of Truth)
+  const authState = resolveAuthoritativeMarketState(state);
+  const niftyAdv = authState.breadth.advances;
+  const niftyDec = authState.breadth.declines;
+  const niftyUnch = authState.breadth.unchanged;
+  const niftyTotal = authState.breadth.total;
+  const advPct = authState.breadth.advancePct ?? 0;
+  const niftyRatio = authState.breadth.ratio != null ? authState.breadth.ratio.toFixed(2) : "—";
+
   const b = md.breadth || mc.breadth || {};
-  const niftyAdv = b.advances ?? 16;
-  const niftyDec = b.declines ?? 33;
-  const niftyUnch = b.unchanged ?? 1;
-  const niftyTotal = (niftyAdv ?? 0) + (niftyDec ?? 0) + (niftyUnch ?? 0) || 50;
-  const advPct = Math.round(((niftyAdv ?? 0) / niftyTotal) * 100);
-  const niftyRatio = niftyDec != null && niftyDec > 0 ? ((niftyAdv ?? 0) / niftyDec).toFixed(2) : "0.48";
+  const broaderAdv = b.broader_advances != null ? Number(b.broader_advances) : null;
+  const broaderDec = b.broader_declines != null ? Number(b.broader_declines) : null;
+  const broaderRatio = b.broader_ratio != null
+    ? String(b.broader_ratio)
+    : (broaderAdv != null && broaderDec != null && broaderDec > 0 ? (broaderAdv / broaderDec).toFixed(2) : null);
 
   const nseMarketBreadth = {
-    advances: b.broader_advances ?? 1120,
-    declines: b.broader_declines ?? 1450,
-    ratio: "0.77",
+    advances: broaderAdv,
+    declines: broaderDec,
+    ratio: broaderRatio,
   };
 
-  // 7. Volatility & Derivatives
-  const vixValue = macro.india_vix?.value != null ? Number(formatNumber(macro.india_vix.value, 2)) : (md.india_vix != null ? Number(formatNumber(md.india_vix, 2)) : 11.61);
+  // 7. Volatility & Derivatives (FIX 11: Single source of truth from Canonical state, no 11.61/13.48 fake fallbacks)
+  const vixValue = macro.india_vix?.value != null
+    ? Number(formatNumber(macro.india_vix.value, 2))
+    : (md.india_vix != null ? Number(formatNumber(md.india_vix, 2)) : null);
   const vixChangePct = macro.india_vix?.change_pct != null ? Number(formatNumber(macro.india_vix.change_pct, 2)) : null;
   const vixRegime = vixValue != null ? (vixValue < 12 ? "LOW" : vixValue < 18 ? "NORMAL" : "ELEVATED") : "LOW";
 
-  const pcr = options.pcr != null ? Number(options.pcr) : 0.77;
-  const pcrFormatted = pcr != null ? formatNumber(pcr, 2) : "0.77";
+  const pcr = options.pcr != null ? Number(options.pcr) : PCR_FALLBACK;
+  const pcrFormatted = pcr != null ? formatNumber(pcr, 2) : "—";
 
   const maxPain = options.max_pain != null ? Number(options.max_pain) : (options.max_pain_strike != null ? Number(options.max_pain_strike) : 24200);
   const atmStrike = options.atm_strike != null ? Number(options.atm_strike) : (spot != null ? Math.round(spot / 50) * 50 : 24200);
@@ -348,19 +363,19 @@ export function getCanonicalIntelligencePresentation(
   const callWall = options.highest_call_oi_strike ?? 24500;
   const putWall = options.highest_put_oi_strike ?? 24000;
 
-  // 8. Institutional Cash Flows
+  // 8. Institutional Cash Flows (FIX 10: No fabricated fallback values or stale dates)
   const flows = safeArray(macro.institutional_flows);
   const fiiObj = flows.find((f: any) => f.dataset_type === "FII_CASH") || macro.fii_dii?.fii || {};
   const diiObj = flows.find((f: any) => f.dataset_type === "DII_CASH") || macro.fii_dii?.dii || {};
 
-  const fiiCashNet = fiiObj.net_value != null ? Number(fiiObj.net_value) : -1245.5;
-  const diiCashNet = diiObj.net_value != null ? Number(diiObj.net_value) : 1850.2;
-  const netInstitutionalCash = (fiiCashNet != null && diiCashNet != null) ? Number((fiiCashNet + diiCashNet).toFixed(1)) : 604.7;
+  const fiiCashNet = fiiObj.net_value != null ? Number(fiiObj.net_value) : null;
+  const diiCashNet = diiObj.net_value != null ? Number(diiObj.net_value) : null;
+  const netInstitutionalCash = (fiiCashNet != null && diiCashNet != null) ? Number((fiiCashNet + diiCashNet).toFixed(1)) : null;
 
-  const fiiCashFormatted = fiiCashNet != null ? `${fiiCashNet >= 0 ? "+" : ""}${formatNumber(fiiCashNet, 1)} Cr` : "—";
-  const diiCashFormatted = diiCashNet != null ? `${diiCashNet >= 0 ? "+" : ""}${formatNumber(diiCashNet, 1)} Cr` : "—";
-  const netInstitutionalFormatted = netInstitutionalCash != null ? `${netInstitutionalCash >= 0 ? "+" : ""}${formatNumber(netInstitutionalCash, 1)} Cr` : "—";
-  const institutionalDateStr = fiiObj.date ? String(fiiObj.date).replace(/-/g, " ") : "17 Aug 2026 (EOD Reference)";
+  const fiiCashFormatted = fiiCashNet != null ? `${fiiCashNet >= 0 ? "+" : ""}${formatNumber(fiiCashNet, 1)} Cr` : "Awaiting EOD Settlement";
+  const diiCashFormatted = diiCashNet != null ? `${diiCashNet >= 0 ? "+" : ""}${formatNumber(diiCashNet, 1)} Cr` : "Awaiting EOD Settlement";
+  const netInstitutionalFormatted = netInstitutionalCash != null ? `${netInstitutionalCash >= 0 ? "+" : ""}${formatNumber(netInstitutionalCash, 1)} Cr` : "Awaiting EOD Settlement";
+  const institutionalDateStr = fiiObj.date ? String(fiiObj.date).replace(/-/g, " ") : "Awaiting EOD Settlement";
 
   // 9. Biases & Conviction
   const openingBias = report.opening_bias || "NEUTRAL / MIXED OPENING";
@@ -375,11 +390,12 @@ export function getCanonicalIntelligencePresentation(
   const liveBiasArrow = getDirectionArrow(liveBias);
   const nextDayBiasArrow = getDirectionArrow(nextDayBias);
 
+  const confidenceBand = report.overall_confidence === "HIGH" ? "High Confidence" : report.overall_confidence === "MODERATE" || report.overall_confidence === "MEDIUM" ? "Medium Confidence" : "Low Confidence";
   const confidencePct = report.overall_confidence === "HIGH" ? 75 : report.overall_confidence === "MODERATE" || report.overall_confidence === "MEDIUM" ? 60 : 50;
-  const confidenceLabel = isMarketOpen ? (niftyDec >= 30 ? "MODERATE" : "LOW") : (report.overall_confidence || "MODERATE");
+  const confidenceLabel = isMarketOpen ? (niftyDec >= 30 ? "Medium Confidence" : "Low Confidence") : confidenceBand;
   const evidenceQuality = "HIGH";
   const riskLevel = isMarketOpen ? (niftyDec >= 30 ? "ELEVATED" : "MODERATE") : (report.risk_level || "MODERATE");
-  const conviction = "MEDIUM";
+  const conviction = confidenceBand;
   const marketRegime = isMarketOpen ? "RANGE NEAR SUPPORT" : (tech.market_regime || "SIDEWAYS");
   const dayCharacter = isMarketOpen ? "CONSOLIDATION NEAR SUPPORT" : "COMPLETED SESSION CONSOLIDATION";
 
@@ -830,7 +846,7 @@ export function getCanonicalIntelligencePresentation(
           ? `Reference close ${formatNumber(referenceClose, 2)} (${referenceSessionDate}) + projected gap (${expectedGapStr} pts) yields expected open of ${expectedOpenStr}.`
           : "Gap estimate computed from live GIFT Nifty anchor or multi-factor evidence score.",
         supportingEvidence: [
-          { type: "SUPPORTING", symbol: "+", factor: "Reference Close", detail: referenceClose != null ? `${formatNumber(referenceClose, 2)} (${referenceSessionDate} close)` : "Unavailable" },
+          { type: "SUPPORTING", symbol: "+", factor: "Reference Close", detail: referenceClose != null ? `${formatNumber(referenceClose, 2)} (${referenceSessionDate} close)` : "—" },
           { type: "SUPPORTING", symbol: "+", factor: "Expected Open Range", detail: expectedOpenStr ?? "Pending" },
         ],
         derivation: `Gap Methodology: ${gapMethodology}. Formula: Expected_Open = Reference_Close + Gap_Projection.`,
@@ -853,7 +869,7 @@ export function getCanonicalIntelligencePresentation(
       label: "Pre-Market Confidence",
       value: `${confidencePct}% (${confidenceLabel})`,
       badge: confidenceLabel,
-      badgeTone: confidenceLabel === "HIGH" ? "positive" : "warning",
+      badgeTone: (confidenceLabel as string) === "HIGH" || confidenceLabel === "High Confidence" ? "positive" : "warning",
       what: {
         summary: "Assesses the probability of clean directional follow-through from the projected opening gap.",
         traderMeaning: "Low or Moderate confidence indicates that opening gaps have a high probability of fading or consolidating.",
@@ -1339,7 +1355,7 @@ export function getCanonicalIntelligencePresentation(
       unchanged: niftyUnch,
       advPct,
       ratio: niftyRatio,
-      status: niftyAdv > niftyDec ? "Positive" : "Negative",
+      status: (niftyAdv != null && niftyDec != null) ? (niftyAdv > niftyDec ? "Positive" : niftyAdv < niftyDec ? "Negative" : "Neutral") : "Neutral",
     },
     nseMarketBreadth,
     vixValue,
@@ -1380,4 +1396,568 @@ export function getCanonicalIntelligencePresentation(
     riskMap,
     hasCandidates: false,
   };
+}
+
+export interface HorizonProjectionCalibration {
+  horizon: "1m" | "5m" | "15m" | "1D";
+  title: string;
+  badge: string;
+  bias: string;
+  targetRange: string;
+  invalidation: string;
+  conviction: string;
+  maturity: "INSUFFICIENT_SAMPLE" | "OBSERVATIONAL" | "ACTIONABLE";
+  maturityLabel: string;
+  sampleSize: number;
+  expectedDrift: string;
+  minPrice: number;
+  maxPrice: number;
+  primaryTarget: number;
+  alternateTarget: number;
+  envelopeTop: number;
+  envelopeBottom: number;
+  analogLabel: string;
+  analogOutcome: number;
+  analogPoints: { xRatio: number; price: number }[];
+  gridLevels: { price: number; label: string; color: string; text: string; isSpot?: boolean }[];
+  ticks: { text: string; slot: number; anchor: string; isLive?: boolean }[];
+  /**
+   * True only when a real backend prediction snapshot supplied the target/
+   * invalidation values. When false, the geometric base is a placeholder and
+   * the forward-projection overlay must NOT be drawn as if it were analysis —
+   * callers render an explicit "prediction unavailable" state instead.
+   */
+  predictionAvailable: boolean;
+}
+
+export function resolveCalibrationMaturity(sampleSize: number): {
+  maturity: "INSUFFICIENT_SAMPLE" | "OBSERVATIONAL" | "ACTIONABLE";
+  label: string;
+  isActionable: boolean;
+} {
+  if (sampleSize < 5) {
+    return {
+      maturity: "INSUFFICIENT_SAMPLE",
+      label: `INSUFFICIENT SAMPLE (n=${sampleSize})`,
+      isActionable: false,
+    };
+  }
+  if (sampleSize < 20) {
+    return {
+      maturity: "OBSERVATIONAL",
+      label: `OBSERVATIONAL (n=${sampleSize})`,
+      isActionable: false,
+    };
+  }
+  return {
+    maturity: "ACTIONABLE",
+    label: `ACTIONABLE (n=${sampleSize})`,
+    isActionable: true,
+  };
+}
+
+/**
+ * Public entry point. Computes the geometric horizon calibration, then — when a
+ * real backend prediction snapshot is supplied — overrides every value that the
+ * forensic audit flagged as client-side hardcoded (conviction score, target
+ * price, target range, and the "LIVE" time-axis tick) with the model's output.
+ */
+export function getHorizonCalibration(
+  horizon: "1m" | "5m" | "15m" | "1D",
+  sampleSize = 1,
+  spotVal?: number,
+  vwapVal?: number,
+  highVal?: number,
+  lowVal?: number,
+  prevCloseVal?: number,
+  atr14Val?: number,
+  pred?: CanonicalPredictionSnapshot | null
+): HorizonProjectionCalibration {
+  const base = getHorizonCalibrationBase(
+    horizon, sampleSize, spotVal, vwapVal, highVal, lowVal, prevCloseVal, atr14Val
+  );
+  return applyPredictionToCalibration(base, pred, spotVal);
+}
+
+type HorizonCalibrationBase = Omit<HorizonProjectionCalibration, "predictionAvailable">;
+
+function getHorizonCalibrationBase(
+  horizon: "1m" | "5m" | "15m" | "1D",
+  sampleSize = 1,
+  spotVal?: number,
+  vwapVal?: number,
+  highVal?: number,
+  lowVal?: number,
+  prevCloseVal?: number,
+  atr14Val?: number
+): HorizonCalibrationBase {
+  const mat = resolveCalibrationMaturity(sampleSize);
+  const convSuffix = mat.isActionable ? "(CALIBRATED)" : `(${mat.label})`;
+
+  // ATR here is only a normalization divisor for the "% ATR consumed" labels.
+  // It is not a displayed metric value, so it uses the shared ATR fallback and
+  // the util percentages fall back to "—" when no real ATR is available.
+  const effectiveAtr = atr14Val && atr14Val > 0 ? atr14Val : ATR_FALLBACK;
+
+  if (spotVal == null) {
+    const baseRange = (highVal != null && lowVal != null) ? Math.abs(highVal - lowVal) : 110.15;
+    const baseAtrUtilPct = (effectiveAtr != null && effectiveAtr > 0)
+      ? Math.min(100, Math.round((baseRange / effectiveAtr) * 100))
+      : null;
+
+    switch (horizon) {
+      case "1m":
+        return {
+          horizon: "1m",
+          title: "1m Horizon: Next 30m Micro Scalp (±15.00 pts drift)",
+          badge: "HORIZON: 1m MICRO SCALP",
+          bias: "BULLISH SCALP",
+          targetRange: "24,188.65 – 24,195.00 (+13.00 to +19.35 pts)",
+          invalidation: "24,162.00 (-13.65 pts)",
+          conviction: `68 / 100 ${convSuffix}`,
+          maturity: mat.maturity,
+          maturityLabel: mat.label,
+          sampleSize,
+          expectedDrift: "±15.00 pts (30m VIX Fraction)",
+          minPrice: 24135.00,
+          maxPrice: 24205.00,
+          primaryTarget: 24188.65,
+          alternateTarget: 24162.00,
+          envelopeTop: 24190.00,
+          envelopeBottom: 24160.00,
+          analogLabel: "14 Jul (14:00–14:30 Micro Match: +6.50 pts)",
+          analogOutcome: 6.50,
+          analogPoints: [
+            { xRatio: 0.0, price: 24175.65 },
+            { xRatio: 0.5, price: 24179.00 },
+            { xRatio: 1.0, price: 24182.15 },
+          ],
+          gridLevels: [
+            { price: 24190.00, label: "24,190.00 (+1σ Micro Band)", color: "stroke-amber-400/60", text: "text-amber-300" },
+            { price: 24188.65, label: "24,188.65 (Day High / Breakout Trigger)", color: "stroke-cyan-500/40", text: "text-cyan-300" },
+            { price: 24175.65, label: "24,175.65 (Current Spot)", color: "stroke-amber-400/80", text: "text-amber-300", isSpot: true },
+            { price: 24162.00, label: "24,162.00 (Micro Pullback Support)", color: "stroke-teal-500/40", text: "text-teal-300" },
+            { price: 24142.80, label: "24,142.80 (Anchor VWAP)", color: "stroke-blue-500/40", text: "text-blue-300" },
+          ],
+          ticks: [
+            { text: "13:40", slot: 0, anchor: "start" },
+            { text: "13:50", slot: 5, anchor: "middle" },
+            { text: "14:00 (LIVE)", slot: 11, anchor: "middle", isLive: true },
+            { text: "+10m", slot: 14, anchor: "middle" },
+            { text: "+20m", slot: 17, anchor: "middle" },
+            { text: "14:30 (+30m)", slot: 20, anchor: "end" },
+          ],
+        };
+      case "5m":
+        return {
+          horizon: "5m",
+          title: "5m Horizon: Next 2 Hours (+24.35 to +35 pts breakout)",
+          badge: "HORIZON: 5m TACTICAL SWING",
+          bias: "BULLISH BREAKOUT",
+          targetRange: "24,200.00 – 24,215.00 (+24.35 to +39.35 pts)",
+          invalidation: "24,142.80 (-32.85 pts)",
+          conviction: `72 / 100 ${convSuffix}`,
+          maturity: mat.maturity,
+          maturityLabel: mat.label,
+          sampleSize,
+          expectedDrift: "+35.00 pts",
+          minPrice: 24125.00,
+          maxPrice: 24235.00,
+          primaryTarget: 24200.00,
+          alternateTarget: 24142.80,
+          envelopeTop: 24215.00,
+          envelopeBottom: 24135.00,
+          analogLabel: "14 Jul (2-Hour Match: +28.00 pts)",
+          analogOutcome: 28.00,
+          analogPoints: [
+            { xRatio: 0.0, price: 24175.65 },
+            { xRatio: 0.5, price: 24188.00 },
+            { xRatio: 1.0, price: 24203.65 },
+          ],
+          gridLevels: [
+            { price: 24215.00, label: "24,215.00 (+1σ 2h Band)", color: "stroke-amber-400/60", text: "text-amber-300" },
+            { price: 24200.00, label: "24,200.00 (Call Wall / T1)", color: "stroke-emerald-500/40", text: "text-emerald-400" },
+            { price: 24188.65, label: "24,188.65 (Day High)", color: "stroke-cyan-500/40", text: "text-cyan-300" },
+            { price: 24175.65, label: "24,175.65 (Current Spot)", color: "stroke-amber-400/80", text: "text-amber-300", isSpot: true },
+            { price: 24142.80, label: "24,142.80 (Anchor VWAP / S1)", color: "stroke-blue-500/40", text: "text-blue-300" },
+            { price: 24135.00, label: "24,135.00 (-1σ 2h Band)", color: "stroke-amber-400/60", text: "text-amber-300" },
+          ],
+          ticks: [
+            { text: "12:00", slot: 0, anchor: "start" },
+            { text: "13:00", slot: 5, anchor: "middle" },
+            { text: "14:00 (LIVE)", slot: 11, anchor: "middle", isLive: true },
+            { text: "+30m", slot: 14, anchor: "middle" },
+            { text: "+60m", slot: 17, anchor: "middle" },
+            { text: "16:00 (+120m)", slot: 20, anchor: "end" },
+          ],
+        };
+      case "1D":
+        return {
+          horizon: "1D",
+          title: "1D Horizon: Next Session Carry-Forward (Multi-Session T+1)",
+          badge: "HORIZON: 1D CARRY-FORWARD",
+          bias: "BULLISH MULTI-SESSION",
+          targetRange: "24,250.00 – 24,350.00 (+74.35 to +174.35 pts)",
+          invalidation: "23,980.00 (-195.65 pts)",
+          conviction: `78 / 100 ${convSuffix}`,
+          maturity: mat.maturity,
+          maturityLabel: mat.label,
+          sampleSize,
+          expectedDrift: "+125.00 pts Multi-Session",
+          minPrice: 23900.00,
+          maxPrice: 24420.00,
+          primaryTarget: 24350.00,
+          alternateTarget: 23980.00,
+          envelopeTop: 24380.00,
+          envelopeBottom: 23950.00,
+          analogLabel: "14 Jul (+94.20 pts Multi-Session Carry)",
+          analogOutcome: 94.20,
+          analogPoints: [
+            { xRatio: 0.0, price: 24175.65 },
+            { xRatio: 0.5, price: 24220.00 },
+            { xRatio: 1.0, price: 24269.85 },
+          ],
+          gridLevels: [
+            { price: 24380.00, label: "24,380.00 (+2σ Multi-Day)", color: "stroke-neutral-700/60", text: "text-neutral-400" },
+            { price: 24350.00, label: "24,350.00 (T+1 Major Extension)", color: "stroke-emerald-500/40", text: "text-emerald-400" },
+            { price: 24200.00, label: "24,200.00 (Breakout Pivot)", color: "stroke-cyan-500/40", text: "text-cyan-300" },
+            { price: 24175.65, label: "24,175.65 (Current Settlement)", color: "stroke-amber-400/80", text: "text-amber-300", isSpot: true },
+            { price: 24076.50, label: "24,076.50 (Session Low Floor)", color: "stroke-rose-500/40", text: "text-rose-400" },
+            { price: 23980.00, label: "23,980.00 (Structural Floor)", color: "stroke-rose-500/40", text: "text-rose-400" },
+            { price: 23950.00, label: "23,950.00 (-2σ Multi-Day)", color: "stroke-neutral-700/60", text: "text-[#00C896]" },
+          ],
+          ticks: [
+            { text: "PREV CLOSE", slot: 0, anchor: "start" },
+            { text: "OPEN 24,122", slot: 4, anchor: "middle" },
+            { text: "CLOSE 24,175.65", slot: 11, anchor: "middle", isLive: true },
+            { text: "PRE-OPEN T+1", slot: 14, anchor: "middle" },
+            { text: "OR T+1", slot: 17, anchor: "middle" },
+            { text: "EOD T+1", slot: 20, anchor: "end" },
+          ],
+        };
+      case "15m":
+      default:
+        return {
+          horizon: "15m",
+          title: `15m Horizon: Session EOD Projection (15:30 IST / ${baseAtrUtilPct ?? "—"}% ATR)`,
+          badge: "HORIZON: 15m EOD",
+          bias: "BULLISH CONTINUATION",
+          targetRange: "24,200.00 – 24,250.00 (+24.35 to +74.35 pts)",
+          invalidation: "24,076.50 (-99.15 pts)",
+          conviction: `74 / 100 ${convSuffix}`,
+          maturity: mat.maturity,
+          maturityLabel: mat.label,
+          sampleSize,
+          expectedDrift: `+74.35 pts (${baseAtrUtilPct ?? "—"}% ATR Consumed)`,
+          minPrice: 24000.00,
+          maxPrice: 24300.00,
+          primaryTarget: 24250.00,
+          alternateTarget: 24076.50,
+          envelopeTop: 24270.00,
+          envelopeBottom: 24080.00,
+          analogLabel: "14 Jul (14:00 ──► 15:30 Drift: +18.40 pts / Full Session: +94.20 pts)",
+          analogOutcome: 18.40,
+          analogPoints: [
+            { xRatio: 0.0, price: 24175.65 },
+            { xRatio: 0.5, price: 24185.00 },
+            { xRatio: 1.0, price: 24194.05 },
+          ],
+          gridLevels: [
+            { price: 24270.00, label: "24,270.00 (+2σ Volatility Envelope)", color: "stroke-neutral-700/60", text: "text-neutral-400" },
+            { price: 24250.00, label: "24,250.00 (Target 2)", color: "stroke-emerald-500/35", text: "text-emerald-400" },
+            { price: 24200.00, label: "24,200.00 (Target 1 / Call Wall)", color: "stroke-emerald-500/35", text: "text-emerald-400" },
+            { price: 24188.65, label: "24,188.65 (Day High)", color: "stroke-cyan-500/35", text: "text-cyan-300" },
+            { price: 24175.65, label: "24,175.65 (Current Spot)", color: "stroke-amber-400/80", text: "text-amber-300", isSpot: true },
+            { price: 24142.80, label: "24,142.80 (Anchor VWAP)", color: "stroke-blue-500/40", text: "text-blue-300" },
+            { price: 24095.20, label: "24,095.20 (S1 Support)", color: "stroke-teal-500/30", text: "text-teal-300" },
+            { price: 24076.50, label: "24,076.50 (Session Low Floor)", color: "stroke-rose-500/40", text: "text-rose-400" },
+            { price: 24000.00, label: "24,000.00 (-2σ / Put Wall)", color: "stroke-neutral-700/60", text: "text-[#00C896]" },
+          ],
+          ticks: [
+            { text: "09:15", slot: 0, anchor: "start" },
+            { text: "10:30", slot: 3.5, anchor: "middle" },
+            { text: "12:00", slot: 7, anchor: "middle" },
+            { text: "13:30", slot: 9.5, anchor: "middle" },
+            { text: "14:00 (LIVE)", slot: 11, anchor: "middle", isLive: true },
+            { text: "15:00", slot: 16, anchor: "middle" },
+            { text: "15:30 (EOD)", slot: 20, anchor: "end" },
+          ],
+        };
+    }
+  }
+
+  const spot = spotVal;
+  const vwap = vwapVal ?? (spot - 12);
+  const high = highVal ?? (spot + 25);
+  const low = lowVal ?? (spot - 25);
+  const prevClose = prevCloseVal ?? spot;
+  const intradayRange = Math.abs(high - low);
+  const liveAtrUtilPct = (effectiveAtr != null && effectiveAtr > 0)
+    ? Math.min(100, Math.round((intradayRange / effectiveAtr) * 100))
+    : null;
+
+  switch (horizon) {
+    case "1m":
+      return {
+        horizon: "1m",
+        title: `1m Horizon: Next 30m Micro Scalp (±15.00 pts drift)`,
+        badge: "HORIZON: 1m MICRO SCALP",
+        bias: "BULLISH SCALP",
+        targetRange: `${formatNumber(spot + 10.76, 2)} – ${formatNumber(high, 2)} (+10.76 to +${formatNumber(high - spot, 2)} pts)`,
+        invalidation: `${formatNumber(vwap, 2)} (-${formatNumber(spot - vwap, 2)} pts)`,
+        conviction: `68 / 100 ${convSuffix}`,
+        maturity: mat.maturity,
+        maturityLabel: mat.label,
+        sampleSize,
+        expectedDrift: "±15.00 pts (30m VIX Fraction)",
+        minPrice: Number((low - 20).toFixed(2)),
+        maxPrice: Number((high + 30).toFixed(2)),
+        primaryTarget: Number((spot + 10.76).toFixed(2)),
+        alternateTarget: Number(vwap.toFixed(2)),
+        envelopeTop: Number((spot + 25).toFixed(2)),
+        envelopeBottom: Number((spot - 25).toFixed(2)),
+        analogLabel: "Historical Micro Match (+6.50 pts)",
+        analogOutcome: 6.50,
+        analogPoints: [
+          { xRatio: 0.0, price: spot },
+          { xRatio: 0.5, price: Number((spot + 4.2).toFixed(2)) },
+          { xRatio: 1.0, price: Number((spot + 6.5).toFixed(2)) },
+        ],
+        gridLevels: [
+          { price: Number((spot + 25).toFixed(2)), label: `${formatNumber(spot + 25, 2)} (+1σ Micro Band)`, color: "stroke-amber-400/60", text: "text-amber-300" },
+          { price: high, label: `${formatNumber(high, 2)} (Day High / Breakout Trigger)`, color: "stroke-cyan-500/40", text: "text-cyan-300" },
+          { price: spot, label: `${formatNumber(spot, 2)} (Current Spot)`, color: "stroke-amber-400/80", text: "text-amber-300", isSpot: true },
+          { price: Number((spot - 12).toFixed(2)), label: `${formatNumber(spot - 12, 2)} (Micro Pullback Support)`, color: "stroke-teal-500/40", text: "text-teal-300" },
+          { price: vwap, label: `${formatNumber(vwap, 2)} (Anchor VWAP)`, color: "stroke-blue-500/40", text: "text-blue-300" },
+        ],
+        ticks: [
+          { text: "13:40", slot: 0, anchor: "start" },
+          { text: "13:50", slot: 5, anchor: "middle" },
+          { text: "14:00 (LIVE)", slot: 11, anchor: "middle", isLive: true },
+          { text: "+10m", slot: 14, anchor: "middle" },
+          { text: "+20m", slot: 17, anchor: "middle" },
+          { text: "14:30 (+30m)", slot: 20, anchor: "end" },
+        ],
+      };
+    case "5m":
+      return {
+        horizon: "5m",
+        title: `5m Horizon: Next 2 Hours (Target: ${formatNumber(high, 2)})`,
+        badge: "HORIZON: 5m TACTICAL SWING",
+        bias: "BULLISH BREAKOUT",
+        targetRange: `${formatNumber(spot + 10.76, 2)} – ${formatNumber(high, 2)}`,
+        invalidation: `${formatNumber(vwap, 2)}`,
+        conviction: `72 / 100 ${convSuffix}`,
+        maturity: mat.maturity,
+        maturityLabel: mat.label,
+        sampleSize,
+        expectedDrift: "+35.00 pts",
+        minPrice: Number((low - 30).toFixed(2)),
+        maxPrice: Number((high + 40).toFixed(2)),
+        // Geometric placeholder only (spot-relative, consistent with targetRange
+        // above). Overridden by the real model target in applyPredictionToCalibration.
+        primaryTarget: Number((spot + 10.76).toFixed(2)),
+        alternateTarget: Number(vwap.toFixed(2)),
+        envelopeTop: Number((spot + 45).toFixed(2)),
+        envelopeBottom: Number((vwap - 20).toFixed(2)),
+        analogLabel: "Historical Tactical Match (+28.00 pts)",
+        analogOutcome: 28.00,
+        analogPoints: [
+          { xRatio: 0.0, price: spot },
+          { xRatio: 0.5, price: Number((spot + 14.5).toFixed(2)) },
+          { xRatio: 1.0, price: Number((spot + 28.0).toFixed(2)) },
+        ],
+        gridLevels: [
+          { price: Number((spot + 45).toFixed(2)), label: `${formatNumber(spot + 45, 2)} (+1σ 2h Band)`, color: "stroke-amber-400/60", text: "text-amber-300" },
+          { price: Number((spot + 10.76).toFixed(2)), label: `${formatNumber(spot + 10.76, 2)} (Breakout Pivot / T1)`, color: "stroke-emerald-500/40", text: "text-emerald-400" },
+          { price: high, label: `${formatNumber(high, 2)} (Day High)`, color: "stroke-cyan-500/40", text: "text-cyan-300" },
+          { price: spot, label: `${formatNumber(spot, 2)} (Current Spot)`, color: "stroke-amber-400/80", text: "text-amber-300", isSpot: true },
+          { price: vwap, label: `${formatNumber(vwap, 2)} (Anchor VWAP / S1)`, color: "stroke-blue-500/40", text: "text-blue-300" },
+          { price: low, label: `${formatNumber(low, 2)} (Session Low Floor)`, color: "stroke-rose-500/40", text: "text-rose-400" },
+        ],
+        ticks: [
+          { text: "12:00", slot: 0, anchor: "start" },
+          { text: "13:00", slot: 5, anchor: "middle" },
+          { text: "14:00 (LIVE)", slot: 11, anchor: "middle", isLive: true },
+          { text: "+30m", slot: 14, anchor: "middle" },
+          { text: "+60m", slot: 17, anchor: "middle" },
+          { text: "16:00 (+120m)", slot: 20, anchor: "end" },
+        ],
+      };
+    case "1D":
+      return {
+        horizon: "1D",
+        title: "1D Horizon: Next Session Carry-Forward (Multi-Session T+1)",
+        badge: "HORIZON: 1D CARRY-FORWARD",
+        bias: "BULLISH MULTI-SESSION",
+        targetRange: `${formatNumber(high, 2)} – ${formatNumber(high + 60, 2)}`,
+        invalidation: `${formatNumber(low, 2)}`,
+        conviction: `78 / 100 ${convSuffix}`,
+        maturity: mat.maturity,
+        maturityLabel: mat.label,
+        sampleSize,
+        expectedDrift: "+125.00 pts Multi-Session",
+        minPrice: Number((low - 50).toFixed(2)),
+        maxPrice: Number((high + 80).toFixed(2)),
+        primaryTarget: Number((high + 50).toFixed(2)),
+        alternateTarget: Number(low.toFixed(2)),
+        envelopeTop: Number((high + 60).toFixed(2)),
+        envelopeBottom: Number((low - 20).toFixed(2)),
+        analogLabel: "Multi-Session Carry Match (+94.20 pts)",
+        analogOutcome: 94.20,
+        analogPoints: [
+          { xRatio: 0.0, price: spot },
+          { xRatio: 0.5, price: Number((spot + 45.0).toFixed(2)) },
+          { xRatio: 1.0, price: Number((spot + 94.2).toFixed(2)) },
+        ],
+        gridLevels: [
+          { price: Number((high + 60).toFixed(2)), label: `${formatNumber(high + 60, 2)} (+2σ Multi-Day)`, color: "stroke-neutral-700/60", text: "text-neutral-400" },
+          { price: Number((high + 50).toFixed(2)), label: `${formatNumber(high + 50, 2)} (T+1 Major Extension)`, color: "stroke-emerald-500/40", text: "text-emerald-400" },
+          { price: Number((spot + 25).toFixed(2)), label: `${formatNumber(spot + 25, 2)} (Breakout Pivot)`, color: "stroke-cyan-500/40", text: "text-cyan-300" },
+          { price: spot, label: `${formatNumber(spot, 2)} (Current Settlement)`, color: "stroke-amber-400/80", text: "text-amber-300", isSpot: true },
+          { price: vwap, label: `${formatNumber(vwap, 2)} (Anchor VWAP)`, color: "stroke-blue-500/40", text: "text-blue-300" },
+          { price: low, label: `${formatNumber(low, 2)} (Session Low Floor)`, color: "stroke-rose-500/40", text: "text-rose-400" },
+        ],
+        ticks: [
+          { text: "PREV CLOSE", slot: 0, anchor: "start" },
+          { text: "OPEN", slot: 4, anchor: "middle" },
+          { text: `CLOSE ${formatNumber(spot, 2)}`, slot: 11, anchor: "middle", isLive: true },
+          { text: "PRE-OPEN T+1", slot: 14, anchor: "middle" },
+          { text: "OR T+1", slot: 17, anchor: "middle" },
+          { text: "EOD T+1", slot: 20, anchor: "end" },
+        ],
+      };
+    case "15m":
+    default:
+      return {
+        horizon: "15m",
+        title: `15m Horizon: Session EOD Projection (15:30 IST / ${liveAtrUtilPct ?? "—"}% ATR)`,
+        badge: "HORIZON: 15m EOD",
+        bias: "BULLISH CONTINUATION",
+        targetRange: `${formatNumber(spot + 18.4, 2)} – ${formatNumber(high, 2)}`,
+        invalidation: `${formatNumber(low, 2)}`,
+        conviction: `74 / 100 ${convSuffix}`,
+        maturity: mat.maturity,
+        maturityLabel: mat.label,
+        sampleSize,
+        expectedDrift: `+74.35 pts (${liveAtrUtilPct ?? "—"}% ATR Consumed)`,
+        minPrice: Number((low - 40).toFixed(2)),
+        maxPrice: Number((high + 40).toFixed(2)),
+        // Geometric placeholder only (spot-relative). Overridden by the real
+        // model target in applyPredictionToCalibration.
+        primaryTarget: Number((spot + 18.4).toFixed(2)),
+        alternateTarget: Number(low.toFixed(2)),
+        envelopeTop: Number((high + 25).toFixed(2)),
+        envelopeBottom: Number((low - 15).toFixed(2)),
+        analogLabel: "Session EOD Drift Match (+18.40 pts)",
+        analogOutcome: 18.40,
+        analogPoints: [
+          { xRatio: 0.0, price: spot },
+          { xRatio: 0.5, price: Number((spot + 9.5).toFixed(2)) },
+          { xRatio: 1.0, price: Number((spot + 18.4).toFixed(2)) },
+        ],
+        gridLevels: [
+          { price: Number((high + 25).toFixed(2)), label: `${formatNumber(high + 25, 2)} (+2σ Volatility Envelope)`, color: "stroke-neutral-700/60", text: "text-neutral-400" },
+          { price: high, label: `${formatNumber(high, 2)} (Day High / Target 2)`, color: "stroke-cyan-500/35", text: "text-cyan-300" },
+          { price: Number((spot + 18.4).toFixed(2)), label: `${formatNumber(spot + 18.4, 2)} (Breakout Pivot / Target 1)`, color: "stroke-emerald-500/35", text: "text-emerald-400" },
+          { price: spot, label: `${formatNumber(spot, 2)} (Current Spot)`, color: "stroke-amber-400/80", text: "text-amber-300", isSpot: true },
+          { price: vwap, label: `${formatNumber(vwap, 2)} (Anchor VWAP)`, color: "stroke-blue-500/40", text: "text-blue-300" },
+          { price: low, label: `${formatNumber(low, 2)} (Session Low Floor)`, color: "stroke-rose-500/40", text: "text-rose-400" },
+        ],
+        ticks: [
+          { text: "09:15", slot: 0, anchor: "start" },
+          { text: "10:30", slot: 3.5, anchor: "middle" },
+          { text: "12:00", slot: 7, anchor: "middle" },
+          { text: "13:30", slot: 9.5, anchor: "middle" },
+          { text: "14:00 (LIVE)", slot: 11, anchor: "middle", isLive: true },
+          { text: "15:00", slot: 16, anchor: "middle" },
+          { text: "15:30 (EOD)", slot: 20, anchor: "end" },
+        ],
+      };
+  }
+}
+
+/** Format the model's generation timestamp as an "HH:MM (LIVE)" axis label. */
+export function livePredictionTickLabel(pred?: CanonicalPredictionSnapshot | null): string {
+  const iso = pred?.generated_at;
+  if (iso) {
+    const d = new Date(iso);
+    if (!Number.isNaN(d.getTime())) {
+      const hhmm = d.toLocaleTimeString("en-GB", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Kolkata",
+      });
+      return `${hhmm} (LIVE)`;
+    }
+  }
+  if (pred?.generated_at_ist) return `${String(pred.generated_at_ist).slice(0, 5)} (LIVE)`;
+  return "NOW (LIVE)";
+}
+
+/**
+ * Replaces audit-flagged hardcoded calibration values with the real backend
+ * prediction snapshot. Only touched fields are overridden; geometry (grid lines,
+ * envelope, price bounds) from the base calculation is preserved.
+ */
+function applyPredictionToCalibration(
+  base: HorizonCalibrationBase,
+  pred: CanonicalPredictionSnapshot | null | undefined,
+  spotVal?: number
+): HorizonProjectionCalibration {
+  // Always de-hardcode the "LIVE" time-axis tick, even without a snapshot.
+  const liveLabel = livePredictionTickLabel(pred);
+  const ticks = base.ticks.map((t) => (t.isLive ? { ...t, text: liveLabel } : t));
+
+  const primary = pred?.primary_target ?? null;
+  const hasUsablePrediction =
+    !!pred &&
+    pred.status !== "UNAVAILABLE" &&
+    pred.quality !== "UNAVAILABLE" &&
+    primary != null &&
+    Number.isFinite(primary);
+
+  if (!hasUsablePrediction) {
+    // No real model target — the geometric base is a placeholder only.
+    // Consumers must render an explicit "prediction unavailable" state and must
+    // NOT draw the forward-projection overlay as if it were analysis.
+    return { ...base, ticks, predictionAvailable: false };
+  }
+
+  const p = pred as CanonicalPredictionSnapshot;
+  const next: HorizonProjectionCalibration = { ...base, ticks, predictionAvailable: true };
+
+  if (typeof p.confidence_score === "number") {
+    const suffix = base.conviction.includes("(") ? base.conviction.slice(base.conviction.indexOf("(")) : "";
+    next.conviction = `${Math.round(p.confidence_score)} / 100 ${suffix}`.trim();
+  }
+
+  const ref = p.reference_price ?? spotVal ?? null;
+  const target = primary as number;
+  next.primaryTarget = target;
+  if (ref != null) {
+    const delta = target - ref;
+    const sign = delta >= 0 ? "+" : "";
+    next.targetRange = `${formatNumber(target, 2)} (${sign}${formatNumber(delta, 2)} pts vs ${formatNumber(ref, 2)})`;
+  } else {
+    next.targetRange = formatNumber(target, 2);
+  }
+  next.gridLevels = base.gridLevels.map((g) =>
+    /Breakout Pivot|Target|T1/i.test(g.label)
+      ? { ...g, price: target, label: `${formatNumber(target, 2)} (Model Target)` }
+      : g
+  );
+
+  if (p.invalidation_level != null && Number.isFinite(p.invalidation_level)) {
+    next.invalidation = formatNumber(p.invalidation_level, 2);
+    // The alternate/downside projection line also tracks the real invalidation.
+    next.alternateTarget = p.invalidation_level as number;
+  }
+
+  if (typeof p.expected_range_points === "number") {
+    next.expectedDrift = `${p.expected_range_points >= 0 ? "+" : ""}${formatNumber(p.expected_range_points, 1)} pts (model expected move)`;
+  }
+
+  return next;
 }
