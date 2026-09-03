@@ -3503,6 +3503,20 @@ class WorkstationStateService:
         vix_exchange_ts = _iso_or_none(getattr(vix_state, "exchange_timestamp", None))
         vix_received_ts = _iso_or_none(getattr(vix_state, "received_at", None))
 
+        # A GENUINE live tick = a positive price that arrived from the streaming
+        # feed WITH a real exchange timestamp. "spot is not None" is NOT enough —
+        # spot is later back-filled from a recorded snapshot / disk candle cache,
+        # and treating that as a live feed is exactly the DEGRADED-state
+        # fabrication (fake HEALTHY feed_health, current-timestamped tick, stale
+        # last_price marked VALID). Every "live" claim in the envelope is gated
+        # on has_live_tick below.
+        has_live_tick = bool(
+            nifty_state is not None
+            and getattr(nifty_state, "last_price", None)
+            and float(nifty_state.last_price) > 0
+            and nifty_exchange_ts is not None
+        )
+
         # Check StreamingOrchestrator live ticks directly
         if spot is None or vix is None or nifty_exchange_ts is None or vix_exchange_ts is None:
             try:
@@ -3515,18 +3529,23 @@ class WorkstationStateService:
                         spot = float(nifty_tick.get("last_price"))
                     if vix is None and vix_tick and float(vix_tick.get("last_price", 0.0)) > 0:
                         vix = float(vix_tick.get("last_price"))
-                    if nifty_exchange_ts is None and nifty_tick:
-                        nifty_exchange_ts = _iso_or_none(nifty_tick.get("exchange_timestamp") or nifty_tick.get("timestamp"))
-                        nifty_received_ts = nifty_received_ts or _iso_or_none(nifty_tick.get("received_at")) or nifty_exchange_ts
-                    if vix_exchange_ts is None and vix_tick:
+                    if nifty_exchange_ts is None and nifty_tick and float(nifty_tick.get("last_price", 0.0)) > 0:
+                        _n_ts = _iso_or_none(nifty_tick.get("exchange_timestamp") or nifty_tick.get("timestamp"))
+                        if _n_ts is not None:
+                            nifty_exchange_ts = _n_ts
+                            nifty_received_ts = nifty_received_ts or _iso_or_none(nifty_tick.get("received_at")) or _n_ts
+                            has_live_tick = True
+                    if vix_exchange_ts is None and vix_tick and float(vix_tick.get("last_price", 0.0)) > 0:
                         vix_exchange_ts = _iso_or_none(vix_tick.get("exchange_timestamp") or vix_tick.get("timestamp"))
                         vix_received_ts = vix_received_ts or _iso_or_none(vix_tick.get("received_at")) or vix_exchange_ts
             except Exception:
                 pass
 
-        legacy_market_observed = _iso_or_none(
-            m_ctx.get("exchange_timestamp") or m_ctx.get("observed_at") or m_ctx.get("timestamp")
-        )
+        # Legacy market-context observation time is only trustworthy as a real
+        # exchange timestamp — NEVER `observed_at` / `timestamp`, which the daemon
+        # sets to server-generation time and would put a live-looking timestamp on
+        # data that never arrived from Kite.
+        legacy_market_observed = _iso_or_none(m_ctx.get("exchange_timestamp"))
         if nifty_exchange_ts is None:
             nifty_exchange_ts = legacy_market_observed
         if nifty_received_ts is None:
@@ -3556,27 +3575,59 @@ class WorkstationStateService:
                 spot = float(c_val)
 
         is_live_hours = sess_ctx.is_trading_day and (market_phase in ("MARKET_OPEN", "OPEN", "OPENING_RANGE", "NEAR_CLOSE"))
-        is_live_stream = is_live_hours and (spot is not None)
+        # Live only when a genuine tick actually arrived — NOT merely because a
+        # spot value could be reconstructed from a snapshot / candle cache.
+        is_live_stream = is_live_hours and has_live_tick
+
+        # `spot` may hold a best-effort value reconstructed from a recorded
+        # snapshot or the disk candle cache for internal computations, but any
+        # OUTPUT field that asserts a live price must use `live_price`, which is
+        # only populated by a genuine live tick.
+        live_price = spot if has_live_tick else None
 
         from src.storage import LightweightSessionStore
         store = LightweightSessionStore.get_instance()
         close_core = store.load_latest_session_close()
 
-        settled_close = close_core.market_ohlcv.close if (close_core and close_core.market_ohlcv) else None
-        settled_open = close_core.market_ohlcv.open if (close_core and close_core.market_ohlcv) else None
-        settled_high = close_core.market_ohlcv.high if (close_core and close_core.market_ohlcv) else None
-        settled_low = close_core.market_ohlcv.low if (close_core and close_core.market_ohlcv) else None
-        settled_prev_close = close_core.market_ohlcv.previous_close if (close_core and close_core.market_ohlcv) else None
-        settled_vwap = close_core.session_vwap if close_core else None
-        settled_or_high = close_core.or_high if close_core else None
-        settled_or_low = close_core.or_low if close_core else None
-        settled_range = close_core.market_ohlcv.session_range_points if (close_core and close_core.market_ohlcv) else None
-        settled_atr = close_core.structural_levels.raw_atr_14 if (close_core and close_core.structural_levels) else None
-        settled_levels = close_core.structural_levels.to_dict() if (close_core and close_core.structural_levels) else None
-        settled_vix = close_core.closing_vix.vix_close if (close_core and close_core.closing_vix) else None
-        settled_date = close_core.session_date if close_core else None
-        settled_breadth = close_core.closing_breadth.to_dict() if (close_core and hasattr(close_core, "closing_breadth") and close_core.closing_breadth) else None
-        settled_flows = close_core.institutional_flows.to_dict() if (close_core and hasattr(close_core, "institutional_flows") and close_core.institutional_flows) else None
+        _raw_settled_date = close_core.session_date if close_core else None
+        # The stored close is only "the previous / completed session" if its date
+        # actually matches what the calendar-authoritative session context says
+        # the last completed session was. On an instance that has not captured a
+        # live session for days, load_latest_session_close() returns a stale
+        # snapshot (e.g. 2026-08-28 while completed_session_date is 2026-09-02) —
+        # surfacing that as settled_session, previous_close and structural levels
+        # is the same class of fabrication. When stale, settled_* is dropped.
+        settled_is_current = bool(
+            close_core
+            and _raw_settled_date
+            and _raw_settled_date in {
+                sess_ctx.completed_session_date,
+                sess_ctx.previous_session_date,
+            }
+        )
+        if not settled_is_current and close_core:
+            logger.info(
+                "Canonical envelope: stored session close is stale "
+                f"({_raw_settled_date} vs completed {sess_ctx.completed_session_date}); "
+                "settled_session omitted."
+            )
+        _use_settled = close_core if settled_is_current else None
+
+        settled_close = _use_settled.market_ohlcv.close if (_use_settled and _use_settled.market_ohlcv) else None
+        settled_open = _use_settled.market_ohlcv.open if (_use_settled and _use_settled.market_ohlcv) else None
+        settled_high = _use_settled.market_ohlcv.high if (_use_settled and _use_settled.market_ohlcv) else None
+        settled_low = _use_settled.market_ohlcv.low if (_use_settled and _use_settled.market_ohlcv) else None
+        settled_prev_close = _use_settled.market_ohlcv.previous_close if (_use_settled and _use_settled.market_ohlcv) else None
+        settled_vwap = _use_settled.session_vwap if _use_settled else None
+        settled_or_high = _use_settled.or_high if _use_settled else None
+        settled_or_low = _use_settled.or_low if _use_settled else None
+        settled_range = _use_settled.market_ohlcv.session_range_points if (_use_settled and _use_settled.market_ohlcv) else None
+        settled_atr = _use_settled.structural_levels.raw_atr_14 if (_use_settled and _use_settled.structural_levels) else None
+        settled_levels = _use_settled.structural_levels.to_dict() if (_use_settled and _use_settled.structural_levels) else None
+        settled_vix = _use_settled.closing_vix.vix_close if (_use_settled and _use_settled.closing_vix) else None
+        settled_date = _use_settled.session_date if _use_settled else None
+        settled_breadth = _use_settled.closing_breadth.to_dict() if (_use_settled and hasattr(_use_settled, "closing_breadth") and _use_settled.closing_breadth) else None
+        settled_flows = _use_settled.institutional_flows.to_dict() if (_use_settled and hasattr(_use_settled, "institutional_flows") and _use_settled.institutional_flows) else None
 
         seq = len(cls._snapshots_history) or cls._last_persisted_seq or 1
 
@@ -3593,7 +3644,10 @@ class WorkstationStateService:
         live_open = (nifty_state.open if (is_live_stream and nifty_state and nifty_state.open) else None) or m_ctx.get("open") or settled_open
         live_high = (nifty_state.high if (is_live_stream and nifty_state and nifty_state.high) else None) or m_ctx.get("high") or settled_high
         live_low = (nifty_state.low if (is_live_stream and nifty_state and nifty_state.low) else None) or m_ctx.get("low") or settled_low
-        effective_prev_close = settled_close or m_ctx.get("previous_close")
+        # Previous close comes from a current settled session, or from the live
+        # feed's own prev-close field only when a live tick is actually flowing —
+        # never from a stale market-context snapshot.
+        effective_prev_close = settled_close or (m_ctx.get("previous_close") if has_live_tick else None)
 
         # Breadth calculations
         raw_b = m_ctx.get("breadth") or (legacy_state.get("breadth") if legacy_state else None) or (legacy_state.get("marketContext", {}).get("breadth") if legacy_state else None) or {}
@@ -3615,7 +3669,7 @@ class WorkstationStateService:
         opt_total_call_oi = int(o_ctx.get("total_call_oi") or 0)
         opt_total_put_oi = int(o_ctx.get("total_put_oi") or 0)
         opt_strikes = o_ctx.get("strike_universe") or o_ctx.get("strikes") or []
-        opt_atm_strike = float(o_ctx.get("atm_strike")) if o_ctx.get("atm_strike") else ((round(spot / 50.0) * 50.0) if spot else None)
+        opt_atm_strike = float(o_ctx.get("atm_strike")) if o_ctx.get("atm_strike") else ((round(live_price / 50.0) * 50.0) if live_price else None)
 
         # Filter strike_universe to active ATM ± 15 strikes (max 31 strikes sorted by strike price)
         if opt_strikes and opt_atm_strike:
@@ -3641,15 +3695,17 @@ class WorkstationStateService:
 
         conf_score = int(raw_conf.get("confidence_score") or raw_opp.get("opportunity_score") or raw_dec.get("confidence_score") or (74 if is_live_stream else 50))
         conf_band = raw_conf.get("confidence_band") or ("HIGH" if conf_score >= 70 else ("MODERATE" if conf_score >= 50 else "LOW"))
-        dec_headline = raw_dec.get("summary", {}).get("headline") or (f"Price holding firmly near {spot:,.2f} with supportive structure" if spot else "Evaluating live market structure")
+        dec_headline = raw_dec.get("summary", {}).get("headline") or (f"Price holding firmly near {live_price:,.2f} with supportive structure" if live_price else "Evaluating live market structure")
 
-        # Candidate Strike resolution with Greeks
+        # Candidate Strike resolution with Greeks — only from a genuine live spot,
+        # never from a reconstructed / stale spot value.
         strike_candidates = []
-        if spot and spot > 0:
-            cand_strike = opt_atm_strike or (round(spot / 50.0) * 50.0)
+        if live_price and live_price > 0:
+            spot = live_price
+            cand_strike = opt_atm_strike or (round(live_price / 50.0) * 50.0)
             vol_val = max(float(opt_atm_iv or 13.8) / 100.0 if (opt_atm_iv and opt_atm_iv > 0.5) else float(opt_atm_iv or 0.138), 0.05)
             greeks_res = calculate_black_scholes_greeks(
-                spot=spot,
+                spot=live_price,
                 strike=cand_strike,
                 time_to_expiry_years=2.0 / 365.0,
                 volatility=vol_val,
@@ -3683,7 +3739,7 @@ class WorkstationStateService:
         try:
             from src.prediction.live import LivePredictionService
             prediction_payload = LivePredictionService.get_prediction_payload(
-                market_context={**m_ctx, "current_spot": spot, "india_vix": vix,
+                market_context={**m_ctx, "current_spot": live_price, "india_vix": vix,
                                 "open": live_open, "high": live_high, "low": live_low,
                                 "previous_close": effective_prev_close,
                                 "session_date": active_date},
@@ -3707,7 +3763,7 @@ class WorkstationStateService:
             "state_revision": seq,
             "sequence_id": seq,
             "published_at": now_iso,
-            "market_observed_at": nifty_exchange_ts,
+            "market_observed_at": nifty_exchange_ts if has_live_tick else None,
             "is_live": is_live_stream,
             "data_quality": "LIVE" if is_live_stream else "UNAVAILABLE",
             "session": {
@@ -3715,6 +3771,9 @@ class WorkstationStateService:
                 "market_phase": market_phase,
                 "is_trading_day": sess_ctx.is_trading_day,
                 "active_trading_date": active_date,
+                # Calendar-authoritative dates. settled_date is only used as a
+                # fallback when it is actually current (see settled_is_current),
+                # so these can no longer disagree with settled_session.session_date.
                 "completed_session_date": sess_ctx.completed_session_date or settled_date or active_date,
                 "previous_session_date": sess_ctx.previous_session_date or settled_date or active_date,
                 "next_trading_date": sess_ctx.next_trading_date or active_date,
@@ -3725,24 +3784,24 @@ class WorkstationStateService:
                     "canonical_instrument_id": "NSE:NIFTY 50",
                     "symbol": "NIFTY 50",
                     "session_date": active_date,
-                    "last_price": spot if (spot is not None) else None,
-                    # Authoritative tick observation time (real exchange timestamp),
-                    # NOT the envelope generation time. May be from the last completed
-                    # session when the live feed is idle — the frontend badge surfaces that.
-                    "exchange_timestamp": nifty_exchange_ts,
-                    "received_at": nifty_received_ts,
+                    "last_price": live_price,
+                    # Real exchange timestamp of the last accepted tick, or null.
+                    # NEVER the envelope generation time and never a stale
+                    # market-context observation time.
+                    "exchange_timestamp": nifty_exchange_ts if has_live_tick else None,
+                    "received_at": nifty_received_ts if has_live_tick else None,
                     "open": live_open,
                     "high": live_high,
                     "low": live_low,
                     "previous_close": effective_prev_close,
-                    "change": round(spot - effective_prev_close, 2) if (spot is not None and effective_prev_close is not None) else None,
-                    "change_pct": round(((spot - effective_prev_close) / effective_prev_close) * 100, 2) if (spot is not None and effective_prev_close is not None and effective_prev_close > 0) else None,
+                    "change": round(live_price - effective_prev_close, 2) if (live_price is not None and effective_prev_close is not None) else None,
+                    "change_pct": round(((live_price - effective_prev_close) / effective_prev_close) * 100, 2) if (live_price is not None and effective_prev_close is not None and effective_prev_close > 0) else None,
                     "volume": nifty_state.volume if (is_live_stream and nifty_state) else 0,
                     "oi": nifty_state.oi if (is_live_stream and nifty_state) else None,
-                    "bid": spot if is_live_stream else None,
-                    "ask": spot if is_live_stream else None,
+                    "bid": live_price if is_live_stream else None,
+                    "ask": live_price if is_live_stream else None,
                     "spread": 0.05 if is_live_stream else None,
-                    "provider": "KiteMarketFeed",
+                    "provider": "KiteMarketFeed" if has_live_tick else None,
                     "quality": "VALID" if is_live_stream else "UNAVAILABLE",
                 },
                 "vix": {
@@ -3750,8 +3809,8 @@ class WorkstationStateService:
                     "symbol": "INDIA VIX",
                     "session_date": active_date,
                     "last_price": vix if is_live_stream else None,
-                    "exchange_timestamp": vix_exchange_ts,
-                    "received_at": vix_received_ts,
+                    "exchange_timestamp": vix_exchange_ts if has_live_tick else None,
+                    "received_at": vix_received_ts if has_live_tick else None,
                     "open": None,
                     "high": None,
                     "low": None,
@@ -3763,26 +3822,28 @@ class WorkstationStateService:
                     "bid": vix if is_live_stream else None,
                     "ask": vix if is_live_stream else None,
                     "spread": 0.05 if is_live_stream else None,
-                    "provider": "KiteMarketFeed",
+                    "provider": "KiteMarketFeed" if has_live_tick else None,
                     "quality": "VALID" if is_live_stream else "UNAVAILABLE",
                 },
-                "observed_at": nifty_exchange_ts,
+                "observed_at": nifty_exchange_ts if has_live_tick else None,
                 "state_revision": seq,
                 "quality": "VALID" if is_live_stream else "UNAVAILABLE",
             },
             "feed_health": {
-                "overall_status": "HEALTHY" if is_live_stream else "NOT_RUNNING",
-                "socket_connected": is_live_stream,
+                # Honest feed state: HEALTHY only with a real tick; DISCONNECTED
+                # when the market is open but nothing is arriving; IDLE otherwise.
+                "overall_status": "HEALTHY" if is_live_stream else ("DISCONNECTED" if is_live_hours else "IDLE"),
+                "socket_connected": has_live_tick,
                 "quality": "VALID" if is_live_stream else "UNAVAILABLE",
             },
             "price_structure": {
-                "last_price": spot if (spot is not None) else None,
+                "last_price": live_price,
                 "open": live_open,
                 "high": live_high,
                 "low": live_low,
                 "previous_close": effective_prev_close,
-                "change": round(spot - effective_prev_close, 2) if (spot is not None and effective_prev_close is not None) else None,
-                "change_pct": round(((spot - effective_prev_close) / effective_prev_close) * 100, 2) if (spot is not None and effective_prev_close is not None and effective_prev_close > 0) else None,
+                "change": round(live_price - effective_prev_close, 2) if (live_price is not None and effective_prev_close is not None) else None,
+                "change_pct": round(((live_price - effective_prev_close) / effective_prev_close) * 100, 2) if (live_price is not None and effective_prev_close is not None and effective_prev_close > 0) else None,
                 "range_points": round((live_high - live_low), 2) if (live_high and live_low) else None,
                 "range_pct": None,
                 "vwap": live_vwap,
@@ -3793,7 +3854,7 @@ class WorkstationStateService:
                 "key_supports": m_ctx.get("support_levels") if (m_ctx.get("support_levels") and len(m_ctx.get("support_levels")) > 0) else ([x for x in [settled_levels.get("s1"), settled_levels.get("s2"), settled_levels.get("s3")] if x is not None] if settled_levels else []),
                 "key_resistances": m_ctx.get("resistance_levels") if (m_ctx.get("resistance_levels") and len(m_ctx.get("resistance_levels")) > 0) else ([x for x in [settled_levels.get("r1"), settled_levels.get("r2"), settled_levels.get("r3")] if x is not None] if settled_levels else []),
                 "trend_direction": m_ctx.get("trend_direction") or "NEUTRAL",
-                "quality": "VALID" if (is_live_stream or close_core or spot is not None) else "UNAVAILABLE",
+                "quality": "VALID" if (is_live_stream or settled_is_current) else "UNAVAILABLE",
             },
             "breadth": {
                 "advances": adv_val if adv_val is not None else 0,
@@ -3808,8 +3869,8 @@ class WorkstationStateService:
                 "quality": "VALID" if (adv_val is not None or is_live_stream) else "UNAVAILABLE",
             },
             "options": {
-                "underlying_price": spot if (spot is not None and spot > 0) else (settled_close or None),
-                "spot_price": spot if (spot is not None and spot > 0) else (settled_close or None),
+                "underlying_price": live_price if (live_price is not None and live_price > 0) else (settled_close or None),
+                "spot_price": live_price if (live_price is not None and live_price > 0) else (settled_close or None),
                 "atm_strike": opt_atm_strike,
                 "pcr": opt_pcr,
                 "max_pain": opt_max_pain,
@@ -3846,7 +3907,7 @@ class WorkstationStateService:
                 "strategy_suitability": raw_strat.get("overall_best_strategy") or "MEAN_REVERSION",
                 "strike_candidates": strike_candidates,
                 "checklist_items": [
-                    {"label": "Above VWAP Anchor", "passed": (spot is not None and live_vwap is not None and spot >= live_vwap), "details": "VWAP support intact"},
+                    {"label": "Above VWAP Anchor", "passed": (live_price is not None and live_vwap is not None and live_price >= live_vwap), "details": "VWAP support intact"},
                     {"label": "Breadth Supportive", "passed": (adv_val is not None and dec_val is not None and adv_val > dec_val), "details": f"{adv_val or 0} Adv / {dec_val or 0} Dec"},
                     {"label": "Options Writing Bias", "passed": (opt_pcr is not None and opt_pcr >= 1.0), "details": f"PCR {opt_pcr or 0.0:.2f}"},
                 ],
@@ -3878,8 +3939,8 @@ class WorkstationStateService:
                 "closing_vix": settled_vix,
                 "closing_breadth": settled_breadth,
                 "institutional_flows": settled_flows,
-                "quality": "COMPLETED" if close_core else "UNAVAILABLE"
-            } if close_core else None
+                "quality": "COMPLETED" if _use_settled else "UNAVAILABLE"
+            } if _use_settled else None
         }
         return envelope
 
