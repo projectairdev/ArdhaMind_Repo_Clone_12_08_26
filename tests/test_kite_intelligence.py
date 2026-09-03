@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -179,12 +180,17 @@ def test_real_snapshot_pcr_max_pain_oi_comparison_and_no_fake_iv(instrument_serv
         rows.extend([option(strike, "CE", token), option(strike, "PE", token + 1)])
         token += 2
     instrument_service._build_indexes(rows)
+    # Quote timestamps must be recent: a disk snapshot older than the staleness
+    # ceiling is refused when it later has to be served as the market-closed
+    # fallback (see the dedicated ceiling test below).
+    ist = ZoneInfo("Asia/Kolkata")
+    t0 = datetime.now(ist).replace(microsecond=0)
     quotes = {}
     for item in rows:
         key = f"NFO:{item['tradingsymbol']}"
         quotes[key] = {"last_price": 10, "ohlc": {"close": 9}, "oi": 100 if item["instrument_type"] == "CE" else 200,
                        "volume": 50, "depth": {"buy": [{"price": 9.9}], "sell": [{"price": 10.1}]},
-                       "timestamp": "2026-08-07T15:30:00+05:30", "last_trade_time": "2026-08-07T15:29:00+05:30"}
+                       "timestamp": t0.isoformat(), "last_trade_time": (t0 - timedelta(minutes=1)).isoformat()}
     broker = FakeBroker(quotes)
     service = MarketFeedService()
     service.SNAPSHOT_PATH = tmp_path / "snapshot.json"
@@ -197,10 +203,11 @@ def test_real_snapshot_pcr_max_pain_oi_comparison_and_no_fake_iv(instrument_serv
     assert first["iv_status"] == "UNAVAILABLE"
     assert all(row["callIv"] is None and row["putIv"] is None for row in first["strikes"])
     assert first["last_valid_snapshot"] == "AVAILABLE"
+    assert first["stale"] is False
 
     for quote in quotes.values():
         quote["oi"] += 10
-        quote["timestamp"] = "2026-08-07T15:31:00+05:30"
+        quote["timestamp"] = (t0 + timedelta(minutes=1)).isoformat()
     second = service.build_option_chain_context(broker, 157, ["2099-08-11"])
     assert second["oi_change"]["status"] == "AVAILABLE"
     assert all(row["oi_change"] == 10 for row in second["contracts"])
@@ -209,6 +216,35 @@ def test_real_snapshot_pcr_max_pain_oi_comparison_and_no_fake_iv(instrument_serv
     closed = service.build_option_chain_context(broker, 157, ["2099-08-11"])
     assert closed["last_valid_snapshot"] == "AVAILABLE"
     assert closed["status"] == "MARKET_CLOSED"
+
+
+def test_disk_snapshot_past_staleness_ceiling_is_refused(instrument_service, tmp_path, monkeypatch):
+    rows = []
+    token = 4000
+    for strike in range(50, 326, 25):
+        rows.extend([option(strike, "CE", token), option(strike, "PE", token + 1)])
+        token += 2
+    instrument_service._build_indexes(rows)
+    service = MarketFeedService()
+    service.SNAPSHOT_PATH = tmp_path / "snapshot.json"
+
+    ist = ZoneInfo("Asia/Kolkata")
+    stale_ts = (datetime.now(ist) - timedelta(hours=30)).replace(microsecond=0).isoformat()
+    quotes = {}
+    for item in rows:
+        key = f"NFO:{item['tradingsymbol']}"
+        quotes[key] = {"last_price": 10, "ohlc": {"close": 9}, "oi": 100 if item["instrument_type"] == "CE" else 200,
+                       "volume": 50, "depth": {"buy": [{"price": 9.9}], "sell": [{"price": 10.1}]},
+                       "timestamp": stale_ts, "last_trade_time": stale_ts}
+    broker = FakeBroker(quotes)
+    service.build_option_chain_context(broker, 157, ["2099-08-11"])  # persist a 30h-old snapshot
+
+    broker.quotes = {}  # market closed / no live quotes -> must fall back to disk
+    result = service.build_option_chain_context(broker, 157, ["2099-08-11"])
+    assert result["status"] == "UNAVAILABLE"
+    assert result["reason"] == "snapshot_exceeds_staleness_ceiling"
+    assert result["unavailable_message"] == MarketFeedService.SNAPSHOT_TOO_OLD_MESSAGE
+    assert result["snapshot_age_seconds"] > 6 * 3600
 
 
 def test_max_pain_rejects_incomplete_chain():

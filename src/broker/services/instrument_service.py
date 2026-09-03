@@ -36,7 +36,22 @@ class InstrumentService:
         self._by_token: Dict[int, Dict[str, Any]] = {}
         self._by_symbol: Dict[str, Dict[str, Any]] = {}
         self._broker_name: str = "MOCK"
+        self._last_load_source: str = "none"
+        self._last_load_ts: Optional[datetime] = None
         self._initialized = True
+
+    def has_index(self) -> bool:
+        """True once an instrument master (fresh, downloaded, or stale fallback)
+        has been indexed in memory."""
+        return bool(self._instruments)
+
+    def load_diagnostics(self) -> Dict[str, Any]:
+        return {
+            "source": self._last_load_source,
+            "loaded_at": self._last_load_ts.isoformat() if self._last_load_ts else None,
+            "instrument_count": len(self._instruments),
+            "broker": self._broker_name,
+        }
 
     @classmethod
     def get_instance(cls) -> InstrumentService:
@@ -58,6 +73,8 @@ class InstrumentService:
             cached_data = InstrumentCacheManager.load_cache(self._broker_name)
             if cached_data is not None:
                 self._build_indexes(cached_data)
+                self._last_load_source = "cache_fresh"
+                self._last_load_ts = datetime.now()
                 return True
 
         # Cache miss or forced refresh: download from active broker gateway
@@ -101,18 +118,42 @@ class InstrumentService:
                 # Save to cache
                 InstrumentCacheManager.save_cache(self._broker_name, final_list)
                 self._build_indexes(final_list)
+                self._last_load_source = "download"
+                self._last_load_ts = datetime.now()
                 return True
             else:
                 logger.warning("Broker returned empty instrument master list.")
-                # Try fallback to stale cache if force_refresh was True, otherwise return False
-                cached_data = InstrumentCacheManager.load_cache(self._broker_name)
-                if cached_data is not None:
-                    self._build_indexes(cached_data)
-                    return True
-                return False
+                return self._fall_back_to_stale_cache("empty_download")
         except Exception as e:
             logger.error(f"Error downloading/caching instruments: {e}", exc_info=True)
-            return False
+            return self._fall_back_to_stale_cache(f"download_failed: {e}")
+
+    def _fall_back_to_stale_cache(self, reason: str) -> bool:
+        """Last resort when a live re-download is unavailable: use a same-day
+        cache if one somehow exists, otherwise a day-old one. A stale instrument
+        master still resolves every future option expiry; failing silently and
+        leaving an empty in-memory index does not.
+        """
+        cached_data = InstrumentCacheManager.load_cache(self._broker_name)
+        if cached_data is None:
+            cached_data = InstrumentCacheManager.load_cache(self._broker_name, allow_stale=True)
+            source = "cache_stale_fallback"
+        else:
+            source = "cache_fresh"
+        if cached_data is not None:
+            self._build_indexes(cached_data)
+            self._last_load_source = source
+            self._last_load_ts = datetime.now()
+            logger.warning(
+                f"Instrument master unavailable from broker ({reason}); "
+                f"serving {len(cached_data)} instruments from {source}."
+            )
+            return True
+        logger.error(
+            f"Instrument master unavailable from broker ({reason}) and no usable cache — "
+            "expiry resolution will be blocked until the next successful sync."
+        )
+        return False
 
     def _build_indexes(self, data: List[Dict[str, Any]]) -> None:
         """Builds in-memory dictionaries for instant lookups."""

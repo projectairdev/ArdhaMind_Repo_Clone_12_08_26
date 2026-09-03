@@ -63,6 +63,15 @@ class MarketFeedService:
     SNAPSHOT_PATH = Path(".cache/kite_nifty_option_snapshot.json")
     STRIKE_WINDOW_SIZE = 11
 
+    # Disk-snapshot fallback bounds. Beyond SNAPSHOT_MAX_AGE_SECONDS the cached
+    # option chain is refused outright (UI shows "data too old to display")
+    # rather than being served as if it were current. Between STALE and MAX it
+    # is served but flagged stale so PCR / max-pain / OI walls are not presented
+    # with live confidence.
+    SNAPSHOT_STALE_AFTER_SECONDS = 300.0        # 5 min — chain preset staleness
+    SNAPSHOT_MAX_AGE_SECONDS = 6 * 3600.0       # 6 h  — hard "too old" ceiling
+    SNAPSHOT_TOO_OLD_MESSAGE = "Option chain unavailable — data too old to display"
+
     def __new__(cls, *args: Any, **kwargs: Any) -> "MarketFeedService":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -109,17 +118,49 @@ class MarketFeedService:
             "reconnect_state": liveness.get("reconnect_state")
         }
 
-    def resolve_expiries(self, bs: Any) -> List[str]:
-        service = InstrumentService.get_instance()
-        service.load_instruments(bs)
+    @staticmethod
+    def _future_nifty_expiries(service: Any) -> List[str]:
+        today = exchange_today()
         valid = []
         for value in service.lookup_expiries("NIFTY"):
             try:
-                if datetime.strptime(value, "%Y-%m-%d").date() >= exchange_today():
+                if datetime.strptime(value, "%Y-%m-%d").date() >= today:
                     valid.append(value)
             except (TypeError, ValueError):
                 continue
         return sorted(valid)
+
+    def resolve_expiries(self, bs: Any) -> List[str]:
+        service = InstrumentService.get_instance()
+        service.load_instruments(bs)
+        valid = self._future_nifty_expiries(service)
+
+        if not valid:
+            # The in-memory instrument master is missing or so stale that every
+            # NIFTY expiry it knows about is already in the past. Force one live
+            # re-download and retry rather than silently returning nothing
+            # forever (which freezes the option chain on a stale disk snapshot).
+            raw = list(service.lookup_expiries("NIFTY"))
+            logger.warning(
+                "resolve_expiries: no future NIFTY expiry from current instrument index "
+                f"(known={raw[:6]}{'...' if len(raw) > 6 else ''}, source={service.load_diagnostics().get('source')}); "
+                "forcing instrument-master refresh."
+            )
+            service.load_instruments(bs, force_refresh=True)
+            valid = self._future_nifty_expiries(service)
+            if not valid:
+                logger.error(
+                    "resolve_expiries: still no resolvable future NIFTY expiry after forced refresh — "
+                    "instrument master could not be synced; option chain will report UNAVAILABLE."
+                )
+
+        self.last_resolution = {
+            **(self.last_resolution or {}),
+            "expiries": valid,
+            "resolved_at": datetime.now(_IST).isoformat(),
+            "instrument_source": service.load_diagnostics().get("source"),
+        }
+        return valid
 
     def resolve_option_contracts(self, bs: Any, spot: float, expiry: Optional[str] = None) -> Dict[str, Any]:
         service = InstrumentService.get_instance()
@@ -322,6 +363,66 @@ class MarketFeedService:
             return None
 
     @staticmethod
+    def _snapshot_age_seconds(snapshot: Dict[str, Any]) -> Optional[float]:
+        """Age of a persisted option-chain snapshot in seconds, or None if it
+        carries no usable timestamp."""
+        ts = (snapshot.get("snapshot_timestamp")
+              or snapshot.get("provider_timestamp")
+              or snapshot.get("timestamp"))
+        if not ts:
+            return None
+        try:
+            observed = datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        if observed.tzinfo is None:
+            observed = observed.replace(tzinfo=_IST)  # Kite quote times are IST-naive
+        return max(0.0, (datetime.now(timezone.utc) - observed.astimezone(timezone.utc)).total_seconds())
+
+    @classmethod
+    def _apply_snapshot_freshness(cls, payload: Dict[str, Any], *, served_from_disk: bool) -> Dict[str, Any]:
+        """Annotate an option-chain context with its age and staleness verdict.
+
+        For a context served from the persisted disk snapshot (``served_from_disk``),
+        anything past the hard ceiling is replaced with an explicit UNAVAILABLE
+        result so no consumer can render a multi-hour-old chain as current.
+        A freshly built context is only annotated (age + ``stale`` flag) and
+        never rejected — it was just fetched, and an old quote timestamp there
+        merely reflects low liquidity / a closed session.
+        """
+        if not isinstance(payload, dict):
+            return payload
+        age = cls._snapshot_age_seconds(payload)
+        if age is None:
+            payload.setdefault("stale", False)
+            payload.setdefault("snapshot_age_seconds", None)
+            return payload
+        if served_from_disk and age > cls.SNAPSHOT_MAX_AGE_SECONDS:
+            logger.warning(
+                "Option-chain disk snapshot is %.1fh old (ceiling %.1fh) — refusing to serve it.",
+                age / 3600.0, cls.SNAPSHOT_MAX_AGE_SECONDS / 3600.0,
+            )
+            return {
+                "status": "UNAVAILABLE",
+                "reason": "snapshot_exceeds_staleness_ceiling",
+                "unavailable_message": cls.SNAPSHOT_TOO_OLD_MESSAGE,
+                "snapshot_age_seconds": age,
+                "staleness_ceiling_seconds": cls.SNAPSHOT_MAX_AGE_SECONDS,
+                "last_snapshot_timestamp": payload.get("snapshot_timestamp"),
+                "last_valid_snapshot": "EXPIRED",
+                "stale": True,
+            }
+        payload["snapshot_age_seconds"] = age
+        # A freshly built context was just fetched from the quote API; an old
+        # quote timestamp only reflects low liquidity / a closed session, which
+        # `freshness`/`observation_mode` already convey. Only the disk-fallback
+        # path marks the served chain stale on age.
+        payload["stale"] = served_from_disk and age > cls.SNAPSHOT_STALE_AFTER_SECONDS
+        if payload["stale"]:
+            payload.setdefault("stale_reason", "disk_snapshot_not_refreshed")
+        return payload
+
+    @staticmethod
     def _persist_snapshot(path: Path, snapshot: Dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         descriptor, temporary = tempfile.mkstemp(prefix=path.name, suffix=".tmp", dir=str(path.parent))
@@ -340,8 +441,10 @@ class MarketFeedService:
         contracts = resolution.get("contracts", [])
         if not contracts:
             persisted = self._load_snapshot(self.SNAPSHOT_PATH)
-            return persisted or {"status": "UNAVAILABLE", "reason": resolution.get("reason"),
-                                 "last_valid_snapshot": "UNAVAILABLE"}
+            if persisted:
+                return self._apply_snapshot_freshness(persisted, served_from_disk=True)
+            return {"status": "UNAVAILABLE", "reason": resolution.get("reason"),
+                    "last_valid_snapshot": "UNAVAILABLE"}
 
         keys = [f"NFO:{item['trading_symbol']}" for item in contracts]
         quotes: Dict[str, Dict[str, Any]] = {}
@@ -370,8 +473,10 @@ class MarketFeedService:
         if len(rows) == 0:
             persisted = self._load_snapshot(self.SNAPSHOT_PATH)
             if persisted:
-                return {**persisted, "status": "MARKET_CLOSED", "last_valid_snapshot": "AVAILABLE",
-                        "current_attempt_coverage": {"observed": len(rows), "expected": expected}}
+                return self._apply_snapshot_freshness({
+                    **persisted, "status": "MARKET_CLOSED", "last_valid_snapshot": "AVAILABLE",
+                    "current_attempt_coverage": {"observed": len(rows), "expected": expected},
+                }, served_from_disk=True)
             return {"status": "UNAVAILABLE", "expiry": resolution.get("expiry"),
                     "coverage": {"observed": len(rows), "expected": expected},
                     "reason": "incomplete_core_option_quote_rows", "last_valid_snapshot": "UNAVAILABLE"}
@@ -589,4 +694,4 @@ class MarketFeedService:
             "schema_version": "2.0",
         }
         self._persist_snapshot(self.SNAPSHOT_PATH, snapshot)
-        return snapshot
+        return self._apply_snapshot_freshness(snapshot, served_from_disk=False)

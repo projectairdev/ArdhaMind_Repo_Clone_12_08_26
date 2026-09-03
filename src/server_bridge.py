@@ -2462,27 +2462,38 @@ def run_daemon(wm, bs):
                         try:
                             from src.broker.services.market_feed_service import MarketFeedService, exchange_today
                             expiries = MarketFeedService.get_instance().resolve_expiries(bs) if bs.is_connected() else []
-                            if expiries:
-                                from datetime import datetime as dt_cls
-                                # Single source of "today" for expiry comparison — the IST
-                                # exchange date, identical to resolve_expiries() above.
-                                today_dt = exchange_today()
-                                future_exp = []
-                                for e in expiries:
-                                    try:
-                                        if dt_cls.strptime(e, "%Y-%m-%d").date() >= today_dt:
-                                            future_exp.append(e)
-                                    except Exception:
-                                        pass
-                                if not future_exp and expiries:
-                                    future_exp = expiries
-                                if future_exp:
-                                    current_weekly = future_exp[0]
-                                    if bs.is_connected():
-                                        MarketFeedService.get_instance().update_subscriptions(bs, s_nifty, current_weekly)
-                                    new_opt_ctx = MarketFeedService.get_instance().build_option_chain_context(bs, s_nifty, future_exp)
-                                    if new_opt_ctx and new_opt_ctx.get("status") != "UNAVAILABLE":
-                                        cached_option_context = new_opt_ctx
+                            from datetime import datetime as dt_cls
+                            # Single source of "today" for expiry comparison — the IST
+                            # exchange date, identical to resolve_expiries() above.
+                            today_dt = exchange_today()
+                            future_exp = []
+                            for e in expiries:
+                                try:
+                                    if dt_cls.strptime(e, "%Y-%m-%d").date() >= today_dt:
+                                        future_exp.append(e)
+                                except Exception:
+                                    pass
+                            if not future_exp and expiries:
+                                future_exp = expiries
+                            if future_exp:
+                                current_weekly = future_exp[0]
+                                if bs.is_connected():
+                                    MarketFeedService.get_instance().update_subscriptions(bs, s_nifty, current_weekly)
+                            else:
+                                logger.warning(
+                                    "Option-chain worker: no resolvable future expiry (instrument master unsynced); "
+                                    "the disk snapshot's own staleness ceiling now governs what the UI shows."
+                                )
+                            # Always rebuild: with no future expiry, build_option_chain_context
+                            # falls through to the persisted snapshot and applies its staleness
+                            # ceiling, so a multi-hour-old chain is dropped rather than frozen
+                            # in place. Accept an explicit "too old" verdict as a real update.
+                            new_opt_ctx = MarketFeedService.get_instance().build_option_chain_context(bs, s_nifty, future_exp)
+                            if new_opt_ctx and (
+                                new_opt_ctx.get("status") != "UNAVAILABLE"
+                                or new_opt_ctx.get("reason") == "snapshot_exceeds_staleness_ceiling"
+                            ):
+                                cached_option_context = new_opt_ctx
 
                             from src.broker.services.market_context_builder import MarketContextBuilder
                             orch_instance = None

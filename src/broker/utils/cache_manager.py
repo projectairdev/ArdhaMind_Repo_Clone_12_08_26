@@ -4,12 +4,21 @@ import sqlite3
 import os
 import time
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Optional, List, Dict
 
 logger = logging.getLogger("InstrumentCacheManager")
 
 DB_PATH = "cache/instruments.db"
 CACHE_VERSION = "1.0.0"
+
+_IST = ZoneInfo("Asia/Kolkata")
+
+# A cache from an earlier calendar day is "loadable" (better than no instrument
+# master at all — all future option expiries are still valid) but not "fresh"
+# (a same-day refresh is still wanted). Past this hard ceiling the cache is
+# refused outright even as a stale fallback.
+STALE_CACHE_CEILING_DAYS = 5
 
 class InstrumentCacheManager:
     """
@@ -25,9 +34,16 @@ class InstrumentCacheManager:
         return sqlite3.connect(DB_PATH)
 
     @classmethod
-    def load_cache(cls, broker_name: str) -> Optional[List[Dict[str, Any]]]:
-        """Loads cached instruments if valid. Returns None if invalid or missing."""
-        if not cls.cache_validation(broker_name):
+    def load_cache(cls, broker_name: str, allow_stale: bool = False) -> Optional[List[Dict[str, Any]]]:
+        """Loads cached instruments if valid. Returns None if invalid or missing.
+
+        With ``allow_stale=True`` the same-calendar-day (daily refresh) check is
+        skipped so a cache from an earlier day — up to ``STALE_CACHE_CEILING_DAYS``
+        old — is still returned. Version, broker and row-count integrity checks
+        always apply. This is the last-resort fallback when a live re-download
+        fails: a day-old instrument master still resolves every future expiry.
+        """
+        if not cls.cache_validation(broker_name, allow_stale=allow_stale):
             logger.info(f"Cache validation failed or cache is expired/missing for {broker_name}.")
             return None
 
@@ -160,10 +176,14 @@ class InstrumentCacheManager:
             return float('inf')
 
     @classmethod
-    def cache_validation(cls, broker_name: str) -> bool:
+    def cache_validation(cls, broker_name: str, allow_stale: bool = False) -> bool:
         """
         Validates cache integrity, version alignment, and daily refresh criteria.
-        Returns True if cache is valid and from the CURRENT calendar day.
+        Returns True if cache is valid and from the CURRENT (IST) calendar day.
+
+        With ``allow_stale=True`` the daily-refresh check is relaxed: a cache from
+        an earlier day still passes as long as it is within
+        ``STALE_CACHE_CEILING_DAYS`` and all integrity checks hold.
         """
         if not cls.cache_exists(broker_name):
             return False
@@ -206,11 +226,26 @@ class InstrumentCacheManager:
                     return False
                 ts_str = row_ts[0]
                 ts = datetime.fromisoformat(ts_str)
-                
-                today = datetime.now().date()
+
+                # "Today" on the exchange (IST), matching the option-expiry
+                # comparison elsewhere. The VPS runs in UTC, which lags IST by a
+                # full calendar day during 00:00-05:30 IST.
+                today = datetime.now(_IST).date()
                 if ts.date() != today:
-                    logger.info(f"Cache is from previous calendar day ({ts.date()}). Requires daily refresh.")
-                    return False
+                    age_days = (today - ts.date()).days
+                    if not allow_stale:
+                        logger.info(f"Cache is from a previous calendar day ({ts.date()}). Requires daily refresh.")
+                        return False
+                    if age_days > STALE_CACHE_CEILING_DAYS:
+                        logger.warning(
+                            f"Instrument cache is {age_days}d old (ceiling {STALE_CACHE_CEILING_DAYS}d) — "
+                            "refusing even as a stale fallback."
+                        )
+                        return False
+                    logger.warning(
+                        f"Instrument cache is {age_days}d stale ({ts.date()}); accepting as a fallback "
+                        "because a live re-download is unavailable."
+                    )
 
                 return True
         except Exception as e:
