@@ -7,7 +7,7 @@ import atexit
 from datetime import datetime, timezone, timedelta, time as dt_time
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Optional
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -3631,45 +3631,56 @@ class WorkstationStateService:
 
         seq = len(cls._snapshots_history) or cls._last_persisted_seq or 1
 
+        # Only trust the legacy market context / option context for live-derived
+        # values when a genuine tick is flowing. Otherwise these carry a stale
+        # disk-cache snapshot (e.g. m_ctx["high"] = a days-old 24188.30).
+        _mc_live = m_ctx if has_live_tick else {}
+        _oc_live = o_ctx if is_live_stream else {}
+
         # Price structure calculations
-        raw_vwap = m_ctx.get("vwap") or m_ctx.get("session_vwap") or (pipeline_result.compatibility_values().get("marketContext", {}).get("vwap") if pipeline_result else None)
-        live_vwap = float(raw_vwap) if (raw_vwap is not None and float(raw_vwap) > 0) else (spot if is_live_stream else settled_vwap)
-        raw_atr = m_ctx.get("atr") or m_ctx.get("atr_14") or (pipeline_result.compatibility_values().get("marketContext", {}).get("atr") if pipeline_result else None)
+        raw_vwap = _mc_live.get("vwap") or _mc_live.get("session_vwap") or (pipeline_result.compatibility_values().get("marketContext", {}).get("vwap") if (pipeline_result and has_live_tick) else None)
+        live_vwap = float(raw_vwap) if (raw_vwap is not None and float(raw_vwap) > 0) else (live_price if is_live_stream else settled_vwap)
+        raw_atr = _mc_live.get("atr") or _mc_live.get("atr_14") or (pipeline_result.compatibility_values().get("marketContext", {}).get("atr") if (pipeline_result and has_live_tick) else None)
         live_atr = float(raw_atr) if (raw_atr is not None and float(raw_atr) > 0) else settled_atr
-        raw_orh = m_ctx.get("or_high")
+        raw_orh = _mc_live.get("or_high")
         live_orh = float(raw_orh) if (raw_orh is not None and float(raw_orh) > 0) else settled_or_high
-        raw_orl = m_ctx.get("or_low")
+        raw_orl = _mc_live.get("or_low")
         live_orl = float(raw_orl) if (raw_orl is not None and float(raw_orl) > 0) else settled_or_low
 
-        live_open = (nifty_state.open if (is_live_stream and nifty_state and nifty_state.open) else None) or m_ctx.get("open") or settled_open
-        live_high = (nifty_state.high if (is_live_stream and nifty_state and nifty_state.high) else None) or m_ctx.get("high") or settled_high
-        live_low = (nifty_state.low if (is_live_stream and nifty_state and nifty_state.low) else None) or m_ctx.get("low") or settled_low
+        live_open = (nifty_state.open if (is_live_stream and nifty_state and nifty_state.open) else None) or _mc_live.get("open") or settled_open
+        live_high = (nifty_state.high if (is_live_stream and nifty_state and nifty_state.high) else None) or _mc_live.get("high") or settled_high
+        live_low = (nifty_state.low if (is_live_stream and nifty_state and nifty_state.low) else None) or _mc_live.get("low") or settled_low
         # Previous close comes from a current settled session, or from the live
         # feed's own prev-close field only when a live tick is actually flowing —
         # never from a stale market-context snapshot.
         effective_prev_close = settled_close or (m_ctx.get("previous_close") if has_live_tick else None)
 
-        # Breadth calculations
-        raw_b = m_ctx.get("breadth") or (legacy_state.get("breadth") if legacy_state else None) or (legacy_state.get("marketContext", {}).get("breadth") if legacy_state else None) or {}
+        # Breadth calculations — live breadth only when a tick is flowing;
+        # otherwise fall through to settled_breadth (None when the store is stale).
+        raw_b = _mc_live.get("breadth") or {}
         adv_val = raw_b.get("advances") if raw_b.get("advances") is not None else (settled_breadth.get("advances") if settled_breadth else None)
         dec_val = raw_b.get("declines") if raw_b.get("declines") is not None else (settled_breadth.get("declines") if settled_breadth else None)
         unch_val = raw_b.get("unchanged") if raw_b.get("unchanged") is not None else (settled_breadth.get("unchanged") if settled_breadth else None)
         tot_b = (adv_val or 0) + (dec_val or 0) + (unch_val or 0)
         adv_pct = round((adv_val / tot_b) * 100) if (adv_val is not None and tot_b > 0) else None
         b_ratio = round(adv_val / dec_val, 2) if (adv_val is not None and dec_val is not None and dec_val > 0) else None
-        leadership_bias = m_ctx.get("leadership_bias") or ("BULLISH" if (adv_val is not None and dec_val is not None and adv_val > dec_val) else ("BEARISH" if (adv_val is not None and dec_val is not None and adv_val < dec_val) else "NEUTRAL"))
+        leadership_bias = _mc_live.get("leadership_bias") or ("BULLISH" if (adv_val is not None and dec_val is not None and adv_val > dec_val) else ("BEARISH" if (adv_val is not None and dec_val is not None and adv_val < dec_val) else "NEUTRAL"))
 
-        # Options calculations
-        opt_pcr = float(o_ctx.get("pcr")) if o_ctx.get("pcr") is not None else None
-        opt_max_pain = float(o_ctx.get("max_pain") or o_ctx.get("max_pain_strike")) if (o_ctx.get("max_pain") or o_ctx.get("max_pain_strike")) is not None else None
-        opt_call_wall = float(o_ctx.get("call_wall") or o_ctx.get("highest_call_oi_strike")) if (o_ctx.get("call_wall") or o_ctx.get("highest_call_oi_strike")) is not None else None
-        opt_put_wall = float(o_ctx.get("put_wall") or o_ctx.get("highest_put_oi_strike")) if (o_ctx.get("put_wall") or o_ctx.get("highest_put_oi_strike")) is not None else None
-        opt_atm_iv = float(o_ctx.get("atm_iv")) if o_ctx.get("atm_iv") is not None else None
-        opt_expiry = o_ctx.get("expiry") or o_ctx.get("current_expiry") or "2026-09-03"
-        opt_total_call_oi = int(o_ctx.get("total_call_oi") or 0)
-        opt_total_put_oi = int(o_ctx.get("total_put_oi") or 0)
-        opt_strikes = o_ctx.get("strike_universe") or o_ctx.get("strikes") or []
-        opt_atm_strike = float(o_ctx.get("atm_strike")) if o_ctx.get("atm_strike") else ((round(live_price / 50.0) * 50.0) if live_price else None)
+        # Options calculations — the option context is a disk-cache snapshot
+        # (kite_nifty_option_snapshot.json) that survives a feed outage. Only
+        # surface it as live intelligence when a live tick is actually flowing;
+        # otherwise every derived field must be null and quality UNAVAILABLE.
+        _oc = _oc_live
+        opt_pcr = float(_oc.get("pcr")) if _oc.get("pcr") is not None else None
+        opt_max_pain = float(_oc.get("max_pain") or _oc.get("max_pain_strike")) if (_oc.get("max_pain") or _oc.get("max_pain_strike")) is not None else None
+        opt_call_wall = float(_oc.get("call_wall") or _oc.get("highest_call_oi_strike")) if (_oc.get("call_wall") or _oc.get("highest_call_oi_strike")) is not None else None
+        opt_put_wall = float(_oc.get("put_wall") or _oc.get("highest_put_oi_strike")) if (_oc.get("put_wall") or _oc.get("highest_put_oi_strike")) is not None else None
+        opt_atm_iv = float(_oc.get("atm_iv")) if _oc.get("atm_iv") is not None else None
+        opt_expiry = _oc.get("expiry") or _oc.get("current_expiry") or None
+        opt_total_call_oi = int(_oc.get("total_call_oi") or 0)
+        opt_total_put_oi = int(_oc.get("total_put_oi") or 0)
+        opt_strikes = _oc.get("strike_universe") or _oc.get("strikes") or []
+        opt_atm_strike = float(_oc.get("atm_strike")) if _oc.get("atm_strike") else ((round(live_price / 50.0) * 50.0) if live_price else None)
 
         # Filter strike_universe to active ATM ± 15 strikes (max 31 strikes sorted by strike price)
         if opt_strikes and opt_atm_strike:
@@ -3712,7 +3723,7 @@ class WorkstationStateService:
                 option_type="CE",
             )
             strike_candidates.append({
-                "canonical_id": f"OPT:NSE:NIFTY:{opt_expiry}:CE:{int(cand_strike)}",
+                "canonical_id": f"OPT:NSE:NIFTY:{opt_expiry or 'UNKNOWN'}:CE:{int(cand_strike)}",
                 "option_type": "CE",
                 "strike": cand_strike,
                 "ltp": round(spot * 0.004, 2) if spot else None,
@@ -3868,13 +3879,13 @@ class WorkstationStateService:
                 "range_points": round((live_high - live_low), 2) if (live_high and live_low) else None,
                 "range_pct": None,
                 "vwap": live_vwap,
-                "twap": m_ctx.get("twap"),
+                "twap": _mc_live.get("twap"),
                 "or_high": live_orh,
                 "or_low": live_orl,
                 "atr_14": live_atr,
-                "key_supports": m_ctx.get("support_levels") if (m_ctx.get("support_levels") and len(m_ctx.get("support_levels")) > 0) else ([x for x in [settled_levels.get("s1"), settled_levels.get("s2"), settled_levels.get("s3")] if x is not None] if settled_levels else []),
-                "key_resistances": m_ctx.get("resistance_levels") if (m_ctx.get("resistance_levels") and len(m_ctx.get("resistance_levels")) > 0) else ([x for x in [settled_levels.get("r1"), settled_levels.get("r2"), settled_levels.get("r3")] if x is not None] if settled_levels else []),
-                "trend_direction": m_ctx.get("trend_direction") or "NEUTRAL",
+                "key_supports": _mc_live.get("support_levels") if (_mc_live.get("support_levels") and len(_mc_live.get("support_levels")) > 0) else ([x for x in [settled_levels.get("s1"), settled_levels.get("s2"), settled_levels.get("s3")] if x is not None] if settled_levels else []),
+                "key_resistances": _mc_live.get("resistance_levels") if (_mc_live.get("resistance_levels") and len(_mc_live.get("resistance_levels")) > 0) else ([x for x in [settled_levels.get("r1"), settled_levels.get("r2"), settled_levels.get("r3")] if x is not None] if settled_levels else []),
+                "trend_direction": _mc_live.get("trend_direction") or "NEUTRAL",
                 "quality": "VALID" if (is_live_stream or settled_is_current) else "UNAVAILABLE",
             },
             "breadth": {
@@ -3886,7 +3897,7 @@ class WorkstationStateService:
                 "advance_pct": adv_pct,
                 "leadership_bias": leadership_bias,
                 "heavyweight_bias": "NEUTRAL",
-                "sector_bias": m_ctx.get("sector_bias") or {},
+                "sector_bias": _mc_live.get("sector_bias") or {},
                 "quality": "VALID" if (adv_val is not None or is_live_stream) else "UNAVAILABLE",
             },
             "options": {
@@ -3901,19 +3912,19 @@ class WorkstationStateService:
                 "expiry": opt_expiry,
                 "total_call_oi": opt_total_call_oi,
                 "total_put_oi": opt_total_put_oi,
-                "total_call_volume": int(o_ctx.get("total_call_volume") or 0),
-                "total_put_volume": int(o_ctx.get("total_put_volume") or 0),
+                "total_call_volume": int(_oc.get("total_call_volume") or 0),
+                "total_put_volume": int(_oc.get("total_put_volume") or 0),
                 "strike_universe": opt_strikes,
-                "sentiment": o_ctx.get("sentiment") or "NEUTRAL_EXPIRY",
+                "sentiment": _oc.get("sentiment") or ("NEUTRAL_EXPIRY" if is_live_stream else "UNAVAILABLE"),
                 # Option-chain provider snapshot time (falls back to the market
                 # observation time, then to None). NOT the envelope generation time.
-                "observed_at": option_observed_ts or nifty_exchange_ts,
-                "quality": "VALID" if (opt_pcr is not None or opt_strikes or is_live_stream or settled_close is not None) else "UNAVAILABLE",
+                "observed_at": (option_observed_ts or nifty_exchange_ts) if is_live_stream else None,
+                "quality": "VALID" if (is_live_stream or (settled_is_current and opt_strikes)) else "UNAVAILABLE",
             },
             "regime": {
-                "regime_type": m_ctx.get("market_regime") or "RANGE_BOUND",
+                "regime_type": _mc_live.get("market_regime") or ("RANGE_BOUND" if is_live_stream else "UNAVAILABLE"),
                 "rationale": "Evaluating pre-market structure and settled previous session levels." if not is_live_stream else "Price rotating in live session corridor.",
-                "volatility_state": m_ctx.get("volatility_state") or "NORMAL_VOLATILITY",
+                "volatility_state": _mc_live.get("volatility_state") or ("NORMAL_VOLATILITY" if is_live_stream else "UNAVAILABLE"),
             },
             "prediction": prediction_payload,
             "decision": {
@@ -3938,7 +3949,7 @@ class WorkstationStateService:
                 "quality": "VALID" if is_live_stream else "UNAVAILABLE",
             },
             "candles": {
-                "1m": (m_ctx.get("candles") or [])[-375:],
+                "1m": (_mc_live.get("candles") or [])[-375:],
                 "5m": [],
                 "15m": [],
             },
