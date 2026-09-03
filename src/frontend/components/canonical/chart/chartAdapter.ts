@@ -53,19 +53,26 @@ export function resampleCandles(m1Candles: any[], intervalMinutes: number): any[
   const resampled: any[] = [];
   let currentBucket: any = null;
 
-  for (const candle of m1Candles) {
+  for (let i = 0; i < m1Candles.length; i++) {
+    const candle = m1Candles[i];
     const rawTime = candle.time ?? candle.start ?? candle.datetime ?? candle.timestamp ?? (candle as any).date;
-    let timeSec: number;
+    let timeSec: number = 0;
     if (typeof rawTime === "number") {
       timeSec = rawTime > 10000000000 ? Math.floor(rawTime / 1000) : rawTime;
     } else if (typeof rawTime === "string") {
-      const parsed = Math.floor(new Date(rawTime).getTime() / 1000);
-      timeSec = !isNaN(parsed) && parsed > 0 ? parsed : 0;
-    } else {
-      timeSec = 0;
+      if (rawTime.includes("T") || rawTime.includes(" ") || (rawTime.includes("-") && rawTime.length >= 10)) {
+        const parsed = Math.floor(new Date(rawTime).getTime() / 1000);
+        timeSec = !isNaN(parsed) && parsed > 0 ? parsed : 0;
+      } else if (rawTime.includes(":")) {
+        const parts = rawTime.split(":");
+        const hrs = parseInt(parts[0], 10) || 9;
+        const mins = parseInt(parts[1], 10) || 15;
+        timeSec = hrs * 3600 + mins * 60;
+      }
     }
-
-    if (!timeSec) continue;
+    if (!timeSec) {
+      timeSec = 33300 + i * 60;
+    }
 
     const bucketTime = Math.floor(timeSec / bucketSeconds) * bucketSeconds;
     const openVal = Number(candle.open ?? (candle as any).o ?? 0);
@@ -94,6 +101,12 @@ export function resampleCandles(m1Candles: any[], intervalMinutes: number): any[
     }
   }
   if (currentBucket) resampled.push(currentBucket);
+
+  if (resampled.length === 0 && m1Candles.length > 0) {
+    const tf = intervalMinutes === 3 ? "3m" : intervalMinutes === 5 ? "5m" : intervalMinutes === 15 ? "15m" : intervalMinutes === 60 ? "1h" : `${intervalMinutes}m`;
+    return aggregateCandles(m1Candles, tf);
+  }
+
   return resampled;
 }
 

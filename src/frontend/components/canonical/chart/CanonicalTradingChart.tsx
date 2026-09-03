@@ -169,6 +169,13 @@ export function CanonicalTradingChart({
   const activitySeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const markersPrimitiveRef = useRef<any>(null);
   const priceLinesRef = useRef<IPriceLine[]>([]);
+  const lastRenderedTfRef = useRef<string | null>(null);
+  const lastRenderedSessionRef = useRef<string | null>(null);
+  const lastRenderedCountRef = useRef<number>(0);
+  const prevShowVwapRef = useRef<boolean>(showVwap);
+  const prevShowBandsRef = useRef<boolean>(showBands);
+  const prevShowEmasRef = useRef<boolean>(showEmas);
+  const prevShowActivityRef = useRef<boolean>(showActivity);
 
   // Adapt Canonical Data
   const chartModel = useMemo(() => {
@@ -555,6 +562,9 @@ export function CanonicalTradingChart({
       priceFormat: {
         type: "volume",
       },
+      priceLineVisible: false,
+      lastValueVisible: false,
+      baseLineVisible: false,
     });
 
     chart.priceScale("volume").applyOptions({
@@ -650,15 +660,96 @@ export function CanonicalTradingChart({
   useEffect(() => {
     if (!candleSeriesRef.current || !vwapSeriesRef.current || !activitySeriesRef.current) return;
 
-    candleSeriesRef.current.setData(chartData as any);
-    vwapSeriesRef.current.setData(showVwap ? (vwapCalculatedData as any) : []);
-    upper1SeriesRef.current?.setData(showBands ? (upper1Data as any) : []);
-    lower1SeriesRef.current?.setData(showBands ? (lower1Data as any) : []);
-    upper2SeriesRef.current?.setData(showBands ? (upper2Data as any) : []);
-    lower2SeriesRef.current?.setData(showBands ? (lower2Data as any) : []);
-    ema9SeriesRef.current?.setData(showEmas ? (ema9Data as any) : []);
-    ema21SeriesRef.current?.setData(showEmas ? (ema21Data as any) : []);
-    activitySeriesRef.current.setData(showActivity ? (activityData as any) : []);
+    const isFullReload =
+      lastRenderedTfRef.current !== selectedTf ||
+      lastRenderedSessionRef.current !== sessionDate ||
+      prevShowVwapRef.current !== showVwap ||
+      prevShowBandsRef.current !== showBands ||
+      prevShowEmasRef.current !== showEmas ||
+      prevShowActivityRef.current !== showActivity ||
+      lastRenderedCountRef.current === 0 ||
+      chartData.length === 0 ||
+      chartData.length < lastRenderedCountRef.current ||
+      chartData.length > lastRenderedCountRef.current + 1;
+
+    if (isFullReload) {
+      candleSeriesRef.current.setData(chartData as any);
+      vwapSeriesRef.current.setData(showVwap ? (vwapCalculatedData as any) : []);
+      upper1SeriesRef.current?.setData(showBands ? (upper1Data as any) : []);
+      lower1SeriesRef.current?.setData(showBands ? (lower1Data as any) : []);
+      upper2SeriesRef.current?.setData(showBands ? (upper2Data as any) : []);
+      lower2SeriesRef.current?.setData(showBands ? (lower2Data as any) : []);
+      ema9SeriesRef.current?.setData(showEmas ? (ema9Data as any) : []);
+      ema21SeriesRef.current?.setData(showEmas ? (ema21Data as any) : []);
+      activitySeriesRef.current.setData(showActivity ? (activityData as any) : []);
+
+      lastRenderedTfRef.current = selectedTf;
+      lastRenderedSessionRef.current = sessionDate;
+      lastRenderedCountRef.current = chartData.length;
+      prevShowVwapRef.current = showVwap;
+      prevShowBandsRef.current = showBands;
+      prevShowEmasRef.current = showEmas;
+      prevShowActivityRef.current = showActivity;
+
+      // Apply View Mode viewport on full reload
+      if (chartRef.current && chartData.length > 0) {
+        if (viewMode === "FOCUS") {
+          const visibleBars = Math.min(chartData.length, 100);
+          chartRef.current.timeScale().setVisibleLogicalRange({
+            from: chartData.length - visibleBars,
+            to: chartData.length + 5,
+          });
+        } else {
+          chartRef.current.timeScale().fitContent();
+        }
+      }
+    } else {
+      // Incremental tick update: use .update() with latest in-progress candle and overlays
+      // If a new candle just opened (count increased by 1), ensure previous bar is confirmed
+      if (chartData.length === lastRenderedCountRef.current + 1 && chartData.length >= 2) {
+        const prevCandle = chartData[chartData.length - 2];
+        candleSeriesRef.current.update(prevCandle as any);
+        if (showVwap && vwapCalculatedData.length >= 2) {
+          vwapSeriesRef.current.update(vwapCalculatedData[vwapCalculatedData.length - 2] as any);
+        }
+        if (showBands && upper1Data.length >= 2) {
+          upper1SeriesRef.current?.update(upper1Data[upper1Data.length - 2] as any);
+          lower1SeriesRef.current?.update(lower1Data[lower1Data.length - 2] as any);
+          upper2SeriesRef.current?.update(upper2Data[upper2Data.length - 2] as any);
+          lower2SeriesRef.current?.update(lower2Data[lower2Data.length - 2] as any);
+        }
+        if (showEmas && ema9Data.length >= 2) {
+          ema9SeriesRef.current?.update(ema9Data[ema9Data.length - 2] as any);
+          ema21SeriesRef.current?.update(ema21Data[ema21Data.length - 2] as any);
+        }
+        if (showActivity && activityData.length >= 2) {
+          activitySeriesRef.current.update(activityData[activityData.length - 2] as any);
+        }
+      }
+
+      // Update current in-progress candle and overlays
+      const lastCandle = chartData[chartData.length - 1];
+      if (lastCandle) {
+        candleSeriesRef.current.update(lastCandle as any);
+        if (showVwap && vwapCalculatedData.length > 0) {
+          vwapSeriesRef.current.update(vwapCalculatedData[vwapCalculatedData.length - 1] as any);
+        }
+        if (showBands && upper1Data.length > 0) {
+          upper1SeriesRef.current?.update(upper1Data[upper1Data.length - 1] as any);
+          lower1SeriesRef.current?.update(lower1Data[lower1Data.length - 1] as any);
+          upper2SeriesRef.current?.update(upper2Data[upper2Data.length - 1] as any);
+          lower2SeriesRef.current?.update(lower2Data[lower2Data.length - 1] as any);
+        }
+        if (showEmas && ema9Data.length > 0) {
+          ema9SeriesRef.current?.update(ema9Data[ema9Data.length - 1] as any);
+          ema21SeriesRef.current?.update(ema21Data[ema21Data.length - 1] as any);
+        }
+        if (showActivity && activityData.length > 0) {
+          activitySeriesRef.current.update(activityData[activityData.length - 1] as any);
+        }
+        lastRenderedCountRef.current = chartData.length;
+      }
+    }
 
     // Fail-safe Event Markers using Lightweight Charts v5 createSeriesMarkers Primitive
     try {
@@ -679,19 +770,6 @@ export function CanonicalTradingChart({
     } catch (err) {
       console.warn("Chart event markers initialization failed (non-fatal):", err);
     }
-
-    // Apply View Mode
-    if (chartRef.current && chartData.length > 0) {
-      if (viewMode === "FOCUS") {
-        const visibleBars = Math.min(chartData.length, 100);
-        chartRef.current.timeScale().setVisibleLogicalRange({
-          from: chartData.length - visibleBars,
-          to: chartData.length + 5,
-        });
-      } else {
-        chartRef.current.timeScale().fitContent();
-      }
-    }
   }, [
     chartData,
     vwapCalculatedData,
@@ -704,6 +782,8 @@ export function CanonicalTradingChart({
     activityData,
     eventMarkers,
     viewMode,
+    selectedTf,
+    sessionDate,
     showVwap,
     showBands,
     showEmas,
@@ -1090,14 +1170,20 @@ export function CanonicalTradingChart({
         <div ref={containerRef} className="relative w-full h-full min-h-[500px] bg-neutral-950 rounded border border-neutral-800" />
 
         {/* Explicit empty state — with zero candles the chart canvas would
-            otherwise mount blank. Matches the "Awaiting live … stream" pattern
-            used elsewhere in this workspace (e.g. OptionsIntelligenceWorkspace). */}
+            otherwise mount blank. Distinguishes completed-session historical review
+            from live market feed awaiting data. */}
         {totalCandles === 0 && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center text-neutral-500 font-mono space-y-2 bg-neutral-950/80 rounded pointer-events-none">
             <CandlestickChart className="w-9 h-9 text-neutral-700 animate-pulse" />
-            <div className="text-xs text-neutral-400 font-bold">Awaiting live candle data</div>
+            <div className="text-xs text-neutral-400 font-bold">
+              {isPostReview || isReplayMode || isPreMarketBaseline
+                ? "No completed session candle data available"
+                : "Awaiting live candle data"}
+            </div>
             <div className="text-[10px] text-neutral-600 max-w-xs">
-              Intraday candles, VWAP and structural levels will render once the market feed is streaming.
+              {isPostReview || isReplayMode || isPreMarketBaseline
+                ? `Historical candles for ${sessionDate || "completed session"} (${selectedTf}) were not recorded or are unavailable.`
+                : "Intraday candles, VWAP and structural levels will render once the market feed is streaming."}
             </div>
           </div>
         )}
