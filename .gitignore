@@ -62,4 +62,6 @@ coverage/
 dist_test/
 scratch/
 data/cache/*.tmp_*
-data/session_store/*.tmp_*
+data/session_store/
+data/performance_records/
+data/telemetry/
