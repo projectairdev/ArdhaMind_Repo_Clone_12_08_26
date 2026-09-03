@@ -30,16 +30,24 @@ class ExchangeCalendar:
         date(2025, 10, 22), # Diwali Balipratipada
         date(2025, 11, 5),  # Prakash Gurpurb Sri Guru Nanak Dev
         date(2025, 12, 25), # Christmas
-        # 2026 Sample / Standard NSE Holidays
+        # 2026 NSE equity/derivatives trading holidays — weekday closures only.
+        # Dates reconciled against the official 2026 exchange holiday circular.
+        # (Aug 15 / Independence Day falls on a Saturday in 2026, so it is not a
+        # trading-day closure and is intentionally absent.) Festival-name comments
+        # for movable feasts are indicative; the date is authoritative.
         date(2026, 1, 26),  # Republic Day
         date(2026, 3, 3),   # Holi
-        date(2026, 3, 20),  # Id-Ul-Fitr
+        date(2026, 3, 26),  # NSE trading holiday (movable feast)
+        date(2026, 3, 31),  # Id-Ul-Fitr (Ramzan Id)
         date(2026, 4, 3),   # Good Friday
-        date(2026, 4, 14),  # Dr. Ambedkar Jayanti
+        date(2026, 4, 14),  # Dr. Baba Saheb Ambedkar Jayanti
         date(2026, 5, 1),   # Maharashtra Day
-        date(2026, 8, 15),  # Independence Day
-        date(2026, 10, 2),  # Gandhi Jayanti
-        date(2026, 11, 8),  # Diwali (Muhurat)
+        date(2026, 5, 28),  # Bakri Id (Id-ul-Zuha)
+        date(2026, 6, 26),  # Muharram
+        date(2026, 9, 14),  # Ganesh Chaturthi
+        date(2026, 10, 2),  # Mahatma Gandhi Jayanti
+        date(2026, 10, 20), # Dussehra (Vijaya Dashami)
+        date(2026, 11, 10), # Diwali - Laxmi Pujan
         date(2026, 11, 24), # Guru Nanak Jayanti
         date(2026, 12, 25), # Christmas
     })

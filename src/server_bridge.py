@@ -2460,11 +2460,13 @@ def run_daemon(wm, bs):
                     def _bg_update_option_chain(s_nifty: float, vix_val: float):
                         global cached_market_context, cached_option_context
                         try:
-                            from src.broker.services.market_feed_service import MarketFeedService
+                            from src.broker.services.market_feed_service import MarketFeedService, exchange_today
                             expiries = MarketFeedService.get_instance().resolve_expiries(bs) if bs.is_connected() else []
                             if expiries:
-                                from datetime import datetime as dt_cls, date as dt_date
-                                today_dt = dt_date.today()
+                                from datetime import datetime as dt_cls
+                                # Single source of "today" for expiry comparison — the IST
+                                # exchange date, identical to resolve_expiries() above.
+                                today_dt = exchange_today()
                                 future_exp = []
                                 for e in expiries:
                                     try:
@@ -2819,17 +2821,29 @@ def run_daemon(wm, bs):
 
         # FIX 18: Dynamic cadence based on unified clock authority & session status
         # Active window (08:45 - 18:30 IST on trading days or active session): fast 3.0s cadence
-        # Off-market / deep night / weekend hours: throttled 60.0s cadence
+        # Off-market / deep night / weekend / holiday hours: throttled 60.0s cadence
         sleep_sec = 3.0
         try:
             from datetime import timezone as _dt_tz, timedelta as _dt_td
-            from src.utils.time_utils import is_trading_day as _is_td
+            from src.market_data.session.exchange_calendar import ExchangeCalendar
+            from src.broker.services.market_status_service import MarketStatusService
             _ist_tz = _dt_tz(_dt_td(hours=5, minutes=30))
             _now_ist = datetime.now(_ist_tz)
             _hhmm = _now_ist.strftime("%H:%M")
-            _is_active_window = _is_td(_now_ist.date()) and ("08:45" <= _hhmm <= "18:30")
-            _m_stat = bs.get_market_status() if bs else None
-            _is_market_active = bool(_m_stat and _m_stat.is_open)
+            # Holiday-aware trading-day check. time_utils.is_trading_day() only
+            # tests weekday(), so it returned True on weekday NSE holidays and the
+            # loop stayed in fast 3.0s polling all day. ExchangeCalendar carries
+            # the real NSE holiday list used by CanonicalSessionAuthority.
+            _is_trading_day = ExchangeCalendar().is_trading_day(_now_ist.date())
+            _is_active_window = _is_trading_day and ("08:45" <= _hhmm <= "18:30")
+            # BrokerService has no get_market_status(); the previous bs.get_market_status()
+            # raised AttributeError every iteration, so this whole block fell through
+            # to the 3.0s fallback and never throttled at all. Use the real service.
+            _m_stat = MarketStatusService.get_instance().get_market_status()
+            _is_market_active = bool(
+                _m_stat and str(getattr(_m_stat, "status", "")).upper()
+                in ("OPEN", "PRE_OPEN", "PRE_MARKET", "SPECIAL_SESSION", "POST_CLOSE")
+            )
             if not _is_active_window and not _is_market_active:
                 sleep_sec = 60.0
         except Exception:

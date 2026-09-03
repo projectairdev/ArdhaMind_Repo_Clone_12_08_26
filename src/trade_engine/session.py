@@ -20,14 +20,26 @@ def analyze_session(
     date_val = dt.date()
 
     if holidays is None:
-        # Default market holidays for 2026
+        # 2026 NSE equity/derivatives trading holidays — weekday closures only.
+        # Kept in sync with src/market_data/session/exchange_calendar.py and
+        # src/broker/services/market_status_service.py. Movable-feast names are
+        # indicative; the date is authoritative. (Aug 15 falls on a Saturday in
+        # 2026 and is not a trading-day closure.)
         holidays = {
             datetime.date(2026, 1, 26),  # Republic Day
-            datetime.date(2026, 3, 6),   # Holi (approx)
+            datetime.date(2026, 3, 3),   # Holi
+            datetime.date(2026, 3, 26),  # NSE trading holiday (movable feast)
+            datetime.date(2026, 3, 31),  # Id-Ul-Fitr (Ramzan Id)
             datetime.date(2026, 4, 3),   # Good Friday
+            datetime.date(2026, 4, 14),  # Dr. Baba Saheb Ambedkar Jayanti
             datetime.date(2026, 5, 1),   # Maharashtra Day
-            datetime.date(2026, 8, 15),  # Independence Day
-            datetime.date(2026, 10, 2),  # Gandhi Jayanti
+            datetime.date(2026, 5, 28),  # Bakri Id (Id-ul-Zuha)
+            datetime.date(2026, 6, 26),  # Muharram
+            datetime.date(2026, 9, 14),  # Ganesh Chaturthi
+            datetime.date(2026, 10, 2),  # Mahatma Gandhi Jayanti
+            datetime.date(2026, 10, 20), # Dussehra (Vijaya Dashami)
+            datetime.date(2026, 11, 10), # Diwali - Laxmi Pujan
+            datetime.date(2026, 11, 24), # Guru Nanak Jayanti
             datetime.date(2026, 12, 25), # Christmas
         }
 

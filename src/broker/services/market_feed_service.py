@@ -18,6 +18,21 @@ from src.options_engine.iv import solve_implied_volatility
 
 logger = logging.getLogger("MarketFeedService")
 
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def exchange_today() -> date:
+    """Current calendar date on the exchange (IST).
+
+    NSE option expiries are IST calendar dates, so "is this expiry in the past?"
+    must be evaluated against the IST date, not the process-local date. The
+    production VPS runs in UTC, which lags IST by a full calendar day during
+    00:00-05:30 IST; using the local date there would spuriously classify the
+    current IST day's expiry as future/past for that window. This is the single
+    definition of "today" for every expiry-vs-today comparison.
+    """
+    return datetime.now(_IST).date()
+
 
 def _number(value: Any) -> Optional[float]:
     try:
@@ -100,7 +115,7 @@ class MarketFeedService:
         valid = []
         for value in service.lookup_expiries("NIFTY"):
             try:
-                if datetime.strptime(value, "%Y-%m-%d").date() >= date.today():
+                if datetime.strptime(value, "%Y-%m-%d").date() >= exchange_today():
                     valid.append(value)
             except (TypeError, ValueError):
                 continue
@@ -470,7 +485,7 @@ class MarketFeedService:
         # Calendar DTE
         try:
             exp_date_obj = date.fromisoformat(str(resolution["expiry"])[:10])
-            today_date_obj = date.today()
+            today_date_obj = exchange_today()
             calendar_dte = max(0, (exp_date_obj - today_date_obj).days)
         except Exception:
             calendar_dte = 1
