@@ -66,13 +66,24 @@ export const EconomicCalendarView: React.FC<EconomicCalendarViewProps> = ({ pres
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  // 1. Ingest Full Pipeline Events Dataset
+  // 1. Ingest Full Pipeline Events Dataset (excluding stale historical calendar entries from rolling multi-year feeds)
   const allEvents: CanonicalEconomicEvent[] = useMemo(() => {
     const events = pres?.calendarEvents || [];
-    return [...events].sort(
-      (a, b) => new Date(a.rawTimestamp).getTime() - new Date(b.rawTimestamp).getTime()
-    );
-  }, [pres?.calendarEvents]);
+    return [...events]
+      .filter((ev) => {
+        const evTime = new Date(ev.rawTimestamp).getTime();
+        const refDay = new Date(sessionRefTime).setHours(0, 0, 0, 0);
+        const evDay = new Date(evTime).setHours(0, 0, 0, 0);
+        const dayDiff = Math.round((evDay - refDay) / (1000 * 60 * 60 * 24));
+        if (dayDiff < 0 && (dayDiff < -14 || (ev.status !== "RELEASED" && (!ev.actual || ev.actual === "—")))) {
+          return false;
+        }
+        return true;
+      })
+      .sort(
+        (a, b) => new Date(a.rawTimestamp).getTime() - new Date(b.rawTimestamp).getTime()
+      );
+  }, [pres?.calendarEvents, sessionRefTime]);
 
   // Dynamic filter counts
   const totalCount = allEvents.length;
@@ -172,6 +183,10 @@ export const EconomicCalendarView: React.FC<EconomicCalendarViewProps> = ({ pres
         groupLabel = "UPCOMING NEXT WEEK";
         order = 3;
       } else if (dayDiff < 0) {
+        // Restrict completed releases to trailing 14 days and require real release data (not unreleased schedule entries)
+        if (dayDiff < -14 || (ev.status !== "RELEASED" && (!ev.actual || ev.actual === "—"))) {
+          return;
+        }
         groupKey = "PAST";
         groupLabel = "RECENT COMPLETED RELEASES";
         order = 0;

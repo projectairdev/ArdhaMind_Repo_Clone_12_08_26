@@ -87,7 +87,7 @@ export const CatalystsMatrixView: React.FC<CatalystsMatrixViewProps> = ({ pres }
   }, []);
 
   const upsideTailwinds: CatalystDetailItem[] = useMemo(() => {
-    const stories = pres?.stories || [];
+    const stories = pres?.liveFeed || [];
     const positive = stories.filter((s) => s.expectedDirection === "POSITIVE");
     if (positive.length > 0) {
       return positive.slice(0, 5).map((s) => ({
@@ -106,10 +106,10 @@ export const CatalystsMatrixView: React.FC<CatalystsMatrixViewProps> = ({ pres }
       }));
     }
     return [];
-  }, [pres?.stories]);
+  }, [pres?.liveFeed]);
 
   const downsideRisks: CatalystDetailItem[] = useMemo(() => {
-    const stories = pres?.stories || [];
+    const stories = pres?.liveFeed || [];
     const negative = stories.filter((s) => s.expectedDirection === "NEGATIVE" || s.expectedDirection === "MIXED");
     if (negative.length > 0) {
       return negative.slice(0, 5).map((s) => ({
@@ -129,7 +129,7 @@ export const CatalystsMatrixView: React.FC<CatalystsMatrixViewProps> = ({ pres }
       }));
     }
     return [];
-  }, [pres?.stories]);
+  }, [pres?.liveFeed]);
 
   return (
     <div className="w-full flex flex-col gap-2 font-mono text-left select-none text-xs relative">
