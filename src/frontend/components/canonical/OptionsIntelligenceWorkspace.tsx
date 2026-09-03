@@ -23,7 +23,17 @@ import {
   Activity,
   BarChart2,
   Compass,
+  AlertTriangle,
 } from "lucide-react";
+
+/** Coarse humanized age for the option-chain staleness banner. */
+function humanizeChainAge(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  if (seconds < 90) return `${Math.round(seconds)}s`;
+  if (seconds < 5400) return `${Math.round(seconds / 60)}m`;
+  if (seconds < 172800) return `${Math.round(seconds / 3600)}h`;
+  return `${Math.round(seconds / 86400)}d`;
+}
 
 interface OptionsWorkspaceProps {
   options?: CanonicalOptionsIntelligence;
@@ -57,6 +67,29 @@ export function OptionsIntelligenceWorkspace({
     || Number(options?.max_pain) > 0;
 
   const isDataAvailable = Boolean(isReplayMode || (options?.quality !== "UNAVAILABLE" && (resolvedSpot != null || hasChainData)) || resolvedSpot != null);
+
+  // Option-chain staleness (server stamps quality/stale/age from the disk-snapshot ceiling)
+  const chainStale = options?.quality === "STALE" || options?.stale === true;
+  const chainTooOld = Boolean(options?.unavailable_message)
+    || (options?.quality === "UNAVAILABLE" && options?.snapshot_age_seconds != null);
+  const chainAgeSeconds = Number(options?.snapshot_age_seconds);
+  const chainAgeLabel = Number.isFinite(chainAgeSeconds) && chainAgeSeconds > 0
+    ? humanizeChainAge(chainAgeSeconds) : null;
+  const staleTag = chainStale
+    ? <span className="text-amber-400 font-bold"> · STALE</span> : null;
+
+  // Real, current weekly expiry — never a hardcoded date string. The server
+  // resolves the nearest future NIFTY expiry from the live instrument master.
+  const expiryIso = options?.expiry && options.expiry !== "—"
+    ? String(options.expiry).slice(0, 10) : null;
+  const expiryDisplay = expiryIso
+    ? new Date(`${expiryIso}T00:00:00+05:30`).toLocaleDateString("en-GB", {
+        timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric",
+      })
+    : (isReplayMode ? "28 Aug 2026" : "Unavailable");
+  const expirySubLabel = expiryIso
+    ? "Current weekly expiry"
+    : (isReplayMode ? "Current Weekly" : "Awaiting chain");
 
   // Expiry & Filter Controls
   const activeExpiry = envelope.options?.expiry || options.expiry || authState.sessionDate || "—";
@@ -220,6 +253,26 @@ export function OptionsIntelligenceWorkspace({
   return (
     <div className="flex flex-col gap-2.5 p-3 w-full bg-neutral-950 text-neutral-200 font-sans">
       {/* ========================================================================= */}
+      {/* OPTION-CHAIN STALENESS BANNER (prominent — not just the small badge)       */}
+      {/* ========================================================================= */}
+      {(chainTooOld || chainStale) && (
+        <div
+          className={`w-full rounded-md border px-3 py-2 flex items-center gap-2 ${
+            chainTooOld
+              ? "border-rose-500/60 bg-rose-500/10 text-rose-200"
+              : "border-amber-500/60 bg-amber-500/10 text-amber-200"
+          }`}
+          data-testid="option-chain-staleness-banner"
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="text-[11px] font-bold uppercase tracking-wide leading-tight">
+            {chainTooOld
+              ? (options?.unavailable_message || "Option chain unavailable — data too old to display")
+              : `Stale option chain${chainAgeLabel ? ` · last update ${chainAgeLabel} ago` : ""} — PCR, max pain and OI walls below are not current`}
+          </span>
+        </div>
+      )}
+      {/* ========================================================================= */}
       {/* TIER 1: DERIVATIVES STATE STRIP (Top Full-Width Banner)                    */}
       {/* ========================================================================= */}
       <div className="w-full bg-neutral-900/60 border border-neutral-800 rounded-md p-2.5">
@@ -244,9 +297,9 @@ export function OptionsIntelligenceWorkspace({
           <div className="flex flex-col gap-0.5 bg-neutral-950/60 border border-neutral-800/80 rounded p-1.5">
             <span className="text-[10px] text-neutral-400 uppercase tracking-wider">EXPIRY</span>
             <span className="font-bold text-neutral-200 text-[11px] truncate">
-              {options.expiry || (isReplayMode ? "28 Aug 2026" : "03 Sep 2026")}
+              {expiryDisplay}
             </span>
-            <span className="text-[9px] text-cyan-400">{isReplayMode ? "Current Weekly" : "Active Weekly (03 Sep)"}</span>
+            <span className="text-[9px] text-cyan-400">{expirySubLabel}</span>
           </div>
 
           {/* 2. SPOT */}
@@ -272,11 +325,11 @@ export function OptionsIntelligenceWorkspace({
           {/* 4. PCR (OI) */}
           <div className="flex flex-col gap-0.5 bg-neutral-950/60 border border-neutral-800/80 rounded p-1.5">
             <span className="text-[10px] text-neutral-400 uppercase tracking-wider">PCR (OI)</span>
-            <span className="font-bold text-emerald-400 text-[12px] tabular-nums">
+            <span className={`font-bold text-[12px] tabular-nums ${chainStale ? "text-amber-400" : "text-emerald-400"}`}>
               {pcr != null ? pcr.toFixed(2) : "—"}
             </span>
             <span className="text-[9px] text-emerald-400 truncate">
-              {pcr != null ? (pcr >= 1 ? "Bullish Put Writing" : "Call Heavy") : "Awaiting chain"}
+              {pcr != null ? (pcr >= 1 ? "Bullish Put Writing" : "Call Heavy") : "Awaiting chain"}{staleTag}
             </span>
           </div>
 
@@ -286,7 +339,7 @@ export function OptionsIntelligenceWorkspace({
             <span className="font-bold text-amber-400 text-[12px] tabular-nums">
               {maxPain != null ? maxPain.toLocaleString("en-IN") : "—"}
             </span>
-            <span className="text-[9px] text-neutral-400">Pin Gravity</span>
+            <span className="text-[9px] text-neutral-400">Pin Gravity{staleTag}</span>
           </div>
 
           {/* 6. ATM IV */}
@@ -304,7 +357,7 @@ export function OptionsIntelligenceWorkspace({
             <span className="font-bold text-rose-400 text-[12px] tabular-nums">
               {totalCallOiCr != null ? `${totalCallOiCr.toFixed(2)} Cr` : "—"}
             </span>
-            <span className="text-[9px] text-neutral-400">{callRatioPct != null ? `${callRatioPct}% of Total` : "—"}</span>
+            <span className="text-[9px] text-neutral-400">{callRatioPct != null ? `${callRatioPct}% of Total` : "—"}{staleTag}</span>
           </div>
 
           {/* 8. TOTAL PUT OI */}
@@ -313,16 +366,16 @@ export function OptionsIntelligenceWorkspace({
             <span className="font-bold text-emerald-400 text-[12px] tabular-nums">
               {totalPutOiCr != null ? `${totalPutOiCr.toFixed(2)} Cr` : "—"}
             </span>
-            <span className="text-[9px] text-neutral-400">{putRatioPct != null ? `${putRatioPct}% of Total` : "—"}</span>
+            <span className="text-[9px] text-neutral-400">{putRatioPct != null ? `${putRatioPct}% of Total` : "—"}{staleTag}</span>
           </div>
 
           {/* 9. OI SKEW / BIAS */}
           <div className="flex flex-col gap-0.5 bg-neutral-950/60 border border-neutral-800/80 rounded p-1.5">
             <span className="text-[10px] text-neutral-400 uppercase tracking-wider">OI SKEW / BIAS</span>
-            <span className={`font-bold text-[11px] truncate ${pcr != null && pcr >= 1 ? "text-emerald-400" : pcr != null ? "text-rose-400" : "text-neutral-400"}`}>
+            <span className={`font-bold text-[11px] truncate ${chainStale ? "text-amber-400" : pcr != null && pcr >= 1 ? "text-emerald-400" : pcr != null ? "text-rose-400" : "text-neutral-400"}`}>
               {options?.options_confirmation?.replace(/_/g, " ") || (pcr != null ? (pcr >= 1 ? "BULLISH BIAS" : "BEARISH BIAS") : "AWAITING CHAIN")}
             </span>
-            <span className="text-[9px] text-neutral-400">{pcr != null ? (pcr >= 1 ? "Put Writing Lead" : "Call Writing Lead") : "—"}</span>
+            <span className="text-[9px] text-neutral-400">{pcr != null ? (pcr >= 1 ? "Put Writing Lead" : "Call Writing Lead") : "—"}{staleTag}</span>
           </div>
         </div>
       </div>

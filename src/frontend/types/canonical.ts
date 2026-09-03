@@ -223,6 +223,13 @@ export interface CanonicalOptionsIntelligence {
   strike_universe: StrikeRow[];
   /** Option-chain provider snapshot time (falls back to market observation time). */
   observed_at?: string | null;
+  /** Age of the underlying option-chain snapshot in seconds, when known. */
+  snapshot_age_seconds?: number | null;
+  /** True when the served chain is a disk snapshot past its stale threshold but
+   *  within the hard ceiling — PCR / max pain / walls are not current. */
+  stale?: boolean;
+  /** Set when the chain is refused for being past the hard staleness ceiling. */
+  unavailable_message?: string | null;
   quality: DataQualityStatus;
 }
 

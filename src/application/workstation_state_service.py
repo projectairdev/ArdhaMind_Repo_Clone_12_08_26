@@ -3635,7 +3635,6 @@ class WorkstationStateService:
         # values when a genuine tick is flowing. Otherwise these carry a stale
         # disk-cache snapshot (e.g. m_ctx["high"] = a days-old 24188.30).
         _mc_live = m_ctx if has_live_tick else {}
-        _oc_live = o_ctx if is_live_stream else {}
 
         # Price structure calculations
         raw_vwap = _mc_live.get("vwap") or _mc_live.get("session_vwap") or (pipeline_result.compatibility_values().get("marketContext", {}).get("vwap") if (pipeline_result and has_live_tick) else None)
@@ -3670,7 +3669,26 @@ class WorkstationStateService:
         # (kite_nifty_option_snapshot.json) that survives a feed outage. Only
         # surface it as live intelligence when a live tick is actually flowing;
         # otherwise every derived field must be null and quality UNAVAILABLE.
-        _oc = _oc_live
+        #
+        # MarketFeedService stamps the snapshot with its age and a staleness
+        # verdict: past its hard ceiling the context comes back as an explicit
+        # UNAVAILABLE ("data too old to display"); between the stale threshold
+        # and the ceiling it is served but flagged so PCR / max-pain / walls are
+        # marked STALE rather than presented with live confidence.
+        _chain_status = str(o_ctx.get("status") or "").upper()
+        _chain_age_s = o_ctx.get("snapshot_age_seconds")
+        try:
+            _chain_age_s = float(_chain_age_s) if _chain_age_s is not None else None
+        except (TypeError, ValueError):
+            _chain_age_s = None
+        _chain_ceiling_exceeded = (
+            _chain_status == "UNAVAILABLE"
+            and o_ctx.get("reason") == "snapshot_exceeds_staleness_ceiling"
+        ) or (_chain_age_s is not None and _chain_age_s > 6 * 3600.0)
+        _chain_stale = bool(o_ctx.get("stale")) or (_chain_age_s is not None and _chain_age_s > 300.0)
+        _chain_servable = is_live_stream and not _chain_ceiling_exceeded
+        _chain_unavailable_message = o_ctx.get("unavailable_message") if _chain_ceiling_exceeded else None
+        _oc = o_ctx if _chain_servable else {}
         opt_pcr = float(_oc.get("pcr")) if _oc.get("pcr") is not None else None
         opt_max_pain = float(_oc.get("max_pain") or _oc.get("max_pain_strike")) if (_oc.get("max_pain") or _oc.get("max_pain_strike")) is not None else None
         opt_call_wall = float(_oc.get("call_wall") or _oc.get("highest_call_oi_strike")) if (_oc.get("call_wall") or _oc.get("highest_call_oi_strike")) is not None else None
@@ -3915,11 +3933,17 @@ class WorkstationStateService:
                 "total_call_volume": int(_oc.get("total_call_volume") or 0),
                 "total_put_volume": int(_oc.get("total_put_volume") or 0),
                 "strike_universe": opt_strikes,
-                "sentiment": _oc.get("sentiment") or ("NEUTRAL_EXPIRY" if is_live_stream else "UNAVAILABLE"),
+                "sentiment": _oc.get("sentiment") or ("NEUTRAL_EXPIRY" if _chain_servable else "UNAVAILABLE"),
                 # Option-chain provider snapshot time (falls back to the market
                 # observation time, then to None). NOT the envelope generation time.
-                "observed_at": (option_observed_ts or nifty_exchange_ts) if is_live_stream else None,
-                "quality": "VALID" if (is_live_stream or (settled_is_current and opt_strikes)) else "UNAVAILABLE",
+                "observed_at": (option_observed_ts or nifty_exchange_ts) if _chain_servable else None,
+                "snapshot_age_seconds": _chain_age_s if _chain_servable else None,
+                "stale": bool(_chain_stale) if _chain_servable else False,
+                "unavailable_message": _chain_unavailable_message,
+                "quality": (
+                    "UNAVAILABLE" if not _chain_servable
+                    else ("STALE" if _chain_stale else "VALID")
+                ),
             },
             "regime": {
                 "regime_type": _mc_live.get("market_regime") or ("RANGE_BOUND" if is_live_stream else "UNAVAILABLE"),
