@@ -3736,26 +3736,47 @@ class WorkstationStateService:
         # Pure read-only computation: builds an ephemeral MarketAnalyticsSnapshot
         # from the live payload and runs PredictionEngine.generate_prediction.
         # Memoized per 1-minute candle boundary inside LivePredictionService.
-        try:
-            from src.prediction.live import LivePredictionService
-            prediction_payload = LivePredictionService.get_prediction_payload(
-                market_context={**m_ctx, "current_spot": live_price, "india_vix": vix,
-                                "open": live_open, "high": live_high, "low": live_low,
-                                "previous_close": effective_prev_close,
-                                "session_date": active_date},
-                option_context=o_ctx,
-                session_phase=market_phase,
-                is_live_session=is_live_stream,
-                now_utc=now_utc,
-            )
-        except Exception as _pred_ex:  # never break the envelope build
-            logger.warning(f"Canonical prediction snapshot warning: {_pred_ex}")
-            prediction_payload = {
-                "status": "UNAVAILABLE", "quality": "UNAVAILABLE",
-                "unavailable_reason": f"{type(_pred_ex).__name__}: {_pred_ex}",
-                "generated_at": now_iso, "similar_sessions": [], "volatility_corridor": {},
-                "is_live_projection": False, "basis": "UNAVAILABLE",
-            }
+        prediction_unavailable = {
+            "status": "UNAVAILABLE", "quality": "UNAVAILABLE",
+            "unavailable_reason": "No live feed and no current settled session.",
+            "generated_at": now_iso, "similar_sessions": [], "volatility_corridor": {},
+            "is_live_projection": False, "basis": "UNAVAILABLE",
+        }
+        if not is_live_stream and not settled_is_current:
+            # No real inputs — do not run the prediction engine off a stale cache.
+            prediction_payload = prediction_unavailable
+        else:
+            try:
+                from src.prediction.live import LivePredictionService
+                # Explicit, gated context ONLY — never spread the legacy market
+                # context, which can still carry a stale `spot` / `ltp` / `prev_close`.
+                _pred_ctx = {
+                    "current_spot": live_price,
+                    "spot": live_price,
+                    "ltp": live_price,
+                    "india_vix": vix if is_live_stream else None,
+                    "vix": vix if is_live_stream else None,
+                    "open": live_open,
+                    "high": live_high,
+                    "low": live_low,
+                    "previous_close": effective_prev_close,
+                    "prev_close": effective_prev_close,
+                    "session_date": active_date,
+                    "candles": (m_ctx.get("candles") or []) if is_live_stream else [],
+                }
+                prediction_payload = LivePredictionService.get_prediction_payload(
+                    market_context=_pred_ctx,
+                    option_context=o_ctx if is_live_stream else {},
+                    session_phase=market_phase,
+                    is_live_session=is_live_stream,
+                    now_utc=now_utc,
+                )
+            except Exception as _pred_ex:  # never break the envelope build
+                logger.warning(f"Canonical prediction snapshot warning: {_pred_ex}")
+                prediction_payload = {
+                    **prediction_unavailable,
+                    "unavailable_reason": f"{type(_pred_ex).__name__}: {_pred_ex}",
+                }
 
         # Build clean CanonicalFrontendEnvelope adhering to types/canonical.ts
         envelope = {
