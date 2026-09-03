@@ -52,7 +52,12 @@ export function WorkstationTopBar({
     };
   }, [sessionIdentity]);
 
-  // Authoritative Normalized Broker Health Contract
+  // Authoritative Normalized Broker Health Contract.
+  // NOTE: broker connection status is derived ONLY from real broker auth/session
+  // fields. The browser<->local-server WebSocket state (`isConnected`) is
+  // deliberately NOT part of this — a live tab socket does not mean Zerodha is
+  // authenticated, and OR-ing it in previously showed a false green "CONNECTED"
+  // through expired tokens / 401s / explicit logout.
   const rawBroker = state?.broker_status || broker;
   const rawStatus = String((rawBroker as any)?.status || (rawBroker as any)?.connection_status || (rawBroker as any)?.normalized_status || "").toUpperCase();
   const isBrokerConnected =
@@ -61,8 +66,7 @@ export function WorkstationTopBar({
     rawStatus === "HEALTHY" ||
     rawStatus === "READY" ||
     (rawBroker as any)?.execution_verified === true ||
-    (rawBroker as any)?.socket_connected === true ||
-    isConnected;
+    (rawBroker as any)?.socket_connected === true;
 
   const isAuthRequired =
     rawStatus === "CONNECTED_AUTH_REQUIRED" ||
@@ -75,20 +79,24 @@ export function WorkstationTopBar({
   const isReconnecting = rawStatus === "RECONNECTING" || rawStatus === "CONNECTING";
   const isUnverified = (rawStatus === "BROKER_STATE_UNVERIFIED" || rawStatus === "UNVERIFIED") && !isBrokerConnected;
 
-  const brokerLabel = isBrokerConnected
-    ? "CONNECTED"
-    : isAuthRequired
-      ? "AUTH REQUIRED"
+  // Auth-required / session-expired is evaluated BEFORE "connected" so a
+  // legitimate AUTH_REQUIRED / SESSION_EXPIRED / TOKEN_EXPIRED state can never be
+  // silently overridden by a stale or partial "connected" read (e.g. a broker
+  // socket still open while the access token has expired).
+  const brokerLabel = isAuthRequired
+    ? "AUTH REQUIRED"
+    : isBrokerConnected
+      ? "CONNECTED"
       : isReconnecting
         ? "RECONNECTING"
         : isUnverified
           ? "VERIFYING"
           : "DISCONNECTED";
 
-  const brokerTextClass = isBrokerConnected
-    ? "text-[#00C896]"
-    : isAuthRequired
-      ? "text-[#E59700]"
+  const brokerTextClass = isAuthRequired
+    ? "text-[#E59700]"
+    : isBrokerConnected
+      ? "text-[#00C896]"
       : isReconnecting
         ? "text-[#E59700]"
         : isUnverified

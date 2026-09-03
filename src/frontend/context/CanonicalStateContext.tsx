@@ -265,6 +265,54 @@ function detectInitialReplayMode(): boolean {
   return false;
 }
 
+/** Current calendar date on the exchange (IST), as YYYY-MM-DD. "" if undeterminable. */
+function todayIstDateStr(): string {
+  try {
+    // en-CA locale formats as YYYY-MM-DD
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * True only for an envelope that represents the CURRENT trading session's real
+ * live stream — not a fixture / replay tape, not the "stream_init" placeholder,
+ * and not a stale cache carried over from a previous day.
+ *
+ * Gates both the sessionStorage rehydration and the live-envelope acceptance so
+ * that a genuine no-broker / no-session DEGRADED state falls through to
+ * EMPTY_CANONICAL_ENVELOPE (honest empty UI) instead of surfacing yesterday's —
+ * or a 28-Aug fixture's — settled close and structural levels as if they were
+ * live. Fixture data stays fully usable through the explicit replay/preview
+ * paths, which never route through here.
+ */
+function isCurrentRealEnvelope(env: any): boolean {
+  if (!env || typeof env !== "object") return false;
+  const rid = String(env.runtime_id || "");
+  if (!rid || rid === "stream_init") return false;
+  if (rid.startsWith("rt_fixture") || env.is_fixture === true || env.is_replay === true) return false;
+
+  const today = todayIstDateStr();
+  if (!today) return true; // cannot prove staleness by date; runtime_id checks above still applied
+
+  const envDate = String(
+    env.session?.active_trading_date ||
+    env.session?.calendar_date ||
+    env.session?.completed_session_date ||
+    ""
+  ).slice(0, 10);
+
+  // A live envelope for the current session is always stamped with today's IST
+  // trading date. An older date means a stale cache — reject it.
+  return envDate === "" || envDate === today;
+}
+
 export function CanonicalStateProvider({ children }: { children: ReactNode }) {
   const isExplicitReplayInitial = useMemo(() => detectInitialReplayMode(), []);
   const [explicitReplay, setExplicitReplay] = useState<boolean>(isExplicitReplayInitial);
@@ -286,9 +334,12 @@ export function CanonicalStateProvider({ children }: { children: ReactNode }) {
         const cached = sessionStorage.getItem("ardhamind_canonical_envelope");
         if (cached) {
           const parsed = JSON.parse(cached);
-          if (parsed && (parsed.runtime_id || parsed.session || parsed.market)) {
+          // Only rehydrate a CURRENT real-session envelope. A stale prior-day
+          // cache or a persisted fixture must not seed the live envelope.
+          if (isCurrentRealEnvelope(parsed)) {
             return parsed;
           }
+          sessionStorage.removeItem("ardhamind_canonical_envelope");
         }
       }
     } catch {
@@ -339,7 +390,10 @@ export function CanonicalStateProvider({ children }: { children: ReactNode }) {
       return CANONICAL_FIXTURE_PRE_MARKET;
     }
 
-    if (liveEnvelope && liveEnvelope.runtime_id && liveEnvelope.runtime_id !== "stream_init") {
+    // Accept the live envelope only if it is a current, real-session stream.
+    // A stale prior-day cache or a fixture that slipped into liveEnvelope falls
+    // through to the honest empty state.
+    if (liveEnvelope && isCurrentRealEnvelope(liveEnvelope)) {
       return liveEnvelope;
     }
 
@@ -521,7 +575,12 @@ export function CanonicalStateProvider({ children }: { children: ReactNode }) {
         (incoming.price_structure?.previous_close != null && Number(incoming.price_structure.previous_close) > 0)
       );
 
-      if (typeof window !== "undefined" && window.sessionStorage && incoming.runtime_id && incoming.runtime_id !== "stream_init" && hasValidMarketState) {
+      if (
+        typeof window !== "undefined" &&
+        window.sessionStorage &&
+        hasValidMarketState &&
+        isCurrentRealEnvelope(incoming)
+      ) {
         sessionStorage.setItem("ardhamind_canonical_envelope", JSON.stringify(incoming));
       }
     } catch {

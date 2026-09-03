@@ -60,28 +60,49 @@ export function resolveAuthoritativeMarketState(
     advDecStr: "—",
   };
 
+  const emptyState: AuthoritativeMarketState = {
+    spot: null,
+    spotSource: "SETTLED",
+    settledClose: null,
+    settledHigh: null,
+    settledLow: null,
+    settledVwap: null,
+    settledRange: null,
+    change: null,
+    changePercent: null,
+    changePct: null,
+    displayVix: null,
+    vix: null,
+    prevClose: null,
+    sessionDate: null,
+    dayHigh: null,
+    dayLow: null,
+    dayOpen: null,
+    vwap: null,
+    breadth: emptyBreadth,
+  };
+
   if (!envelope) {
-    return {
-      spot: null,
-      spotSource: "SETTLED",
-      settledClose: null,
-      settledHigh: null,
-      settledLow: null,
-      settledVwap: null,
-      settledRange: null,
-      change: null,
-      changePercent: null,
-      changePct: null,
-      displayVix: null,
-      vix: null,
-      prevClose: null,
-      sessionDate: null,
-      dayHigh: null,
-      dayLow: null,
-      dayOpen: null,
-      vwap: null,
-      breadth: emptyBreadth,
-    };
+    return emptyState;
+  }
+
+  // Honest empty state for a genuine no-session / DEGRADED envelope: the
+  // "stream_init" placeholder, or an envelope with no runtime id and no real
+  // market data of any kind. Without this guard the tier-1 / tier-5 cascade
+  // below would happily surface a stale settled_session.close or
+  // price_structure.previous_close (e.g. a leaked 28-Aug fixture value) as a
+  // live spot. CanonicalStateContext is the primary gate; this is defence in
+  // depth for any other caller.
+  const rid = String((envelope as any).runtime_id || "");
+  const hasAnyRealData = Boolean(
+    (envelope.market?.nifty?.last_price != null && Number(envelope.market.nifty.last_price) > 0) ||
+    (envelope.ticks?.nifty?.ltp != null && Number(envelope.ticks.nifty.ltp) > 0) ||
+    (Array.isArray(envelope.candles?.["1m"]) && envelope.candles["1m"].length > 0) ||
+    (envelope.settled_session?.close != null && Number(envelope.settled_session.close) > 0) ||
+    (envelope.price_structure?.last_price != null && Number(envelope.price_structure.last_price) > 0)
+  );
+  if (rid === "stream_init" || (!rid && !hasAnyRealData)) {
+    return emptyState;
   }
 
   // 1. Prior Settled Session Anchors (Strictly Previous Day)

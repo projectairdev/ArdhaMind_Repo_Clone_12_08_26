@@ -51,6 +51,7 @@ import {
   Minimize2,
   ArrowUpRight,
   ArrowDownRight,
+  CandlestickChart,
 } from "lucide-react";
 
 
@@ -1087,6 +1088,19 @@ export function CanonicalTradingChart({
 
         {/* Primary Lightweight Charts Mounting Div */}
         <div ref={containerRef} className="relative w-full h-full min-h-[500px] bg-neutral-950 rounded border border-neutral-800" />
+
+        {/* Explicit empty state — with zero candles the chart canvas would
+            otherwise mount blank. Matches the "Awaiting live … stream" pattern
+            used elsewhere in this workspace (e.g. OptionsIntelligenceWorkspace). */}
+        {totalCandles === 0 && (
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center text-center text-neutral-500 font-mono space-y-2 bg-neutral-950/80 rounded pointer-events-none">
+            <CandlestickChart className="w-9 h-9 text-neutral-700 animate-pulse" />
+            <div className="text-xs text-neutral-400 font-bold">Awaiting live candle data</div>
+            <div className="text-[10px] text-neutral-600 max-w-xs">
+              Intraday candles, VWAP and structural levels will render once the market feed is streaming.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

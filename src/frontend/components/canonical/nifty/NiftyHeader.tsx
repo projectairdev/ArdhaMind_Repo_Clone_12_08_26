@@ -47,9 +47,11 @@ export const NiftyHeader: React.FC<NiftyHeaderProps> = ({
   changePercent,
 }) => {
   let isDisconnected = false;
+  let isReplay = false;
   try {
-    const { isConnected } = useCanonicalState();
-    isDisconnected = !isConnected;
+    const cs = useCanonicalState();
+    isDisconnected = !cs.isConnected;
+    isReplay = Boolean(cs.isReplayMode || cs.isFixtureData);
   } catch {
     // Context may not be mounted in standalone tests
   }
@@ -112,17 +114,33 @@ export const NiftyHeader: React.FC<NiftyHeaderProps> = ({
   const resolvedDisplayVix = displayVix ?? rawVix ?? null;
   const isPositive = (resolvedChange ?? 0) >= 0;
 
+  // Cross-check the wall-clock market phase against actual data flow. The market
+  // being in its scheduled open hours does NOT mean live data is arriving — the
+  // broker can be disconnected / unauthenticated while the clock says "open".
+  // In replay mode the recorded tape is the live feed, so it counts.
+  const clockSaysOpen = isLive || isNearClose;
+  const hasLiveFeed =
+    isReplay ||
+    (!isDisconnected && resolvedSpotSource === "LIVE" && resolvedSpot != null);
+  const openButNoFeed = clockSaysOpen && !hasLiveFeed;
+
   const phaseLabel = isPreMarket
     ? "AWAITING OPEN"
     : isPreOpen
     ? "PRE-OPEN INDICATIVE"
+    : openButNoFeed
+    ? "MARKET OPEN · NO LIVE FEED"
     : isNearClose
     ? "NEAR CLOSE"
     : isPostMarket
     ? "SESSION CLOSED"
-    : "LIVE SESSION";
+    : isLive
+    ? "LIVE SESSION"
+    : "SESSION STATUS UNKNOWN";
 
-  const pulseColor = isLive
+  const pulseColor = openButNoFeed
+    ? "bg-rose-400"
+    : isLive
     ? "bg-emerald-400"
     : isPreOpen
     ? "bg-amber-400"
@@ -130,7 +148,9 @@ export const NiftyHeader: React.FC<NiftyHeaderProps> = ({
     ? "bg-purple-400"
     : "bg-cyan-400";
 
-  const pulseCoreColor = isLive
+  const pulseCoreColor = openButNoFeed
+    ? "bg-rose-500"
+    : isLive
     ? "bg-emerald-500"
     : isPreOpen
     ? "bg-amber-500"
