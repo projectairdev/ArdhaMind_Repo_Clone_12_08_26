@@ -86,28 +86,53 @@ export function LiveWorkspace({
   // envelope. No synthetic "currentPrice * 0.006" substitution.
   const atr14 = price_structure.atr_14 ?? ATR_FALLBACK;
 
-  // Derive ORH/ORL from 09:15-09:30 candles if not explicitly in price_structure
+  // Opening range comes from the backend (price_structure.or_high/or_low, from
+  // the real 09:15-09:30 IST window of persisted session candles). The
+  // client-side derivation below is a genuine fallback only: it filters the 1m
+  // series for the true 09:15-09:30 IST window by each candle's own timestamp —
+  // never a naive `slice(0, 15)`, which is wrong whenever the series does not
+  // begin exactly at 09:15.
+  const openingRangeCandles = useMemo(() => {
+    const OPEN_MIN = 9 * 60 + 15; // 09:15 IST
+    const END_MIN = OPEN_MIN + 15;
+    const istMinutes = (c: any): number | null => {
+      const hhmm = typeof c?.time === "string" && /^\d{1,2}:\d{2}$/.test(c.time) ? c.time : null;
+      if (hhmm) {
+        const [h, m] = hhmm.split(":").map(Number);
+        return h * 60 + m;
+      }
+      const raw = c?.datetime ?? c?.start ?? c?.timestamp ?? c?.date ?? c?.time;
+      if (raw == null) return null;
+      const d = typeof raw === "number"
+        ? new Date(raw > 1e12 ? raw : raw * 1000)
+        : new Date(String(raw).includes("T") || String(raw).includes(" ") ? String(raw) : `1970-01-01T${raw}`);
+      if (isNaN(d.getTime())) return null;
+      const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+      const h = Number(parts.find((p) => p.type === "hour")?.value);
+      const m = Number(parts.find((p) => p.type === "minute")?.value);
+      return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+    };
+    return m1Candles.filter((c: any) => {
+      const mins = istMinutes(c);
+      return mins != null && mins >= OPEN_MIN && mins < END_MIN;
+    });
+  }, [m1Candles]);
+
   const orHigh = useMemo(() => {
     if (price_structure.or_high != null) return price_structure.or_high;
-    const orCandles = m1Candles.slice(0, 15);
-    if (orCandles.length > 0) {
-      const highs = orCandles.map((c: any) => Number(c.high)).filter((h: number) => !isNaN(h) && h > 0);
-      if (highs.length > 0) return Math.max(...highs);
-    }
-    // No canonical or_high and no opening-range candles: value is genuinely unknown.
-    return null;
-  }, [price_structure.or_high, m1Candles, openPrice]);
+    const highs = openingRangeCandles
+      .map((c: any) => Number(c.high ?? c.h))
+      .filter((h: number) => !isNaN(h) && h > 0);
+    return highs.length > 0 ? Math.max(...highs) : null;
+  }, [price_structure.or_high, openingRangeCandles]);
 
   const orLow = useMemo(() => {
     if (price_structure.or_low != null) return price_structure.or_low;
-    const orCandles = m1Candles.slice(0, 15);
-    if (orCandles.length > 0) {
-      const lows = orCandles.map((c: any) => Number(c.low)).filter((l: number) => !isNaN(l) && l > 0);
-      if (lows.length > 0) return Math.min(...lows);
-    }
-    // No canonical or_low and no opening-range candles: value is genuinely unknown.
-    return null;
-  }, [price_structure.or_low, m1Candles, openPrice]);
+    const lows = openingRangeCandles
+      .map((c: any) => Number(c.low ?? c.l))
+      .filter((l: number) => !isNaN(l) && l > 0);
+    return lows.length > 0 ? Math.min(...lows) : null;
+  }, [price_structure.or_low, openingRangeCandles]);
 
   // Immediate support/resistance come only from real canonical structural levels.
   // No arbitrary "± 45" or "± atr*0.5" synthesis around spot/open.

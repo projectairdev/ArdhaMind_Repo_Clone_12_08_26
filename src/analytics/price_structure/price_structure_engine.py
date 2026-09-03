@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
 import math
 from typing import List, Optional, Sequence
+
+_IST = ZoneInfo("Asia/Kolkata")
+_NSE_OPEN = time(9, 15)
 
 from src.analytics.price_structure.models import (
     ATRContext,
@@ -186,7 +190,14 @@ class PriceStructureEngine:
         current_price: float,
         duration_minutes: int = 15,
     ) -> OpeningRangeContext:
-        """Extracts opening range from first N minutes of continuous trading."""
+        """Extracts the opening range from the real 09:15 -> 09:15+N IST window.
+
+        Candles are selected by timestamp, not by ``candles[:N]`` position: when
+        the server connects mid-session the candle series does not begin at
+        09:15, so a positional slice would take some arbitrary later 15 minutes.
+        Falls back to a positional slice only when no candle carries a usable
+        timestamp.
+        """
         if not candles:
             return OpeningRangeContext(
                 duration_minutes=duration_minutes,
@@ -197,11 +208,40 @@ class PriceStructureEngine:
                 status="FORMING",
             )
 
-        or_candles = candles[:duration_minutes]
+        open_minutes = _NSE_OPEN.hour * 60 + _NSE_OPEN.minute
+        end_minutes = open_minutes + duration_minutes
+
+        def _ist_minutes(candle: "CanonicalCandle") -> Optional[int]:
+            ts = getattr(candle, "start_timestamp", None)
+            if not isinstance(ts, datetime):
+                return None
+            local = ts.astimezone(_IST) if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc).astimezone(_IST)
+            return local.hour * 60 + local.minute
+
+        timestamped = [(c, _ist_minutes(c)) for c in candles]
+        have_timestamps = any(m is not None for _c, m in timestamped)
+
+        if have_timestamps:
+            or_candles = [c for c, m in timestamped if m is not None and open_minutes <= m < end_minutes]
+            # The range is "established" once a candle at or past the window end exists.
+            is_established = any(m is not None and m >= end_minutes - 1 for _c, m in timestamped)
+        else:
+            or_candles = list(candles[:duration_minutes])
+            is_established = len(candles) >= duration_minutes
+
+        if not or_candles:
+            return OpeningRangeContext(
+                duration_minutes=duration_minutes,
+                high=None,
+                low=None,
+                range_size=None,
+                is_established=False,
+                status="FORMING",
+            )
+
         or_high = max(c.high for c in or_candles)
         or_low = min(c.low for c in or_candles)
         or_range = round(or_high - or_low, 2)
-        is_established = len(candles) >= duration_minutes
 
         if not is_established:
             status = "FORMING"

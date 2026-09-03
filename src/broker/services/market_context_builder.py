@@ -19,11 +19,15 @@ from __future__ import annotations
 import math
 import time
 import logging
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional
 from src.utils.time_utils import is_trading_day, previous_trading_day, is_market_hours
 
 logger = logging.getLogger("MarketContextBuilder")
+
+_IST = ZoneInfo("Asia/Kolkata")
+_NSE_OPEN_MINUTES = 9 * 60 + 15  # 09:15 IST
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -55,6 +59,46 @@ def _compute_vwap(candles: List[Dict], target_date: Optional[str] = None) -> flo
         except Exception:
             pass
     return round(total_pv / total_v, 2) if total_v > 0 else 0.0
+
+
+def _candle_ist_minutes(candle: Dict) -> Optional[int]:
+    """Minutes-past-midnight IST for a candle's timestamp, or None."""
+    ts = candle.get("date") or candle.get("datetime") or candle.get("timestamp")
+    if isinstance(ts, datetime):
+        local = ts.astimezone(_IST) if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc).astimezone(_IST)
+        return local.hour * 60 + local.minute
+    if isinstance(ts, str) and ts:
+        try:
+            parsed = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            local = parsed.astimezone(_IST) if parsed.tzinfo is not None else parsed.replace(tzinfo=_IST)
+            return local.hour * 60 + local.minute
+        except ValueError:
+            return None
+    return None
+
+
+def _compute_opening_range(session_candles: List[Dict], duration_minutes: int = 15) -> tuple[Optional[float], Optional[float]]:
+    """Opening-range high/low from the real 09:15 -> 09:15+N IST window.
+
+    Selected by candle timestamp, not by ``[:N]`` position, so it is correct
+    even when the daemon connects mid-session and the persisted historical
+    candle buffer does not start at 09:15. Returns (None, None) until at least
+    one candle inside the window exists.
+    """
+    end_minutes = _NSE_OPEN_MINUTES + duration_minutes
+    window = []
+    for c in session_candles or []:
+        m = _candle_ist_minutes(c)
+        if m is not None and _NSE_OPEN_MINUTES <= m < end_minutes:
+            window.append(c)
+    if not window:
+        return None, None
+    try:
+        or_high = max(float(c["high"]) for c in window if c.get("high") is not None)
+        or_low = min(float(c["low"]) for c in window if c.get("low") is not None)
+    except (ValueError, TypeError):
+        return None, None
+    return round(or_high, 2), round(or_low, 2)
 
 
 def _compute_atr(candles: List[Dict], period: int = 14) -> float:
@@ -590,6 +634,10 @@ class MarketContextBuilder:
         rsi = _compute_rsi(closes, 14)
         macd = _compute_macd(closes)
         adx = _compute_adx(session_candles if session_candles else _candle_buffer, 14)
+        # Opening range — from the real 09:15-09:30 IST window of the persisted
+        # session candles, so it is populated even on a mid-session connect.
+        or_high, or_low = _compute_opening_range(session_candles)
+        or_range = round(or_high - or_low, 2) if (or_high is not None and or_low is not None) else None
         supports, resistances = _compute_support_resistance(spot, atr, open_price)
 
         for c in session_candles:
@@ -764,6 +812,17 @@ class MarketContextBuilder:
             # Computed from live data
             "vwap": vwap,
             "atr": atr,
+            "or_high": or_high,
+            "or_low": or_low,
+            "opening_range_high": or_high,
+            "opening_range_low": or_low,
+            "opening_range": {
+                "high": or_high,
+                "low": or_low,
+                "range": or_range,
+                "duration_minutes": 15,
+                "is_established": or_high is not None,
+            },
             "ema20": ema20,
             "ema50": ema50,
             "ema200": ema200,

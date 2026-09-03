@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import pytest
 
 from src.analytics.price_structure.models import (
@@ -20,7 +21,9 @@ def _make_candles(
     trend_step: float = 2.0,
     has_volume: bool = True,
 ) -> list[CanonicalCandle]:
-    t0 = datetime(2026, 8, 28, 9, 15, 0, tzinfo=timezone.utc)
+    # NSE session opens 09:15 IST; the opening-range window is anchored to that
+    # absolute wall-clock time, not to the first candle's position in the list.
+    t0 = datetime(2026, 8, 28, 9, 15, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
     candles = []
     p = base_price
     for i in range(count):
