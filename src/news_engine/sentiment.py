@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from email.utils import parsedate_to_datetime
 from html import unescape
 import os
 from typing import Dict, List, Tuple
@@ -193,10 +192,12 @@ def aggregate_market_news() -> NewsContext:
 
             published_at = item.get("published_at", "")
             if published_at:
-                try:
-                    published_at = parsedate_to_datetime(published_at).strftime("%Y-%m-%d %H:%M:%S")
-                except Exception:
-                    pass
+                # Timezone-aware UTC ISO ('...Z'); never a naive strftime strip
+                # (drops the offset -> frontend re-applies IST -> future-dated).
+                from src.news_engine.safe_utils import rfc822_to_utc_iso
+                normalized_published = rfc822_to_utc_iso(published_at)
+                if normalized_published:
+                    published_at = normalized_published
 
             headlines.append(
                 NewsHeadline(

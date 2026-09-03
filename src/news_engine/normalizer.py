@@ -37,11 +37,13 @@ class NewsNormalizer:
         source = clean_html_text(raw.get("source") or raw.get("source_name") or "", max_length=100)
         published_at = raw.get("pubDate") or raw.get("published_at") or ""
         if published_at:
-            try:
-                from email.utils import parsedate_to_datetime
-                published_at = parsedate_to_datetime(published_at).strftime("%Y-%m-%d %H:%M:%S")
-            except Exception:
-                pass
+            # Timezone-aware UTC ISO ('...Z'). A naive strftime strip here loses
+            # the offset and the frontend's Asia/Kolkata formatter then shifts
+            # the article time hours into the future.
+            from src.news_engine.safe_utils import rfc822_to_utc_iso
+            normalized_published = rfc822_to_utc_iso(published_at)
+            if normalized_published:
+                published_at = normalized_published
         url = raw.get("link") or raw.get("url") or ""
 
         return {

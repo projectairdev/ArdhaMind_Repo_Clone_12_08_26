@@ -16,12 +16,52 @@ import ipaddress
 import re
 import socket
 import ssl
+from datetime import datetime, timezone
 from functools import lru_cache
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse, urlencode, parse_qs, urlunparse
+
+
+# ---------------------------------------------------------------------------
+# Timestamp normalization
+# ---------------------------------------------------------------------------
+def rfc822_to_utc_iso(value: str) -> str:
+    """Parse an RFC 822 / RSS ``pubDate`` (or an ISO-8601 string) into a
+    timezone-normalized UTC ISO-8601 string, e.g. ``2026-09-03T09:00:00Z``.
+
+    Returns ``""`` when the value is empty or unparseable.
+
+    Never emit a naive ``"YYYY-MM-DD HH:MM:SS"`` string here: it drops the
+    offset, and a consumer running in UTC (the server during SSR, or the
+    frontend's Asia/Kolkata formatter) then treats those digits as local and
+    re-applies the display timezone, shifting real article times by up to
+    5.5 hours.
+    """
+    if not value or not isinstance(value, str):
+        return ""
+    text = value.strip()
+    if not text:
+        return ""
+    parsed: Optional[datetime] = None
+    try:
+        from email.utils import parsedate_to_datetime
+        parsed = parsedate_to_datetime(text)
+    except (TypeError, ValueError, OverflowError):
+        parsed = None
+    if parsed is None:
+        try:
+            parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return ""
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    try:
+        return parsed.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    except (ValueError, OverflowError):
+        return ""
 
 
 # ---------------------------------------------------------------------------
