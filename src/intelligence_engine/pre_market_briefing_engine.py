@@ -44,6 +44,25 @@ BRIEFING_STORAGE_DIR = Path("/opt/ardhamind/staging/.cache/pre_market_briefings"
 BRIEFING_FALLBACK_DIR = Path("/opt/ardhamind/staging/data/pre_market_briefings")
 
 
+def _num(value: Any) -> Optional[float]:
+    """Positive float, or None when the value is missing/invalid.
+
+    Used so briefing price fields stay honestly null instead of falling back to
+    fabricated NIFTY-range literals when real structural / options data is absent.
+    """
+    try:
+        if value is None:
+            return None
+        f = float(value)
+        return f if (f > 0 and f == f) else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _fmt0(value: Optional[float]) -> str:
+    return f"{value:,.0f}" if value is not None else "—"
+
+
 class PreMarketBriefingEngine:
     """
     Deterministic Pre-Market Briefing Engine.
@@ -87,12 +106,16 @@ class PreMarketBriefingEngine:
         if is_trading_day(today_d) and current_hhmm < "15:30":
             target_trading_date = today_str
             reference_session_date = str(previous_trading_day(today_d))
-            ref_close = float(close_raw or prev_close_raw or spot_raw or 24287.65)
+            ref_candidates = [close_raw, prev_close_raw, spot_raw]
+            valid_refs = [float(x) for x in ref_candidates if x is not None and float(x) > 0]
+            ref_close = valid_refs[0] if valid_refs else None
         else:
             ref_d = today_d if is_trading_day(today_d) else previous_trading_day(today_d)
             reference_session_date = str(ref_d)
             target_trading_date = str(next_trading_day(ref_d))
-            ref_close = float(close_raw or spot_raw or 24154.90)
+            ref_candidates = [close_raw, spot_raw, prev_close_raw]
+            valid_refs = [float(x) for x in ref_candidates if x is not None and float(x) > 0]
+            ref_close = valid_refs[0] if valid_refs else None
 
         return target_trading_date, reference_session_date, ref_close
 
@@ -219,18 +242,28 @@ class PreMarketBriefingEngine:
         news = state.get("news_intelligence") or {}
         tech = state.get("technical_analysis") or {}
 
-        # 1. Canonical GIFT Nifty Snapshot Extraction
+        # 1. GIFT Nifty Normalization & Basis
         gift_q = quotes.get("GIFT_NIFTY") or quotes.get("GIFT NIFTY") or quotes.get("GIFT") or {}
-        raw_price = gift_q.get("price") or gift_q.get("last_price") or gift_q.get("value")
+        raw_price = gift_q.get("price") or gift_q.get("last_price")
+        basis_raw = gift_q.get("basis") or gift_q.get("prior_close_basis") or state.get("market_data", {}).get("futures_basis")
+        estimated_basis = float(basis_raw) if basis_raw is not None else 0.0
+        basis_quality = "MEASURED_PRIOR_CLOSE" if basis_raw is not None else "UNMEASURED_ESTIMATE"
 
-        setup_score = 5.0  # Scaled multi-factor sum
+        setup_score = 5.0
         opening_bias = "NEUTRAL / MIXED"
-        confidence_pct = 60
+        confidence_pct = None
         confidence_label = "MODERATE"
         risk_level = "MODERATE"
 
+        # Check VIX first for dispersion width
+        vix_q = quotes.get("INDIA_VIX") or quotes.get("INDIA VIX") or {}
+        vix_val = float(vix_q.get("price")) if vix_q.get("price") is not None else None
+        vix_chg_pct = float(vix_q.get("change_pct")) if vix_q.get("change_pct") is not None else None
+        vix_regime = "LOW" if (vix_val is not None and vix_val < 12.0) else ("NORMAL" if (vix_val is not None and vix_val < 18.0) else ("ELEVATED" if vix_val is not None else "UNAVAILABLE"))
+
         if raw_price is not None:
             gift_price = float(raw_price)
+            normalized_gift = round(gift_price - estimated_basis, 2)
             gift_change = float(gift_q.get("change") or 0.0)
             gift_change_pct = float(gift_q.get("change_pct") or 0.0)
             gift_freshness = str(gift_q.get("freshness_status") or gift_q.get("freshness") or gift_q.get("status") or "FRESH").upper()
@@ -239,14 +272,32 @@ class PreMarketBriefingEngine:
             gift_provider = str(gift_q.get("provider") or gift_q.get("source") or "NSE International Exchange")
             gift_session = str(gift_q.get("session") or gift_q.get("source_session") or "SESSION_2_OPEN")
             gift_availability = gift_freshness if gift_freshness in ["FRESH", "RECENT", "LAST_VALID", "STALE"] else "FRESH"
-            gap_methodology = "GIFT_ANCHORED"
+            gap_methodology = "NORMALIZED_GIFT_ANCHORED"
 
-            implied_gap_pts = round(gift_price - ref_close, 2)
-            implied_gap_pct = round((implied_gap_pts / ref_close) * 100, 2) if ref_close > 0 else 0.0
-            gap_low = implied_gap_pts
-            gap_high = implied_gap_pts + 30.0
+            if ref_close is not None and ref_close > 0:
+                implied_gap_pts = round(normalized_gift - ref_close, 2)
+                implied_gap_pct = round((implied_gap_pts / ref_close) * 100, 2)
+                expected_open_center = round(ref_close + implied_gap_pts, 2)
+                half_width = round(max(15.0, min(35.0, ref_close * ((vix_val or 11.5) / 100.0 / 15.87) * 0.22)), 1)
+                expected_open_low = round(expected_open_center - half_width, 2)
+                expected_open_high = round(expected_open_center + half_width, 2)
+                expected_open_str = f"{expected_open_low:,.0f} – {expected_open_high:,.0f}"
+                gap_low = round(expected_open_low - ref_close, 1)
+                gap_high = round(expected_open_high - ref_close, 1)
+                expected_gap_str = f"{'+' if gap_low >= 0 else ''}{gap_low:.0f} to {'+' if gap_high >= 0 else ''}{gap_high:.0f}"
+            else:
+                implied_gap_pts = None
+                implied_gap_pct = None
+                expected_open_center = None
+                expected_open_low = None
+                expected_open_high = None
+                expected_open_str = "Unavailable"
+                expected_gap_str = "Unavailable"
+                gap_low = 0.0
+                gap_high = 0.0
         else:
             gift_price = None
+            normalized_gift = None
             gift_change = None
             gift_change_pct = None
             gift_freshness = "UNAVAILABLE"
@@ -259,9 +310,24 @@ class PreMarketBriefingEngine:
 
             implied_gap_pts = None
             implied_gap_pct = None
-            base_gap = round(setup_score * 0.7, 1)
-            gap_low = base_gap
-            gap_high = base_gap + 20.0
+            base_gap = round(setup_score * 0.5, 1)
+            half_width = 25.0
+            if ref_close is not None and ref_close > 0:
+                expected_open_center = round(ref_close + base_gap, 2)
+                expected_open_low = round(expected_open_center - half_width, 2)
+                expected_open_high = round(expected_open_center + half_width, 2)
+                expected_open_str = f"{expected_open_low:,.0f} – {expected_open_high:,.0f}"
+                gap_low = round(expected_open_low - ref_close, 1)
+                gap_high = round(expected_open_high - ref_close, 1)
+                expected_gap_str = f"{'+' if gap_low >= 0 else ''}{gap_low:.0f} to {'+' if gap_high >= 0 else ''}{gap_high:.0f}"
+            else:
+                expected_open_center = None
+                expected_open_low = None
+                expected_open_high = None
+                expected_open_str = "Unavailable"
+                expected_gap_str = "Unavailable"
+                gap_low = 0.0
+                gap_high = 0.0
 
         # Gap classification
         if implied_gap_pts is not None:
@@ -290,31 +356,13 @@ class PreMarketBriefingEngine:
             gap_class = "EVIDENCE_DERIVED_OPEN"
             gap_bias = "NEUTRAL / MIXED"
 
-        # Direct arithmetic contract
-        if ref_close is not None and ref_close > 0:
-            expected_open_low = round(ref_close + gap_low, 2)
-            expected_open_high = round(ref_close + gap_high, 2)
-            expected_open_str = f"{expected_open_low:,.0f} – {expected_open_high:,.0f}"
-            expected_gap_str = f"{'+' if gap_low >= 0 else ''}{gap_low:.0f} to {'+' if gap_high >= 0 else ''}{gap_high:.0f}"
-        else:
-            expected_open_low = None
-            expected_open_high = None
-            expected_open_str = "Unavailable"
-            expected_gap_str = "Unavailable"
-
-        # 2. India VIX
-        vix_q = quotes.get("INDIA_VIX") or quotes.get("INDIA VIX") or {}
-        vix_val = float(vix_q.get("price") or 11.33) if vix_q.get("price") is not None else None
-        vix_chg_pct = float(vix_q.get("change_pct") or 0.18) if vix_q.get("change_pct") is not None else None
-        vix_regime = "LOW" if (vix_val is not None and vix_val < 12.0) else ("NORMAL" if (vix_val is not None and vix_val < 18.0) else "ELEVATED")
-
         # 3. Institutional Flows
         fii_obj = next((f for f in flows if f.get("dataset_type") == "FII_CASH"), {})
         dii_obj = next((f for f in flows if f.get("dataset_type") == "DII_CASH"), {})
-        fii_net = float(fii_obj.get("net_value") or -2535.1)
-        dii_net = float(dii_obj.get("net_value") or 5101.46)
-        combined_net = round(fii_net + dii_net, 2)
-        inst_tone = "NET BUYING (DOMESTIC ABSORPTION)" if combined_net > 0 else "NET SELLING (INSTITUTIONAL DRAG)"
+        fii_net = float(fii_obj.get("net_value")) if fii_obj.get("net_value") is not None else None
+        dii_net = float(dii_obj.get("net_value")) if dii_obj.get("net_value") is not None else None
+        combined_net = round(fii_net + dii_net, 2) if (fii_net is not None and dii_net is not None) else None
+        inst_tone = ("NET BUYING (DOMESTIC ABSORPTION)" if combined_net > 0 else "NET SELLING (INSTITUTIONAL DRAG)") if combined_net is not None else "UNAVAILABLE"
 
         # 4. Global Markets
         sp = quotes.get("S&P 500") or {}
@@ -329,9 +377,9 @@ class PreMarketBriefingEngine:
         us10y = quotes.get("US_10Y") or quotes.get("US10Y") or {}
 
         us_pcts = [float(q.get("change_pct") or 0.0) for q in (sp, nasdaq, dow) if q.get("change_pct") is not None]
-        avg_us = round(sum(us_pcts) / len(us_pcts), 2) if us_pcts else -0.45
+        avg_us = round(sum(us_pcts) / len(us_pcts), 2) if us_pcts else 0.0
         asian_pcts = [float(q.get("change_pct") or 0.0) for q in (nikkei, hangseng) if q.get("change_pct") is not None]
-        avg_asia = round(sum(asian_pcts) / len(asian_pcts), 2) if asian_pcts else 1.04
+        avg_asia = round(sum(asian_pcts) / len(asian_pcts), 2) if asian_pcts else 0.0
 
         if avg_us < -0.2 and avg_asia > 0.3:
             global_market_tone = "MIXED (US LOWER, ASIA HIGHER)"
@@ -343,14 +391,14 @@ class PreMarketBriefingEngine:
             global_market_tone = "NEUTRAL / FLAT"
 
         # 5. Why Summary (Cross-Section Reconciled)
-        if gift_price is not None:
+        if gift_price is not None and ref_close is not None:
             gift_why_bullet = f"GIFT Nifty is at {gift_price:,.0f} ({gift_freshness}), implying {implied_gap_pts:+.1f} points versus the {ref_close:,.2f} reference close."
         else:
             gift_why_bullet = f"GIFT Nifty morning quote is currently unavailable/pending; expected gap ({expected_gap_str}) is derived from multi-factor evidence score fallback."
 
         why_summary = [
             gift_why_bullet,
-            f"Domestic DII accumulation (+₹{dii_net:,.1f} Cr) offsets FII cash market selling (-₹{abs(fii_net):,.1f} Cr).",
+            f"Domestic DII accumulation (+₹{dii_net:,.1f} Cr) offsets FII cash market selling (-₹{abs(fii_net):,.1f} Cr)." if (dii_net is not None and fii_net is not None) else "Institutional flow context pending.",
             f"US indices closed lower (avg {avg_us:.2f}%), while Asian markets trade positive (+{avg_asia:.2f}%).",
             f"India VIX at {vix_val:.2f} maintains downside compression inside the 24,284 – 24,291 decision corridor." if vix_val is not None else "India VIX trading in low regime."
         ]
@@ -395,12 +443,23 @@ class PreMarketBriefingEngine:
             gift_tl_status = "AMBER"
             gift_tl_reason = "GIFT Nifty quote unavailable/pending. Multi-factor fallback active."
 
+        tl_pcr = _num(options.get("pcr"))
+        tl_mp = _num(options.get("max_pain"))
+        if tl_pcr is not None and tl_mp is not None:
+            options_tl_reason = f"PCR at {tl_pcr:.2f} with {tl_mp:,.0f} Max Pain anchor support"
+        elif tl_pcr is not None:
+            options_tl_reason = f"PCR at {tl_pcr:.2f}; Max Pain unavailable"
+        elif tl_mp is not None:
+            options_tl_reason = f"Max Pain anchor at {tl_mp:,.0f}; PCR unavailable"
+        else:
+            options_tl_reason = "PCR and Max Pain unavailable"
+
         traffic_lights = [
             TrafficLightItem("GLOBAL_CUES", "AMBER", "Global Markets", "US indices closed lower; Asian markets trade higher", "Yahoo Finance Public Feed"),
             TrafficLightItem("GIFT_NIFTY", gift_tl_status, "GIFT Nifty", gift_tl_reason, gift_provider),
-            TrafficLightItem("INSTITUTIONAL", "GREEN", "Institutional Cash", f"DII net buying (+₹{dii_net:,.1f} Cr) absorbing FII selling", "NSE India Official EOD"),
+            TrafficLightItem("INSTITUTIONAL", "GREEN", "Institutional Cash", f"DII net buying (+₹{dii_net:,.1f} Cr) absorbing FII selling" if dii_net is not None else "Institutional Cash Flow Tracking Active", "NSE India Official EOD"),
             TrafficLightItem("VOLATILITY", "GREEN", "India VIX", f"VIX low at {vix_val:.2f} reflects absence of overnight panic" if vix_val is not None else "India VIX trading in low regime", "NSE / Yahoo Volatility"),
-            TrafficLightItem("OPTIONS", "GREEN", "Derivatives (PCR / Max Pain)", "PCR at 1.22 with 24,350 Max Pain anchor support", "Option Intelligence Engine"),
+            TrafficLightItem("OPTIONS", "GREEN", "Derivatives (PCR / Max Pain)", options_tl_reason, "Option Intelligence Engine"),
             TrafficLightItem("BREADTH_CARRY", "AMBER", "NIFTY 50 Breadth", "18 ADV / 31 DEC / 1 UNCH from Monday session requires morning confirmation", "Market Feed Service"),
             TrafficLightItem("NEWS_RISK", "GREEN", "News & Event Horizon", "No high-severity overnight geopolitical or macro shocks detected", "News Intelligence Engine"),
             TrafficLightItem("OVERALL", "AMBER", "Composite Signal", "Range-bound opening expected. Await 09:15–09:45 breakout confirmation.", "Pre-Market Intelligence")
@@ -423,24 +482,31 @@ class PreMarketBriefingEngine:
             GlobalMarketItem("US_10Y", "US 10Y Treasury Yield", "BONDS", float(us10y.get("price") or 4.724), float(us10y.get("change") or 0.028), float(us10y.get("change_pct") or 0.60), "OPEN", "00:29 IST", "RECENT", "Yahoo Finance", "AMBER"),
         ]
 
-        # Price Structure computed from sanitized completed session OHLC
-        prev_h = float(m_data.get("high") or 24269.65)
-        prev_l = float(m_data.get("low") or 24154.90)
-        p_floor = round((prev_h + prev_l + ref_close) / 3.0, 2)
-        r1_val = round(2.0 * p_floor - prev_l, 2)
-        s1_val = round(2.0 * p_floor - prev_h, 2)
-        r2_val = round(p_floor + (prev_h - prev_l), 2)
-        s2_val = round(p_floor - (prev_h - prev_l), 2)
-
-        if target_date == "2026-08-18":
-            corridor_low = 24284.0
-            corridor_high = 24291.0
-        else:
+        # Price Structure computed from sanitized completed session OHLC.
+        # No fabricated OHLC / level fallbacks: when the real prior-session high
+        # and low are unavailable, floor pivots and the derived levels stay None.
+        prev_h = _num(m_data.get("high"))
+        prev_l = _num(m_data.get("low"))
+        ref_close_num = _num(ref_close)
+        if prev_h is not None and prev_l is not None and ref_close_num is not None:
+            p_floor = round((prev_h + prev_l + ref_close_num) / 3.0, 2)
+            r1_val = round(2.0 * p_floor - prev_l, 2)
+            s1_val = round(2.0 * p_floor - prev_h, 2)
+            r2_val = round(p_floor + (prev_h - prev_l), 2)
+            s2_val = round(p_floor - (prev_h - prev_l), 2)
             corridor_low = round(p_floor - 5.0, 0)
             corridor_high = round(p_floor + 5.0, 0)
+        else:
+            p_floor = r1_val = s1_val = r2_val = s2_val = None
+            corridor_low = corridor_high = None
+
+        opt_max_pain = _num(options.get("max_pain"))
+        opt_call_wall = _num(options.get("call_wall"))
+        opt_put_wall = _num(options.get("put_wall"))
+        opt_atm_strike = _num(options.get("atm_strike"))
 
         price_structure = {
-            "reference_close": ref_close,
+            "reference_close": ref_close_num,
             "previous_high": prev_h,
             "previous_low": prev_l,
             "pivot_floor": p_floor,
@@ -453,32 +519,32 @@ class PreMarketBriefingEngine:
             "immediate_resistance": r1_val,
             "immediate_support": s1_val,
             "expected_open_zone": expected_open_str,
-            "max_pain": 24350.0,
-            "call_wall": 24500.0,
-            "put_wall": 24300.0,
+            "max_pain": opt_max_pain,
+            "call_wall": opt_call_wall,
+            "put_wall": opt_put_wall,
             "methodology": "EVIDENCE_BASED_CLUSTERING & FLOOR_PIVOTS"
         }
 
         # Option Chain
-        pcr = float(options.get("pcr") or 1.22)
-        vol_pcr = float(options.get("volume_pcr") or 1.34)
+        pcr = _num(options.get("pcr"))
+        vol_pcr = _num(options.get("volume_pcr"))
         options_intelligence = {
-            "expiry": str(options.get("current_weekly_expiry") or "2026-08-18"),
-            "spot_reference": ref_close,
-            "atm_strike": 24300.0,
+            "expiry": str(options.get("current_weekly_expiry") or "UNAVAILABLE"),
+            "spot_reference": ref_close_num,
+            "atm_strike": opt_atm_strike,
             "pcr_oi": pcr,
             "pcr_volume": vol_pcr,
-            "max_pain": 24350.0,
-            "call_wall": 24500.0,
-            "put_wall": 24300.0,
-            "atm_iv": 11.41,
-            "atm_ce_iv": 16.13,
-            "atm_pe_iv": 6.69,
-            "call_oi_share_pct": 45.0,
-            "put_oi_share_pct": 55.0,
-            "expected_pin_zone": "24,300 – 24,350",
+            "max_pain": opt_max_pain,
+            "call_wall": opt_call_wall,
+            "put_wall": opt_put_wall,
+            "atm_iv": _num(options.get("atm_iv")),
+            "atm_ce_iv": _num(options.get("atm_ce_iv")),
+            "atm_pe_iv": _num(options.get("atm_pe_iv")),
+            "call_oi_share_pct": _num(options.get("call_oi_share_pct")),
+            "put_oi_share_pct": _num(options.get("put_oi_share_pct")),
+            "expected_pin_zone": options.get("expected_pin_zone") or "UNAVAILABLE",
             "volatility_implication": "Compressed volatility favors mean reversion near Max Pain.",
-            "options_bias": "MILD BULLISH SUPPORT"
+            "options_bias": options.get("options_bias") or "UNAVAILABLE"
         }
 
         # Sector Scoreboard
@@ -550,7 +616,7 @@ class PreMarketBriefingEngine:
                 name="BULLISH",
                 title="SCENARIO A: BULLISH BREAKOUT CONTINUATION",
                 condition_if=[
-                    f"NIFTY spot opens above decision corridor resistance ({price_structure['immediate_resistance']:,.0f})",
+                    f"NIFTY spot opens above decision corridor resistance ({_fmt0(_num(price_structure.get('immediate_resistance')))})",
                     "NIFTY 50 constituent breadth expands (> 30 Advancers)",
                     "Bank NIFTY breaks above 51,450 with volume confirmation"
                 ],
@@ -565,7 +631,7 @@ class PreMarketBriefingEngine:
                 name="BEARISH",
                 title="SCENARIO B: BEARISH BREAKDOWN EXPANSION",
                 condition_if=[
-                    f"Price breaks decisively below immediate support ({price_structure['immediate_support']:,.0f})",
+                    f"Price breaks decisively below immediate support ({_fmt0(_num(price_structure.get('immediate_support')))})",
                     "Breadth advances drop below 15 with heavyweight IT/Banking selling",
                     "India VIX rises above 12.00"
                 ],
@@ -581,7 +647,7 @@ class PreMarketBriefingEngine:
                 title="SCENARIO C: RANGE-BOUND CONSOLIDATION (PRIMARY)",
                 condition_if=[
                     f"Price opens inside expected open zone ({expected_open_str})",
-                    f"Spot remains bounded within the {price_structure['decision_corridor_lower']:,.0f} – {price_structure['decision_corridor_upper']:,.0f} corridor",
+                    f"Spot remains bounded within the {_fmt0(_num(price_structure.get('decision_corridor_lower')))} – {_fmt0(_num(price_structure.get('decision_corridor_upper')))} corridor",
                     "Breadth remains mixed (20–25 Advancers) and VIX remains compressed"
                 ],
                 outcome_then="Range chop dominates. No clean directional breakout edge available.",
@@ -600,34 +666,35 @@ class PreMarketBriefingEngine:
             TradePlaybookSetup("SETUP_C", "Corridor Mean Reversion / No Trade", "NEUTRAL", "Spot compressed in 7-point decision corridor", "Wait for 09:15–09:45 observation", "Require 09:45 range breakout", "N/A", "N/A", "LOW")
         ]
 
-        # One Page Trade Card
-        r1_val = float(price_structure.get("r1") or 24356.0)
-        s1_val = float(price_structure.get("s1") or 24223.0)
-        cw_val = float(price_structure.get("call_wall") or 24500.0)
-        pw_val = float(price_structure.get("put_wall") or 24300.0)
-        d_low = float(price_structure.get("decision_corridor_lower") or 24284.0)
-        d_high = float(price_structure.get("decision_corridor_upper") or 24291.0)
-        mp_val = float(options_intelligence.get("max_pain") or 24350.0)
-        pcr_num = float(pcr) if pcr is not None else 1.22
+        # One Page Trade Card — prices are surfaced only from real structural /
+        # options data; missing values render as "—", never a fabricated level.
+        r1_val = _num(price_structure.get("r1"))
+        s1_val = _num(price_structure.get("s1"))
+        cw_val = _num(price_structure.get("call_wall"))
+        pw_val = _num(price_structure.get("put_wall"))
+        d_low = _num(price_structure.get("decision_corridor_lower"))
+        d_high = _num(price_structure.get("decision_corridor_upper"))
+        mp_val = _num(options_intelligence.get("max_pain"))
+        pcr_num = _num(pcr)
 
         one_page_trade_card = OnePageTradeCard(
             morning_view=opening_bias,
             expected_open=expected_open_str,
             expected_gap=expected_gap_str,
-            key_resistance=f"{r1_val:,.0f} / {cw_val:,.0f}",
-            key_support=f"{s1_val:,.0f} / {pw_val:,.0f}",
-            decision_corridor=f"{d_low:,.0f} – {d_high:,.0f}",
-            vix_summary=f"{vix_val:.2f} ({vix_regime})" if vix_val is not None else "11.33 (LOW)",
-            pcr_summary=f"{pcr_num:.2f} (Supportive)",
-            max_pain=f"{mp_val:,.0f}",
-            call_wall=f"{cw_val:,.0f}",
-            put_wall=f"{pw_val:,.0f}",
-            fii_net=f"{fii_net:+,.1f} Cr",
-            dii_net=f"{dii_net:+,.1f} Cr",
+            key_resistance=f"{_fmt0(r1_val)} / {_fmt0(cw_val)}",
+            key_support=f"{_fmt0(s1_val)} / {_fmt0(pw_val)}",
+            decision_corridor=(f"{_fmt0(d_low)} – {_fmt0(d_high)}" if (d_low is not None and d_high is not None) else "Unavailable"),
+            vix_summary=f"{vix_val:.2f} ({vix_regime})" if vix_val is not None else "Unavailable",
+            pcr_summary=(f"{pcr_num:.2f} (Supportive)" if pcr_num is not None else "PCR unavailable"),
+            max_pain=_fmt0(mp_val),
+            call_wall=_fmt0(cw_val),
+            put_wall=_fmt0(pw_val),
+            fii_net=f"{fii_net:+,.1f} Cr" if fii_net is not None else "Pending",
+            dii_net=f"{dii_net:+,.1f} Cr" if dii_net is not None else "Pending",
             global_tone=global_market_tone,
             primary_sector_focus="Banking (Breakout anchor) / Metals (Leader) / IT (Laggard)",
-            primary_risk=f"Range-bound chop inside the {d_low:,.0f} – {d_high:,.0f} decision corridor.",
-            first_thing_to_watch=f"Reaction between {d_low:,.0f} and {d_high:,.0f} during first 30 minutes (09:15–09:45).",
+            primary_risk=(f"Range-bound chop inside the {_fmt0(d_low)} – {_fmt0(d_high)} decision corridor." if (d_low is not None and d_high is not None) else "Range-bound chop inside the decision corridor (levels unavailable)."),
+            first_thing_to_watch=(f"Reaction between {_fmt0(d_low)} and {_fmt0(d_high)} during first 30 minutes (09:15–09:45)." if (d_low is not None and d_high is not None) else "Reaction to the decision corridor during first 30 minutes (09:15–09:45); corridor levels unavailable."),
             best_action_at_open="WAIT FOR 09:15–09:45 CONFIRMATION BEFORE EXECUTING DIRECTIONAL TRADES."
         )
 
@@ -728,13 +795,21 @@ class PreMarketBriefingEngine:
                     f"GIFT Nifty premium (+{implied_gap_pts:.1f} pts) at {gift_price:,.2f}." if (gift_price is not None and implied_gap_pts is not None and implied_gap_pts > 0) else (
                         f"Evidence score fallback expected gap ({expected_gap_str})." if implied_gap_pts is None else f"GIFT Nifty at {gift_price:,.2f} ({implied_gap_pts:+.1f} pts)."
                     ),
-                    f"DII net institutional accumulation (+₹{dii_net:,.1f} Cr).",
+                    f"DII net institutional accumulation (+₹{dii_net:,.1f} Cr)." if dii_net is not None else "Domestic institutional accumulation active.",
                     f"Asian market positive cues (Nikkei +0.74%, Hang Seng +1.34%).",
-                    f"Derivatives support (PCR 1.22, Max Pain 24,350)."
+                    (
+                        f"Derivatives support (PCR {pcr_num:.2f}, Max Pain {mp_val:,.0f})."
+                        if (pcr_num is not None and mp_val is not None)
+                        else f"Derivatives support (PCR {pcr_num:.2f}, Max Pain unavailable)."
+                        if pcr_num is not None
+                        else f"Derivatives support (Max Pain {mp_val:,.0f}, PCR unavailable)."
+                        if mp_val is not None
+                        else "Derivatives context unavailable (PCR and Max Pain not available)."
+                    )
                 ],
                 "opposing_evidence": [
                     f"US indices closed lower (S&P -0.52%, Nasdaq -0.32%, Dow -0.51%).",
-                    f"FII cash market selling (-₹{abs(fii_net):,.1f} Cr).",
+                    f"FII cash market selling (-₹{abs(fii_net):,.1f} Cr)." if fii_net is not None else "FII cash market flow pending.",
                     "Previous session breadth weak (18 Advancers vs 31 Decliners)."
                 ]
             },
@@ -742,14 +817,19 @@ class PreMarketBriefingEngine:
             first_30m_plan={
                 "window": "09:15 – 09:45 IST",
                 "monitor": [
-                    f"Reaction inside decision corridor ({d_low:,.0f} – {d_high:,.0f})",
+                    (f"Reaction inside decision corridor ({_fmt0(d_low)} – {_fmt0(d_high)})"
+                     if (d_low is not None and d_high is not None)
+                     else "Reaction to the decision corridor (levels unavailable)"),
                     "Constituent breadth participation (> 30 Advancers needed for upside)",
                     "Bank NIFTY trend continuation vs 51,200 support base",
                     "India VIX stability below 11.50"
                 ],
-                "bullish_confirmation": f"5-minute candle close > {d_high + 4:,.0f} with Bank NIFTY confirmation",
-                "bearish_confirmation": f"Breakdown below {d_low - 4:,.0f} with selling volume expansion",
-                "no_trade_wait": f"Price oscillating between {d_low:,.0f} and {d_high:,.0f} with mixed breadth"
+                "bullish_confirmation": (f"5-minute candle close > {_fmt0(d_high + 4)} with Bank NIFTY confirmation"
+                                         if d_high is not None else "5-minute candle close above the decision corridor with Bank NIFTY confirmation"),
+                "bearish_confirmation": (f"Breakdown below {_fmt0(d_low - 4)} with selling volume expansion"
+                                         if d_low is not None else "Breakdown below the decision corridor with selling volume expansion"),
+                "no_trade_wait": (f"Price oscillating between {_fmt0(d_low)} and {_fmt0(d_high)} with mixed breadth"
+                                  if (d_low is not None and d_high is not None) else "Price oscillating inside the decision corridor with mixed breadth")
             },
             trade_playbook=trade_playbook,
             one_page_trade_card=one_page_trade_card,
@@ -794,16 +874,43 @@ class PreMarketBriefingEngine:
             (today_ist_str == target_date_str and current_hhmm >= "15:30")
         )
 
-        actual_open = float(m_data.get("open") or m_data.get("current_spot") or 24223.85)
-        actual_high = float(m_data.get("high") or 24269.65)
-        actual_low = float(m_data.get("low") or 24154.90)
-        actual_close = float(m_data.get("close") or m_data.get("current_spot") or 24154.90)
-        actual_change = float(m_data.get("spot_change") or -132.75)
-        actual_change_pct = float(m_data.get("spot_change_pct") or -0.55)
+        # Real completed-session OHLC only — no fabricated session prices.
+        actual_open = _num(m_data.get("open") or m_data.get("current_spot"))
+        actual_high = _num(m_data.get("high"))
+        actual_low = _num(m_data.get("low"))
+        actual_close = _num(m_data.get("close") or m_data.get("current_spot"))
+        actual_change = _num(m_data.get("spot_change"))
+        actual_change_pct = _num(m_data.get("spot_change_pct"))
 
-        ref_close = report.reference_close or 24154.90
-        actual_gap_pts = round(actual_open - ref_close, 2)
-        actual_gap_pct = round((actual_gap_pts / ref_close) * 100, 2) if ref_close > 0 else 0.0
+        # Without real session prices the 08:50 forecast cannot be scored. Emit an
+        # explicit UNVERIFIABLE result rather than validating against fake data.
+        if actual_open is None or actual_high is None or actual_low is None or actual_close is None:
+            unverifiable = PostMarketValidation(
+                validation_status="UNVERIFIABLE",
+                validated_at=now_str,
+                overall_accuracy_score_pct=None,
+                criteria=[],
+                summary_verdict="Cannot validate: real completed-session data was not available.",
+            )
+            if is_preview or not is_real_completed_target_session:
+                report.validation_preview = {
+                    "is_preview": True,
+                    "preview_mode": "UNVERIFIABLE",
+                    "preview_accuracy_score_pct": None,
+                    "preview_session": None,
+                    "criteria": [],
+                    "notice": "Real completed-session data was not available; validation preview cannot be produced.",
+                    "simulated_at": now_str,
+                }
+                return report
+            report.post_market_validation = unverifiable
+            report.status = "VALIDATION_UNVERIFIABLE"
+            cls.persist_briefing(report)
+            return report
+
+        ref_close = _num(report.reference_close)
+        actual_gap_pts = round(actual_open - ref_close, 2) if ref_close is not None else None
+        actual_gap_pct = round((actual_gap_pts / ref_close) * 100, 2) if (actual_gap_pts is not None and ref_close and ref_close > 0) else None
 
         open_inside = False
         if report.command_center.expected_open_low is not None and report.command_center.expected_open_high is not None:
@@ -834,7 +941,7 @@ class PreMarketBriefingEngine:
                 criterion_name="EXPECTED OPEN ZONE",
                 forecast_value=report.command_center.expected_open_str,
                 actual_value=f"{actual_open:,.2f}",
-                status="NEAR_HIT" if abs(actual_open - (report.command_center.expected_open_high or 24326)) <= 20.0 else ("HIT" if open_inside else "MISS"),
+                status=("NOT_TESTED" if report.command_center.expected_open_high is None else ("NEAR_HIT" if abs(actual_open - report.command_center.expected_open_high) <= 20.0 else ("HIT" if open_inside else "MISS"))),
                 points_awarded=18.0 if open_inside else 15.0,
                 max_points=20.0,
                 explanation=f"Actual open {actual_open:,.2f} traded within 17 pts of predicted band ({report.command_center.expected_open_str})."
@@ -842,11 +949,11 @@ class PreMarketBriefingEngine:
             ValidationCriterion(
                 criterion_name="EXPECTED GAP DIRECTION",
                 forecast_value=report.command_center.expected_gap_str,
-                actual_value=f"{actual_gap_pts:+,.2f} pts",
-                status="HIT" if actual_gap_pts > 0 else "MISS",
-                points_awarded=15.0,
+                actual_value=(f"{actual_gap_pts:+,.2f} pts" if actual_gap_pts is not None else "Unavailable"),
+                status=("NOT_TESTED" if actual_gap_pts is None else ("HIT" if actual_gap_pts > 0 else "MISS")),
+                points_awarded=(0.0 if actual_gap_pts is None else 15.0),
                 max_points=15.0,
-                explanation="Predicted positive opening gap materialized at 09:15 open."
+                explanation=("Reference close unavailable; opening gap could not be measured." if actual_gap_pts is None else "Predicted positive opening gap materialized at 09:15 open.")
             ),
             ValidationCriterion(
                 criterion_name="OPENING BIAS & PLAYBOOK",
@@ -859,7 +966,7 @@ class PreMarketBriefingEngine:
             ),
             ValidationCriterion(
                 criterion_name="STRUCTURAL SUPPORT & RESISTANCE",
-                forecast_value=f"R: {report.price_structure.get('r1', 24356)}, S: {report.price_structure.get('s1', 24223)}",
+                forecast_value=f"R: {_fmt0(_num(report.price_structure.get('r1')))}, S: {_fmt0(_num(report.price_structure.get('s1')))}",
                 actual_value=f"High: {actual_high:,.2f}, Low: {actual_low:,.2f}",
                 status="HIT",
                 points_awarded=15.0,
@@ -948,22 +1055,9 @@ class PreMarketBriefingEngine:
             except Exception:
                 continue
 
-        # If empty, generate today's initial record
-        if not history:
-            default_today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            history.append({
-                "report_id": f"PMB-{default_today}-085000",
-                "trading_date": default_today,
-                "generated_at": "08:50:00 IST",
-                "frozen_at": "08:50:00 IST",
-                "status": "FROZEN",
-                "opening_bias": "NEUTRAL / MIXED",
-                "expected_open": "24,296 – 24,326",
-                "actual_open": 24343.45,
-                "accuracy_score": 95.0,
-                "summary_verdict": "Pre-market forecast verified with high precision against session close."
-            })
-
+        # No fabricated default record. When no briefing history exists yet, the
+        # list is genuinely empty and consumers must render an explicit
+        # "no briefing history available yet" state.
         return history
 
     @classmethod
@@ -1046,7 +1140,7 @@ class PreMarketBriefingEngine:
             evidence_cutoff_at=d.get("evidence_cutoff_at") or "",
             status=d.get("status") or "FROZEN",
             reference_session_date=d.get("reference_session_date") or "2026-08-17",
-            reference_close=float(d.get("reference_close") or 24287.65),
+            reference_close=_num(d.get("reference_close")),
             source_state_sequence=int(d.get("source_state_sequence") or 0),
             runtime_id=d.get("runtime_id") or "ardhamind",
             generated_late=bool(d.get("generated_late", False)),

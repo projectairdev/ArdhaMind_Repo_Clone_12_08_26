@@ -799,17 +799,37 @@ class PerformanceTrackerEngine:
                         except Exception as e:
                             logger.warning(f"Could not load session history for {trading_date}: {e}")
 
-                open_val = float(m_data.get("open") or m_data.get("current_spot") or state.get("last_price") or 24152.05)
-                high_val = float(m_data.get("high") or open_val)
-                low_val = float(m_data.get("low") or open_val)
-                close_val = float(m_data.get("close") or m_data.get("current_spot") or state.get("last_price") or open_val)
+                def _pv(*vals: Any) -> Optional[float]:
+                    for v in vals:
+                        try:
+                            if v is None:
+                                continue
+                            f = float(v)
+                            if f > 0 and f == f:
+                                return f
+                        except (TypeError, ValueError):
+                            continue
+                    return None
+
+                open_val = _pv(m_data.get("open"), m_data.get("current_spot"), state.get("last_price"))
+                close_val = _pv(m_data.get("close"), m_data.get("current_spot"), state.get("last_price"))
+                prev_close_val = _pv(m_data.get("previous_close"))
+                if open_val is None or close_val is None:
+                    # No real session truth yet — leave pending records unevaluated
+                    # rather than scoring them against fabricated OHLC.
+                    logger.info(
+                        f"[PERFORMANCE] Skipping evaluation for {trading_date}: real session OHLC unavailable."
+                    )
+                    continue
+                high_val = _pv(m_data.get("high")) or open_val
+                low_val = _pv(m_data.get("low")) or open_val
 
                 session_truth = {
                     "open": open_val,
                     "high": high_val,
                     "low": low_val,
                     "close": close_val,
-                    "previous_close": float(m_data.get("previous_close", 24154.9)),
+                    "previous_close": prev_close_val,
                     "regime": str(m_data.get("market_regime", state.get("market_regime", "RANGE"))),
                     "risk_level": str(state.get("risk_grade", "MODERATE")),
                     "is_live": m_status == "OPEN",

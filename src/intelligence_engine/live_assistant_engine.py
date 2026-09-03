@@ -155,7 +155,7 @@ class LiveAssistantEngine:
                             "spot": b.get("end_spot") or b.get("start_spot"),
                             "breadth": {"advances": b.get("breadth_advances", 25), "declines": b.get("breadth_declines", 25)},
                             "vix": b.get("vix", 12.5),
-                            "options": {"pcr": b.get("pcr", 1.0), "max_pain": b.get("max_pain", 24250)}
+                            "options": {"pcr": b.get("pcr"), "max_pain": b.get("max_pain")}
                         })
                     if synth_snaps:
                         return latest_close.session_date, "COMPLETED_SESSION", synth_snaps
