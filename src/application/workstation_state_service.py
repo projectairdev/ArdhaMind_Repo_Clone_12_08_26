@@ -3929,9 +3929,9 @@ class WorkstationStateService:
             "prediction": prediction_payload,
             "decision": {
                 "decision_state": raw_dec.get("summary", {}).get("overall_action") or "MONITOR",
-                "decision_headline": dec_headline,
+                "decision_headline": dec_headline if (is_live_stream or settled_is_current) else "No live feed — market intelligence unavailable",
                 "opportunity_setup": raw_opp.get("opportunity_setup") or "NO_SETUP",
-                "trigger_condition": raw_dec.get("summary", {}).get("trigger_condition") or "Price holding within expected intraday boundaries",
+                "trigger_condition": raw_dec.get("summary", {}).get("trigger_condition") or ("Price holding within expected intraday boundaries" if is_live_stream else "Awaiting live feed"),
                 "invalidation_boundary": str(raw_dec.get("summary", {}).get("invalidation_level") or "N/A"),
                 "confidence_band": conf_band,
                 "confidence_score": conf_score,
@@ -3943,9 +3943,9 @@ class WorkstationStateService:
                     {"label": "Breadth Supportive", "passed": (adv_val is not None and dec_val is not None and adv_val > dec_val), "details": f"{adv_val or 0} Adv / {dec_val or 0} Dec"},
                     {"label": "Options Writing Bias", "passed": (opt_pcr is not None and opt_pcr >= 1.0), "details": f"PCR {opt_pcr or 0.0:.2f}"},
                 ],
-                "bullish_factors": ["Price sustaining near structural anchor", "Derivative participation active"],
+                "bullish_factors": ["Price sustaining near structural anchor", "Derivative participation active"] if is_live_stream else [],
                 "bearish_factors": [],
-                "caution_factors": [],
+                "caution_factors": [] if is_live_stream else ["No live market feed — figures shown are not current"],
                 "quality": "VALID" if is_live_stream else "UNAVAILABLE",
             },
             "candles": {
