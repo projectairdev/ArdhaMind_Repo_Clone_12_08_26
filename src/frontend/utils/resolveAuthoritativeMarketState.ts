@@ -105,6 +105,19 @@ export function resolveAuthoritativeMarketState(
     return emptyState;
   }
 
+  // Coherence guard (defence in depth — CanonicalStateContext is the primary
+  // gate): if the settled-session anchors predate the session the envelope
+  // claims AND there are no intraday candles, the "live" market data is a
+  // backend-assembled snapshot from a days-old cache, not a real feed.
+  const settledDate = String(envelope.settled_session?.session_date || "").slice(0, 10);
+  const prevSessionDate = String(
+    (envelope.session as any)?.previous_session_date || envelope.session?.completed_session_date || ""
+  ).slice(0, 10);
+  const hasIntradayCandles = Array.isArray(envelope.candles?.["1m"]) && envelope.candles["1m"].length > 0;
+  if (settledDate && prevSessionDate && settledDate < prevSessionDate && !hasIntradayCandles) {
+    return emptyState;
+  }
+
   // 1. Prior Settled Session Anchors (Strictly Previous Day)
   const settledClose =
     envelope.settled_session?.close ??

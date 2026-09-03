@@ -310,7 +310,25 @@ function isCurrentRealEnvelope(env: any): boolean {
 
   // A live envelope for the current session is always stamped with today's IST
   // trading date. An older date means a stale cache — reject it.
-  return envDate === "" || envDate === today;
+  if (envDate !== "" && envDate !== today) return false;
+
+  // Coherence guard: the settled-session anchors must belong to the session the
+  // envelope claims. A backend that has no live feed can still assemble an
+  // envelope with today's session date but fill settled_session / prices from a
+  // days-old snapshot (observed on staging: settled_session.session_date
+  // "2026-08-28" while completed_session_date is "2026-09-02", zero candles).
+  // If the settled anchors predate the claimed previous session AND there are no
+  // intraday candles, the market data is not real — treat it as no session.
+  const settledDate = String(env.settled_session?.session_date || "").slice(0, 10);
+  const prevSessionDate = String(
+    env.session?.previous_session_date || env.session?.completed_session_date || ""
+  ).slice(0, 10);
+  const hasIntradayCandles = Array.isArray(env.candles?.["1m"]) && env.candles["1m"].length > 0;
+  if (settledDate && prevSessionDate && settledDate < prevSessionDate && !hasIntradayCandles) {
+    return false;
+  }
+
+  return true;
 }
 
 export function CanonicalStateProvider({ children }: { children: ReactNode }) {
