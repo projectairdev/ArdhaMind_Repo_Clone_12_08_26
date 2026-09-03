@@ -79,6 +79,36 @@ function istClock(ms: number, withSeconds: boolean): string {
   }
 }
 
+/** IST calendar day (YYYY-MM-DD) for a timestamp, for same-day comparison. */
+function istDay(ms: number): string {
+  try {
+    return new Date(ms).toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * "HH:MM:SS IST" when the observation is from the current IST day, otherwise
+ * "DD MMM HH:MM IST" — a bare time-of-day is misleading next to a "7d ago"
+ * staleness marker (the time can read later than the wall clock).
+ */
+function istStamp(ms: number, nowMs: number, withSeconds: boolean): string {
+  const clock = istClock(ms, withSeconds);
+  const obsDay = istDay(ms);
+  if (obsDay && obsDay === istDay(nowMs)) return `${clock} IST`;
+  try {
+    const datePart = new Date(ms).toLocaleDateString("en-GB", {
+      timeZone: "Asia/Kolkata",
+      day: "2-digit",
+      month: "short",
+    });
+    return `${datePart} ${istClock(ms, false)} IST`;
+  } catch {
+    return `${clock} IST`;
+  }
+}
+
 function humanizeAge(seconds: number): string {
   if (seconds < 60) return `${Math.max(0, Math.round(seconds))}s ago`;
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
@@ -128,9 +158,9 @@ export const DataFreshnessBadge: React.FC<DataFreshnessBadgeProps> = ({
       ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
       : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
 
-  const clock = istClock(observedMs, !compact);
+  const stamp = istStamp(observedMs, now, !compact);
   const prefix = label ? `${label} ` : "";
-  const core = compact ? `${prefix}${clock} IST` : `${prefix}as of ${clock} IST`;
+  const core = compact ? `${prefix}${stamp}` : `${prefix}as of ${stamp}`;
   const stalePart = level === "fresh" ? "" : ` · ${humanizeAge(ageSeconds)}`;
 
   return (

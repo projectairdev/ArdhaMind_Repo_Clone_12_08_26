@@ -62,6 +62,8 @@ export const LiveGuideView: React.FC<LiveGuideViewProps> = ({ vm, canonicalState
   const vixVal = authState.vix;
   const vixChangePct = envelope?.market?.vix?.change_pct ?? null;
   const atr14 = envelope?.settled_session?.atr_14 ?? envelope?.price_structure?.atr_14 ?? null;
+  const pcrRaw = envelope?.options?.pcr ?? PCR_FALLBACK ?? null;
+  const pcrDisplay = pcrRaw != null && Number.isFinite(Number(pcrRaw)) ? Number(pcrRaw).toFixed(2) : "—";
 
   // 2. Dynamic VWAP Cross Hysteresis & Deadband Engine (prevents sub-1pt flipping)
   const vwapHysteresisDelta = useMemo(() => {
@@ -455,7 +457,7 @@ export const LiveGuideView: React.FC<LiveGuideViewProps> = ({ vm, canonicalState
               <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0 mt-0.5" />
               <div>
                 <strong className="text-neutral-200">Derivatives Flow: </strong>
-                <span className="text-neutral-400">Aggregated PCR at {envelope.options?.pcr ?? PCR_FALLBACK ?? "—"} indicating supportive put-base.</span>
+                <span className="text-neutral-400">Aggregated PCR at {pcrDisplay} indicating supportive put-base.</span>
               </div>
             </div>
 
