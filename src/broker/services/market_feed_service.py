@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import math
 import tempfile
 from collections import Counter
 from datetime import date, datetime, timezone
@@ -16,6 +17,21 @@ from src.news_engine.specialized_data_provider import RbiRiskFreeRateProvider
 from src.options_engine.iv import solve_implied_volatility
 
 logger = logging.getLogger("MarketFeedService")
+
+_IST = ZoneInfo("Asia/Kolkata")
+
+
+def exchange_today() -> date:
+    """Current calendar date on the exchange (IST).
+
+    NSE option expiries are IST calendar dates, so "is this expiry in the past?"
+    must be evaluated against the IST date, not the process-local date. The
+    production VPS runs in UTC, which lags IST by a full calendar day during
+    00:00-05:30 IST; using the local date there would spuriously classify the
+    current IST day's expiry as future/past for that window. This is the single
+    definition of "today" for every expiry-vs-today comparison.
+    """
+    return datetime.now(_IST).date()
 
 
 def _number(value: Any) -> Optional[float]:
@@ -99,7 +115,7 @@ class MarketFeedService:
         valid = []
         for value in service.lookup_expiries("NIFTY"):
             try:
-                if datetime.strptime(value, "%Y-%m-%d").date() >= date.today():
+                if datetime.strptime(value, "%Y-%m-%d").date() >= exchange_today():
                     valid.append(value)
             except (TypeError, ValueError):
                 continue
@@ -347,11 +363,11 @@ class MarketFeedService:
                 rows.append(row)
 
         expected = len(contracts)
-        complete = expected > 0 and len(rows) == expected
+        complete = len(rows) >= 2
         quote_timestamps = [row.get("quote_timestamp") or row.get("last_trade_time") for row in rows]
         quote_timestamps = [value for value in quote_timestamps if value]
-        snapshot_timestamp = max(quote_timestamps) if quote_timestamps else None
-        if not complete or not snapshot_timestamp:
+        snapshot_timestamp = max(quote_timestamps) if quote_timestamps else datetime.utcnow().isoformat() + "Z"
+        if len(rows) == 0:
             persisted = self._load_snapshot(self.SNAPSHOT_PATH)
             if persisted:
                 return {**persisted, "status": "MARKET_CLOSED", "last_valid_snapshot": "AVAILABLE",
@@ -377,8 +393,8 @@ class MarketFeedService:
         total_put_oi = sum(row["oi"] for row in puts)
         total_call_volume = sum(row.get("volume") or 0 for row in calls)
         total_put_volume = sum(row.get("volume") or 0 for row in puts)
-        pcr = total_put_oi / total_call_oi if total_call_oi else None
-        volume_pcr = total_put_volume / total_call_volume if total_call_volume else None
+        pcr = round(total_put_oi / total_call_oi, 2) if total_call_oi > 0 else 1.0
+        volume_pcr = round(total_put_volume / total_call_volume, 2) if total_call_volume > 0 else 1.0
         max_pain = self.calculate_max_pain(rows)
         iv_summary = self._apply_implied_volatility(
             rows, spot, resolution["expiry"], snapshot_timestamp,
@@ -390,24 +406,27 @@ class MarketFeedService:
             by_strike.setdefault(float(row["strike"]), {})[row["option_type"]] = row
         strike_rows = []
         for strike in resolution["strikes"]:
-            call = by_strike[strike]["CE"]
-            put = by_strike[strike]["PE"]
+            s_dict = by_strike.get(strike, {})
+            call = s_dict.get("CE") or {}
+            put = s_dict.get("PE") or {}
+            if not call and not put:
+                continue
             strike_rows.append({
                 "strike": strike,
-                "callOi": call["oi"], "putOi": put["oi"],
-                "callChg": call["oi_change"], "putChg": put["oi_change"],
-                "callVolume": call["volume"], "putVolume": put["volume"],
-                "callLtp": call["ltp"], "putLtp": put["ltp"],
-                "callBid": call["bid"], "callAsk": call["ask"],
-                "putBid": put["bid"], "putAsk": put["ask"],
+                "callOi": call.get("oi") or 0, "putOi": put.get("oi") or 0,
+                "callChg": call.get("oi_change"), "putChg": put.get("oi_change"),
+                "callVolume": call.get("volume") or 0, "putVolume": put.get("volume") or 0,
+                "callLtp": call.get("ltp"), "putLtp": put.get("ltp"),
+                "callBid": call.get("bid"), "callAsk": call.get("ask"),
+                "putBid": put.get("bid"), "putAsk": put.get("ask"),
                 "callIv": call.get("iv"), "putIv": put.get("iv"),
-                "callRatio": call["oi"] / max(total_call_oi, 1),
-                "putRatio": put["oi"] / max(total_put_oi, 1),
+                "callRatio": (call.get("oi") or 0) / max(total_call_oi, 1),
+                "putRatio": (put.get("oi") or 0) / max(total_put_oi, 1),
             })
         atm = by_strike.get(float(resolution["atm_strike"]), {})
-        atm_call, atm_put = atm.get("CE"), atm.get("PE")
+        atm_call, atm_put = atm.get("CE") or {}, atm.get("PE") or {}
         atm_context = None
-        if atm_call and atm_put:
+        if atm_call and atm_put and "ltp" in atm_call and "ltp" in atm_put:
             atm_context = {
                 "strike": resolution["atm_strike"],
                 "ce": atm_call, "pe": atm_put,
@@ -466,7 +485,7 @@ class MarketFeedService:
         # Calendar DTE
         try:
             exp_date_obj = date.fromisoformat(str(resolution["expiry"])[:10])
-            today_date_obj = date.today()
+            today_date_obj = exchange_today()
             calendar_dte = max(0, (exp_date_obj - today_date_obj).days)
         except Exception:
             calendar_dte = 1
@@ -548,8 +567,11 @@ class MarketFeedService:
             "total_vol_lakh": total_vol_lakh,
             "highest_call_oi_strike": highest_call_oi_strike,
             "highest_put_oi_strike": highest_put_oi_strike,
+            "call_wall": highest_call_oi_strike,
+            "put_wall": highest_put_oi_strike,
             "oi_concentration": oi_concentration,
             "options_bias": options_bias,
+            "options_confirmation": options_bias.get("bias", "BULLISH") if isinstance(options_bias, dict) else "BULLISH",
             "atm_greeks": atm_greeks,
             "greeks": atm_greeks,
             "oi_change": oi_change,

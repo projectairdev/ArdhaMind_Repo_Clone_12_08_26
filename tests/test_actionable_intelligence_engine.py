@@ -61,14 +61,18 @@ def test_actionable_trade_suggestion_construction():
     state = {
         "market_data": {
             "current_spot": 24152.05,
-            "open": 24100.0,
-            "high": 24180.0,
-            "low": 24090.0,
-            "previous_close": 24078.3,
-            "breadth": {"advances": 38, "declines": 12},
+            "open": 24020.0,
+            "high": 24160.0,
+            "low": 24015.0,
+            "previous_close": 24010.0,
+            "breadth": {"advances": 44, "declines": 6},
             "status": "open"
         },
-        "options": {"pcr": 1.30, "max_pain": 24200.0, "call_wall": 24300.0, "put_wall": 24000.0},
+        "options": {
+            "pcr": 1.30, "max_pain": 24200.0, "call_wall": 24300.0, "put_wall": 24000.0,
+            # Real ATM CE premium (no fabricated ₹140 fallback in the engine anymore)
+            "strikes": [{"strike": 24150, "ce_ltp": 142.5}],
+        },
         "alignment": "BULLISH"
     }
     test_dt = datetime(2026, 8, 20, 10, 45, 0, tzinfo=IST)

@@ -4,15 +4,9 @@ from typing import List, Dict, Any, Optional
 
 from src.broker.models.tick import TickModel
 from src.broker.services.instrument_service import InstrumentService
+from src.broker.utils.symbol_normalizer import STATIC_TOKENS, normalize_instrument_key
 
 logger = logging.getLogger("StreamingService")
-
-STATIC_TOKENS = {
-    256265: "NIFTY 50",
-    260105: "NIFTY BANK",
-    257801: "NIFTY FIN SERVICE",
-    258057: "NIFTY MID SELECT"
-}
 
 
 class StreamingService:
@@ -50,6 +44,8 @@ class StreamingService:
                 else:
                     # Generic fallback
                     symbol = f"TOKEN_{token}"
+
+            symbol = normalize_instrument_key(symbol)
 
             try:
                 tick_model = TickModel.from_dict(symbol, raw)

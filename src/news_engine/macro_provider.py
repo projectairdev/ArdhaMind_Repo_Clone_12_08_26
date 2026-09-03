@@ -196,6 +196,29 @@ class BaseMacroProvider(abc.ABC):
             cached_last_valid=has_data and latest != "SUCCESS",
         )
 
+    def get_cached_or_offline_payload(self) -> Dict[str, Any]:
+        """
+        Instant non-blocking cache reader.
+        Never performs synchronous HTTP requests; returns current in-memory cache
+        or immediate status: 'OFFLINE' in < 1ms.
+        """
+        if self.cached_raw_data:
+            return {
+                "status": self.status,
+                "data": list(self.cached_raw_data),
+                "item_count": self.item_count,
+                "last_successful_fetch": self.last_successful_fetch,
+                "cached": True,
+            }
+        return {
+            "status": "OFFLINE",
+            "data": [],
+            "item_count": 0,
+            "last_successful_fetch": None,
+            "cached": False,
+            "operational_error_reason": "NO_CACHE_AVAILABLE",
+        }
+
     @abc.abstractmethod
     def fetch_raw_data(self) -> List[Dict[str, Any]]:
         pass

@@ -59,4 +59,7 @@ desktop.ini
 
 # Test and coverage output
 coverage/
-
+dist_test/
+scratch/
+data/cache/*.tmp_*
+data/session_store/*.tmp_*

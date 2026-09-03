@@ -64,6 +64,8 @@ export function resolveMarketIntelligenceSession(params?: {
 }): SessionTimingState {
   const preview = params?.previewMode || "AUTO";
   const nowIst = getCanonicalIstDate(params?.customDate);
+  const dayOfWeek = nowIst.getUTCDay(); // 0 = Sun, 6 = Sat, 1-5 = Mon-Fri
+  const isWeekday = dayOfWeek >= 1 && dayOfWeek <= 5;
   const hour = nowIst.getUTCHours();
   const minute = nowIst.getUTCMinutes();
   const second = nowIst.getUTCSeconds();
@@ -71,24 +73,22 @@ export function resolveMarketIntelligenceSession(params?: {
   const timeStr = `${hhmmss} IST`;
 
   const mStatus = String(params?.marketSessionState?.status || "").toUpperCase();
-  const isClosed = Boolean(
-    params?.marketSessionState?.is_closed ||
-    ["CLOSED", "HOLIDAY", "WEEKEND", "POST_CLOSE"].includes(mStatus)
-  );
+  const isExplicitHoliday = mStatus === "HOLIDAY";
+  const isWeekend = !isWeekday;
+  const isClosedSession = isWeekend || isExplicitHoliday || (isWeekday && hhmmss >= "15:30:00");
 
   let lifecycleStage: SessionLifecycleStage;
   let autoResolvedSubTab: MarketIntelligenceSubTab;
 
-  if (isClosed && hhmmss < "09:00:00") {
-    // Post-close / carry-forward until next pre-open
+  if (isWeekend || isExplicitHoliday) {
     lifecycleStage = "TOMORROW_PLAN_ACTIVE";
     autoResolvedSubTab = "TOMORROW_PLAN";
-  } else if (hhmmss < "09:10:00") {
-    // 00:00:00 - 09:09:59 IST: Preparing
+  } else if (hhmmss < "09:00:00") {
+    // 00:00:00 - 08:59:59 IST: Pre-Market Planning
     lifecycleStage = "PREPARING";
     autoResolvedSubTab = "MORNING_PLAN";
-  } else if (hhmmss >= "09:10:00" && hhmmss <= "09:14:58") {
-    // 09:10:00 - 09:14:58 IST: Morning Plan
+  } else if (hhmmss >= "09:00:00" && hhmmss <= "09:14:58") {
+    // 09:00:00 - 09:14:58 IST: Pre-Open
     lifecycleStage = "MORNING_PLAN_ACTIVE";
     autoResolvedSubTab = "MORNING_PLAN";
   } else if (hhmmss >= "09:14:59" && hhmmss < "15:25:00") {
@@ -100,7 +100,7 @@ export function resolveMarketIntelligenceSession(params?: {
     lifecycleStage = "LIVE_GUIDE_CLOSING_BUILD";
     autoResolvedSubTab = "LIVE_GUIDE";
   } else {
-    // 15:30:00 onward: Tomorrow Plan
+    // 15:30:00 onward: Tomorrow Plan / Session Review
     lifecycleStage = "TOMORROW_PLAN_ACTIVE";
     autoResolvedSubTab = "TOMORROW_PLAN";
   }
@@ -112,10 +112,16 @@ export function resolveMarketIntelligenceSession(params?: {
   else if (preview === "TOMORROW_PLAN") effectiveSubTab = "TOMORROW_PLAN";
 
   let marketStatusText = "MARKET OPEN";
-  if (isClosed) {
-    marketStatusText = mStatus === "HOLIDAY" ? "MARKET HOLIDAY" : "MARKET CLOSED";
+  if (isExplicitHoliday) {
+    marketStatusText = "MARKET HOLIDAY";
+  } else if (isWeekend) {
+    marketStatusText = "WEEKEND (MARKET CLOSED)";
+  } else if (hhmmss < "09:00:00") {
+    marketStatusText = "PRE-MARKET (08:50 BRIEF)";
   } else if (hhmmss < "09:15:00") {
     marketStatusText = "PRE-OPEN";
+  } else if (hhmmss >= "15:30:00") {
+    marketStatusText = "MARKET CLOSED (POST REVIEW)";
   }
 
   return {
@@ -125,7 +131,7 @@ export function resolveMarketIntelligenceSession(params?: {
     effectiveSubTab,
     autoResolvedSubTab,
     previewMode: preview,
-    isClosedSession: isClosed,
+    isClosedSession,
     marketStatusText,
   };
 }

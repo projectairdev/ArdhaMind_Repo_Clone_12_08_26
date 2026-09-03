@@ -1,5 +1,6 @@
 // src/frontend/context/WorkstationStateContext.tsx
 import React, { createContext, useContext, useState, useEffect, useMemo } from "react";
+import { resolveMarketSessionState, resolveCompletedSessionMetrics, getMarketSessionBadge } from "../utils/canonicalSemanticContract";
 import { workspaceService, WorkspaceMode, WorkspaceContext } from "../services/workspace";
 import {
   getBrokerAccount,
@@ -44,6 +45,7 @@ import {
   LiveAssistantMaterialEvent,
   LiveAssistantSnapshot
 } from "../types";
+import { normalizeInstrumentKey, isCanonicalNifty, isCanonicalVix } from "../utils/symbolNormalizer";
 
 export type ConnectionState =
   | "DISCONNECTED"
@@ -112,6 +114,27 @@ export interface WorkstationStateContextProps {
     outOfOrderRejected: number;
     staleRejected: number;
   };
+  /** Direct live NIFTY tick from WebSocket. null when no tick received yet. */
+  liveNiftyTick: {
+    price: number;
+    open?: number;
+    high?: number;
+    low?: number;
+    previous_close?: number;
+    change_points?: number;
+    change_pct?: number;
+    observed_at?: string;
+    sequence?: number;
+  } | null;
+  /** Direct live option LTPs from WebSocket, keyed by canonical symbol. */
+  liveOptionLTPs: Record<string, {
+    ltp: number;
+    volume?: number;
+    oi?: number;
+    bid?: number;
+    ask?: number;
+    observed_at?: string;
+  }>;
 }
 
 const defaultWorkspaceContext: WorkspaceContext = {
@@ -272,21 +295,21 @@ const defaultOptionContext: OptionContext = {
 const defaultEveningReport: EveningReport = {
   report_id: "N/A",
   market_summary: {
-      spot_price: 0,
-      vix_price: 0,
-      regime: "UNKNOWN",
-      trend_direction: "UNKNOWN",
-      market_score: 0,
-      market_grade: "N/A",
-      session_type: "UNKNOWN"
+    spot_price: 0,
+    vix_price: 0,
+    regime: "UNKNOWN",
+    trend_direction: "UNKNOWN",
+    market_score: 0,
+    market_grade: "N/A",
+    session_type: "UNKNOWN"
   },
   tomorrow_outlook: {
     directional_bias: "NEUTRAL",
     outlook_classification: "WAIT",
-      opportunity_strength: 0,
-      key_support_levels: [],
-      key_resistance_levels: [],
-      description: "Unavailable"
+    opportunity_strength: 0,
+    key_support_levels: [],
+    key_resistance_levels: [],
+    description: "Unavailable"
   },
   recommended_strategies: [],
   top_candidates: [],
@@ -835,10 +858,10 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
     const rawBroker = state.broker_status;
     const normStatus = rawBroker?.normalized_status || (
       rawBroker?.status === "CONNECTED_VERIFIED" || rawBroker?.execution_verified === true ? "CONNECTED_VERIFIED" :
-      rawBroker?.status === "session_expired" || rawBroker?.status === "token_expired" || rawBroker?.status === "CONNECTED_AUTH_REQUIRED" || rawBroker?.blocker_code === "AUTH_REQUIRED" || rawBroker?.authenticated === false ? "CONNECTED_AUTH_REQUIRED" :
-      rawBroker?.status === "reconnecting" || rawBroker?.status === "RECONNECTING" ? "RECONNECTING" :
-      rawBroker?.status === "unverified" || rawBroker?.status === "BROKER_STATE_UNVERIFIED" || rawBroker?.status === "connected" ? "BROKER_STATE_UNVERIFIED" :
-      "DISCONNECTED"
+        rawBroker?.status === "session_expired" || rawBroker?.status === "token_expired" || rawBroker?.status === "CONNECTED_AUTH_REQUIRED" || rawBroker?.blocker_code === "AUTH_REQUIRED" || rawBroker?.authenticated === false ? "CONNECTED_AUTH_REQUIRED" :
+          rawBroker?.status === "reconnecting" || rawBroker?.status === "RECONNECTING" ? "RECONNECTING" :
+            rawBroker?.status === "unverified" || rawBroker?.status === "BROKER_STATE_UNVERIFIED" || rawBroker?.status === "connected" ? "BROKER_STATE_UNVERIFIED" :
+              "DISCONNECTED"
     );
     const mStatus = state.market_session?.status;
     return {
@@ -1269,8 +1292,8 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
               }
             }
 
-            const sym = eventData.symbol;
-            if (sym === "NSE:NIFTY 50" || sym === "NIFTY 50" || sym === "NIFTY") {
+            const sym = normalizeInstrumentKey(eventData.symbol);
+            if (isCanonicalNifty(sym)) {
               setLiveNiftyTick({
                 price: eventData.price,
                 open: eventData.open,
@@ -1283,7 +1306,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
                 sequence: eventData.state_sequence
               });
               setLiveTickPrice(eventData.price);
-            } else if (sym === "INDIA VIX" || sym === "NSE:INDIA VIX") {
+            } else if (isCanonicalVix(sym)) {
               setLiveVix({
                 value: eventData.price,
                 change: eventData.change_points,
@@ -1310,7 +1333,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
               ticksProcessed: prev.ticksProcessed + 1
             }));
           } else if (msg.type === "tick") {
-            const symbol = msg.symbol;
+            const symbol = normalizeInstrumentKey(msg.symbol);
             const tick = msg.data;
 
             if (tick.backend_forward_timestamp) {
@@ -1326,7 +1349,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
               }
             }
 
-            if (symbol === "NSE:NIFTY 50" || symbol === "NIFTY 50" || symbol === "NIFTY") {
+            if (isCanonicalNifty(symbol)) {
               if (tick.last_price > 0) {
                 setLiveTickPrice(tick.last_price);
                 setLiveNiftyTick(prev => ({
@@ -1341,7 +1364,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
                   sequence: tick.state_sequence
                 }));
               }
-            } else if (symbol === "INDIA VIX" || symbol === "NSE:INDIA VIX") {
+            } else if (isCanonicalVix(symbol)) {
               if (tick.last_price > 0) {
                 setLiveVix({
                   value: tick.last_price,
@@ -1397,7 +1420,7 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
       if (ws) {
         try {
           ws.close();
-        } catch {}
+        } catch { }
       }
       if (reconnectTimeout) {
         clearTimeout(reconnectTimeout);
@@ -1469,6 +1492,8 @@ export function WorkstationStateProvider({ children }: { children: React.ReactNo
         liveEventStream,
         liveLatencyMetrics,
         streamDiagnostics: diagCounters,
+        liveNiftyTick,
+        liveOptionLTPs,
       }}
     >
       {children}
@@ -1484,6 +1509,14 @@ export function useWorkstationState() {
   return context;
 }
 
+/**
+ * Returns raw canonical market_data WITHOUT live tick overlay.
+ * Use this for ANALYTICAL fields only (regime, trend, breadth, support/resistance).
+ *
+ * @deprecated For instantaneous live price presentation (spot, change, high, low)
+ * use `useLiveMarketPresentation()` or `useWorkstationState().marketContext` which
+ * already has the live tick overlay applied.
+ */
 export function useMarketData() {
   const context = useWorkstationState();
   const isLive = context.marketConnection === "CONNECTED" && !context.error;
@@ -1551,5 +1584,145 @@ export function useNewsIntelligence() {
   return {
     data: raw || null,
     isStale: !isLive || !context.canonicalState,
+  };
+}
+
+/**
+ * useLiveMarketPresentation — Authoritative live presentation contract.
+ *
+ * Single hook for ALL instantaneous market price display surfaces.
+ * Applies session gating:
+ *   OPEN        → live tick wins (liveNiftyTick > marketContext canonical)
+ *   PRE_MARKET  → canonical only; no live tick override
+ *   POST_MARKET → canonical final only; live tick must NOT override
+ *   CLOSED      → canonical only
+ *
+ * Source labels:
+ *   LIVE_TICK         — live WebSocket tick active, session OPEN
+ *   CANONICAL_FALLBACK — canonical valid, no live tick or session not OPEN
+ *   UNAVAILABLE       — no data
+ *
+ * DO NOT drive analytical fields (regime, breadth, confidence, PCR,
+ * support/resistance, scenarios) from this hook — use canonical hooks.
+ */
+export function useLiveMarketPresentation() {
+  const ctx = useWorkstationState();
+
+  const state = ctx.canonicalState ?? ctx.lastValidState;
+  const mc = ctx.marketContext;
+  const raw = state?.market_data;
+
+  const sessionState = resolveMarketSessionState(state);
+  const sessionBadge = getMarketSessionBadge(sessionState);
+  const isOpenSession = sessionBadge.isOpen;
+
+  const completed = resolveCompletedSessionMetrics(
+    state,
+    ctx.marketContext
+  );
+
+  const currentSpot = isOpenSession
+    ? (mc.current_spot > 0 ? mc.current_spot : null)
+    : sessionBadge.isPostMarket
+      ? (completed.close ?? null)
+      : (
+        raw?.current_spot != null &&
+          Number(raw.current_spot) > 0
+          ? Number(raw.current_spot)
+          : null
+      );
+
+  const change = isOpenSession
+    ? (mc.spot_change ?? null)
+    : sessionBadge.isPostMarket
+      ? (completed.change ?? null)
+      : (raw?.spot_change ?? null);
+
+  const changePct = isOpenSession
+    ? (mc.spot_change_pct ?? null)
+    : sessionBadge.isPostMarket
+      ? (completed.changePercent ?? null)
+      : (raw?.spot_change_pct ?? null);
+
+  const high = isOpenSession
+    ? (mc.high && mc.high > 0 ? mc.high : null)
+    : sessionBadge.isPostMarket
+      ? (completed.high ?? null)
+      : (
+        raw?.high != null && Number(raw.high) > 0
+          ? Number(raw.high)
+          : null
+      );
+
+  const low = isOpenSession
+    ? (mc.low && mc.low > 0 ? mc.low : null)
+    : sessionBadge.isPostMarket
+      ? (completed.low ?? null)
+      : (
+        raw?.low != null && Number(raw.low) > 0
+          ? Number(raw.low)
+          : null
+      );
+
+  const lastTickTime = isOpenSession
+    ? (mc.last_tick_time || null)
+    : (raw?.last_tick_time || null);
+
+  const hasLiveTick = ctx.liveNiftyTick != null;
+
+  const source:
+    | "LIVE_TICK"
+    | "CANONICAL_FALLBACK"
+    | "COMPLETED_SESSION"
+    | "UNAVAILABLE" =
+    isOpenSession && hasLiveTick
+      ? "LIVE_TICK"
+      : sessionBadge.isPostMarket && currentSpot != null
+        ? "COMPLETED_SESSION"
+        : currentSpot != null
+          ? "CANONICAL_FALLBACK"
+          : "UNAVAILABLE";
+
+  const freshness:
+    | "FRESH"
+    | "LAST_VALID"
+    | "FINAL"
+    | "UNAVAILABLE" =
+    source === "LIVE_TICK"
+      ? "FRESH"
+      : source === "COMPLETED_SESSION"
+        ? "FINAL"
+        : source === "CANONICAL_FALLBACK"
+          ? "LAST_VALID"
+          : "UNAVAILABLE";
+
+  return {
+    sessionMode: sessionBadge.isOpen
+      ? "OPEN"
+      : sessionBadge.isPreMarket
+        ? "PRE_MARKET"
+        : sessionBadge.isPostMarket
+          ? "POST_MARKET"
+          : "CLOSED",
+
+    sessionBadge,
+    isOpenSession,
+
+    currentSpot,
+    change,
+    changePct,
+    high,
+    low,
+    lastTickTime,
+
+    source,
+    freshness,
+
+    optionLTPs: ctx.liveOptionLTPs,
+
+    vix:
+      state?.macro_intelligence?.india_vix?.value ??
+      mc.india_vix ??
+      null,
   };
 }

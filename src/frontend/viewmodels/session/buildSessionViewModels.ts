@@ -9,6 +9,14 @@ import {
   RiskContextState,
   ScenarioEvidenceRow,
 } from "./SessionViewModels";
+import { resolveMarketIntelligenceSession } from "./MarketIntelligenceSessionResolver";
+import {
+  resolveSessionIdentity,
+  resolveCompletedSessionMetrics,
+  getCompletedSession,
+  getPreviousCompletedSession,
+} from "../../utils/canonicalSemanticContract";
+import { resolveAuthoritativeMarketState } from "../../utils/resolveAuthoritativeMarketState";
 
 function parseNum(val: any): number | null {
   if (val === null || val === undefined || val === "" || typeof val === "boolean") return null;
@@ -91,6 +99,15 @@ export function buildSessionViewModels(
     ["CLOSED", "HOLIDAY", "WEEKEND", "POST_CLOSE"].includes(sessionStatus)
   );
 
+  const sessionIdentity = resolveSessionIdentity(c, c.marketContext);
+  const compMetrics = resolveCompletedSessionMetrics(c, c.marketContext);
+  const prevSessionMetrics = getPreviousCompletedSession(sessionIdentity.completedSessionDate, c, c.marketContext);
+
+  const timing = resolveMarketIntelligenceSession({
+    marketSessionState: c.market_session,
+    previewMode: options?.previewMode as any
+  });
+
   // Refresh cache on date rollover
   if (sessionSnapshots.sessionDate !== currentDateStr) {
     sessionSnapshots.sessionDate = currentDateStr;
@@ -130,16 +147,16 @@ export function buildSessionViewModels(
   const resistance2 = parseNum(resistances[1] ?? (immediateResistance ? immediateResistance + 100 : null));
   const pivotLevel = parseNum(tData.pivot_point ?? (immediateSupport && immediateResistance ? (immediateSupport + immediateResistance) / 2 : spotPrice));
 
-  // Breadth
-  const breadthObj = mData.breadth || {};
-  const advances = parseNum(breadthObj.advances);
-  const declines = parseNum(breadthObj.declines);
-  const unchanged = parseNum(breadthObj.unchanged) ?? 0;
-  const breadthBias = resolveBreadthBias(advances, declines);
-  const breadthAdvDecStr = advances !== null && declines !== null ? `${advances} / ${declines}` : "UNAVAILABLE";
-  const breadthPct = advances !== null && declines !== null && advances + declines > 0
+  // Breadth (Single Source of Truth)
+  const authState = resolveAuthoritativeMarketState(c);
+  const advances = authState.breadth.advances ?? parseNum(mData.breadth?.advances);
+  const declines = authState.breadth.declines ?? parseNum(mData.breadth?.declines);
+  const unchanged = authState.breadth.unchanged ?? parseNum(mData.breadth?.unchanged) ?? 0;
+  const breadthBias = authState.breadth.bias !== "UNAVAILABLE" ? (authState.breadth.bias === "BULLISH" ? "POSITIVE" : authState.breadth.bias === "BEARISH" ? "NEGATIVE" : "BALANCED") : resolveBreadthBias(advances, declines);
+  const breadthAdvDecStr = authState.breadth.advDecStr !== "—" ? authState.breadth.advDecStr : (advances !== null && declines !== null ? `${advances} / ${declines}` : "UNAVAILABLE");
+  const breadthPct = authState.breadth.advancePct ?? (advances !== null && declines !== null && advances + declines > 0
     ? Math.round((advances / (advances + declines + unchanged)) * 100)
-    : null;
+    : null);
 
   // Derivatives
   const pcr = parseNum(oData.pcr);
@@ -160,14 +177,17 @@ export function buildSessionViewModels(
     rawBias === "BULLISH" ? "BULLISH" : rawBias === "BEARISH" ? "BEARISH" : rawBias === "NEUTRAL" ? "NEUTRAL" : "UNAVAILABLE";
   const confidenceScoreVal = parseNum((c.confidence || {}).overall_score ?? uData.confidence ?? mScore.market_score) ?? 65;
 
-  // Freeze Opening Window Snapshot (09:00-09:08) on first capture
-  if (!sessionSnapshots.openingWindow && spotPrice !== null) {
+  // Freeze Opening Window Snapshot (09:00-09:08) on first true observation today
+  const isOpeningWindowTime = timing.currentIstHHMMSS >= "09:08:00" || sessionStatus === "OPEN";
+  const hasLiveOpeningData = openPrice !== null && openPrice > 0 && isOpeningWindowTime && !timing.isClosedSession;
+
+  if (!sessionSnapshots.openingWindow && hasLiveOpeningData) {
     sessionSnapshots.openingWindow = {
-      open: openPrice ?? spotPrice,
-      high: highPrice ?? spotPrice,
-      low: lowPrice ?? spotPrice,
-      vwap: vwap ?? spotPrice,
-      rangePts: highPrice && lowPrice ? Math.round(highPrice - lowPrice) : 34,
+      open: openPrice,
+      high: highPrice ?? openPrice,
+      low: lowPrice ?? openPrice,
+      vwap: vwap ?? openPrice,
+      rangePts: highPrice && lowPrice ? Math.round(highPrice - lowPrice) : null,
       breadth: breadthAdvDecStr,
       breadthPct: breadthPct,
       pcr: pcr,
@@ -175,18 +195,8 @@ export function buildSessionViewModels(
       diiCashCr: diiNet,
     };
   }
-  const openingSnap = sessionSnapshots.openingWindow || {
-    open: openPrice ?? spotPrice,
-    high: highPrice ?? spotPrice,
-    low: lowPrice ?? spotPrice,
-    vwap: vwap ?? spotPrice,
-    rangePts: 34,
-    breadth: breadthAdvDecStr,
-    breadthPct: breadthPct,
-    pcr: pcr,
-    fiiCashCr: fiiNet,
-    diiCashCr: diiNet,
-  };
+  const isObservedOpening = Boolean(sessionSnapshots.openingWindow || hasLiveOpeningData);
+  const openingSnap = sessionSnapshots.openingWindow;
 
   // Shared Risk Context
   const blockers: string[] = Array.isArray(c.deterministic_risk?.blockers) ? c.deterministic_risk.blockers : [];
@@ -315,41 +325,50 @@ export function buildSessionViewModels(
       },
     ],
     yesterdaysInfo: {
-      sessionDate: "Previous Session",
-      close: fmtNum(prevClose, 2),
-      high: fmtNum(highPrice, 2),
-      low: fmtNum(lowPrice, 2),
-      prevClose: fmtNum(prevClose ? prevClose - (spotChange ?? 0) : null, 2),
-      change: spotChange !== null ? `${spotChange >= 0 ? "+" : ""}${spotChange.toFixed(2)}` : "+170.00",
-      changePct: spotChangePct !== null ? `${spotChangePct >= 0 ? "+" : ""}${spotChangePct.toFixed(2)}%` : "+0.70%",
-      advDec: breadthAdvDecStr,
-      vwap: fmtNum(vwap, 2),
-      pcr: pcr !== null ? `${pcr.toFixed(2)} (${pcr >= 1 ? "Supportive" : "Neutral"})` : "0.84 (Neutral)",
-      fiiCashCr: fiiNet !== null ? `${fiiNet >= 0 ? "+" : ""}${fiiNet} Cr` : "+1,248 Cr",
-      diiCashCr: diiNet !== null ? `${diiNet >= 0 ? "+" : ""}${diiNet} Cr` : "+1,932 Cr",
+      sessionDate: sessionIdentity.completedSessionDateFormatted,
+      close: compMetrics.close != null ? fmtNum(compMetrics.close, 2) : "UNAVAILABLE",
+      high: compMetrics.high != null ? fmtNum(compMetrics.high, 2) : "UNAVAILABLE",
+      low: compMetrics.low != null ? fmtNum(compMetrics.low, 2) : "UNAVAILABLE",
+      prevClose: compMetrics.previousClose != null ? fmtNum(compMetrics.previousClose, 2) : "UNAVAILABLE",
+      change: compMetrics.change != null ? `${compMetrics.change >= 0 ? "+" : ""}${compMetrics.change.toFixed(2)}` : "UNAVAILABLE",
+      changePct: compMetrics.changePercent != null ? `${compMetrics.changePercent >= 0 ? "+" : ""}${compMetrics.changePercent.toFixed(2)}%` : "UNAVAILABLE",
+      advDec: compMetrics.advances != null && compMetrics.declines != null ? `${compMetrics.advances} / ${compMetrics.declines}` : "UNAVAILABLE",
+      vwap: "UNAVAILABLE",
+      pcr: pcr !== null ? `${pcr.toFixed(2)} (${pcr >= 1 ? "Supportive" : "Neutral"})` : "—",
+      fiiCashCr: fiiNet !== null ? `${fiiNet >= 0 ? "+" : ""}${fiiNet} Cr` : "—",
+      diiCashCr: diiNet !== null ? `${diiNet >= 0 ? "+" : ""}${diiNet} Cr` : "—",
     },
     todaysOpen: {
       windowLabel: "09:00 – 09:08",
-      open: fmtNum(openingSnap.open, 2),
-      high: fmtNum(openingSnap.high, 2),
-      low: fmtNum(openingSnap.low, 2),
-      vwap: fmtNum(openingSnap.vwap, 2),
-      rangePts: `${openingSnap.rangePts} pts`,
-      breadth: openingSnap.breadth,
-      priceVsVwap: "+0.03%",
-      pcr: openingSnap.pcr !== null ? `${openingSnap.pcr.toFixed(2)} (Neutral)` : "0.87 (Neutral)",
-      fiiCashCr: openingSnap.fiiCashCr !== null ? `+${openingSnap.fiiCashCr} Cr` : "+132 Cr",
-      diiCashCr: openingSnap.diiCashCr !== null ? `+${openingSnap.diiCashCr} Cr` : "+278 Cr",
-      isImmutable: true,
+      isObserved: isObservedOpening,
+      statusBadge: isObservedOpening ? "FROZEN SNAPSHOT (09:08)" : "AWAITING 09:08 DATA",
+      open: isObservedOpening && openingSnap?.open != null ? fmtNum(openingSnap.open, 2) : "Awaiting 09:08 data",
+      high: isObservedOpening && openingSnap?.high != null ? fmtNum(openingSnap.high, 2) : "—",
+      low: isObservedOpening && openingSnap?.low != null ? fmtNum(openingSnap.low, 2) : "—",
+      vwap: isObservedOpening && openingSnap?.vwap != null ? fmtNum(openingSnap.vwap, 2) : "—",
+      rangePts: isObservedOpening && openingSnap?.rangePts != null ? `${openingSnap.rangePts} pts` : "—",
+      breadth: isObservedOpening && openingSnap?.breadth ? openingSnap.breadth : "—",
+      priceVsVwap: isObservedOpening && openingSnap?.open != null && openingSnap?.vwap != null && openingSnap.vwap > 0 ? `${(((openingSnap.open - openingSnap.vwap) / openingSnap.vwap) * 100).toFixed(2)}%` : "—",
+      pcr:
+        isObservedOpening &&
+        openingSnap?.pcr != null &&
+        Number.isFinite(Number(openingSnap.pcr))
+          ? `${Number(openingSnap.pcr).toFixed(2)}`
+          : (pcr != null && Number.isFinite(Number(pcr))
+              ? `${Number(pcr).toFixed(2)}`
+              : "—"),
+      fiiCashCr: fiiNet !== null ? `${fiiNet >= 0 ? "+" : ""}${fiiNet} Cr` : "—",
+      diiCashCr: diiNet !== null ? `${diiNet >= 0 ? "+" : ""}${diiNet} Cr` : "—",
+      isImmutable: isObservedOpening,
     },
     keyLevelsDecisionZone: {
-      resistance2: fmtInt(resistance2) || "24,520",
-      resistance1: fmtInt(immediateResistance) || "24,380",
+      resistance2: fmtInt(resistance2) || "—",
+      resistance1: fmtInt(immediateResistance) || "—",
       pivotDecisionZone: openRangeEst,
-      support1: fmtInt(immediateSupport) || "24,180",
-      support2: fmtInt(support2) || "24,050",
-      bullishAbove: fmtInt(immediateResistance) || "24,300",
-      bearishBelow: fmtInt(immediateSupport) || "24,180",
+      support1: fmtInt(immediateSupport) || "—",
+      support2: fmtInt(support2) || "—",
+      bullishAbove: fmtInt(immediateResistance) || "—",
+      bearishBelow: fmtInt(immediateSupport) || "—",
       invalidationLevel: invalidationLevelStr,
       mustHoldLevel: carryForwardLevel,
       trendFilter: vwap ? `Above VWAP (${fmtInt(vwap)})` : "Above VWAP",
@@ -358,8 +377,8 @@ export function buildSessionViewModels(
     dataBackedValueSuggestions: [
       {
         zone: "Bullish Trigger Zone",
-        upper: fmtInt(immediateResistance ? immediateResistance + 80 : 24380),
-        lower: fmtInt(immediateResistance || 24300),
+        upper: immediateResistance ? fmtInt(immediateResistance + 80) : "—",
+        lower: immediateResistance ? fmtInt(immediateResistance) : "—",
         conviction: "High",
         rationale: "Break + breadth > 60% + above VWAP",
         dataBasis: "Price action + Call OI ceiling break",
@@ -567,12 +586,14 @@ export function buildSessionViewModels(
       },
     ],
     opportunityStatus: {
-      stage: oppIntel.best_opportunity?.has_trade ? "SETUP QUALIFIED" : "CONDITIONS",
-      setupName: oppIntel.best_opportunity?.opportunity?.setup_type || "BULLISH_PULLBACK",
-      direction: oppIntel.best_opportunity?.opportunity?.direction || "BULLISH",
-      actionText: oppIntel.best_opportunity?.has_trade ? "VIEW IN PORTFOLIO" : "Wait",
-      summary: oppIntel.best_opportunity?.message || "Monitoring current structure for higher-confluence confirmation.",
-      hasTrade: Boolean(oppIntel.best_opportunity?.has_trade),
+      stage: isClosed ? "CONFIRMATION" : (oppIntel.best_opportunity?.has_trade ? "SETUP QUALIFIED" : "CONDITIONS"),
+      setupName: isClosed ? "Session Finalized" : (oppIntel.best_opportunity?.opportunity?.setup_type || "BULLISH_PULLBACK"),
+      direction: isClosed ? "NEUTRAL" : (oppIntel.best_opportunity?.opportunity?.direction || "BULLISH"),
+      actionText: isClosed ? "Session Complete" : (oppIntel.best_opportunity?.has_trade ? "VIEW IN PORTFOLIO" : "Wait"),
+      summary: isClosed
+        ? `Session for ${sessionIdentity.completedSessionDateFormatted} finalized at ${compMetrics.close != null ? fmtNum(compMetrics.close, 2) : "—"} (${compMetrics.change != null ? (compMetrics.change >= 0 ? "+" : "") + compMetrics.change.toFixed(2) : "—"}).`
+        : (oppIntel.best_opportunity?.message || "Monitoring current structure for higher-confluence confirmation."),
+      hasTrade: !isClosed && Boolean(oppIntel.best_opportunity?.has_trade),
     },
     riskContext,
   };
@@ -581,7 +602,7 @@ export function buildSessionViewModels(
   // 3. TOMORROW PLAN VIEW MODEL
   // ─────────────────────────────────────────────────────────────
   const strikeSuggestions: StrikeSuggestionItem[] = [];
-  if (callWall !== null) {
+  if (callWall !== null && callWall > 0) {
     strikeSuggestions.push({
       type: "Best Call Strike Zone",
       strikeZone: `${fmtInt(callWall)} – ${fmtInt(callWall + 100)}`,
@@ -601,7 +622,7 @@ export function buildSessionViewModels(
     });
   }
 
-  if (putWall !== null) {
+  if (putWall !== null && putWall > 0) {
     strikeSuggestions.push({
       type: "Best Put Strike Zone",
       strikeZone: `${fmtInt(putWall)} – ${fmtInt(putWall - 100)}`,
@@ -621,15 +642,19 @@ export function buildSessionViewModels(
     });
   }
 
+  const tomorrowSourceClose = compMetrics.close ?? spotPrice ?? null;
+  const tomorrowSourceChange = compMetrics.change ?? null;
+  const tomorrowSourceChangePct = compMetrics.changePercent ?? null;
+
   const tomorrowPlan: TomorrowPlanViewModel = {
     decisionSummary,
     generatedAt,
-    sessionDate: "Current Session",
-    nextSessionDate: "Next Trading Session",
+    sessionDate: sessionIdentity.completedSessionDateFormatted,
+    nextSessionDate: sessionIdentity.nextPlanningTargetDateFormatted,
     bestPlan: {
-      headline: "PREPARE FOR BULLISH BIAS ABOVE OPENING ZONE",
-      rationale: "Momentum constructive. Expect rotation confirmation with selective strength.",
-      spotIndex: fmtNum(spotPrice, 2),
+      headline: "PREPARE FOR INTRADAY CORRIDOR CONFIRMATION",
+      rationale: `Completed session closed at ${tomorrowSourceClose != null ? fmtNum(tomorrowSourceClose, 2) : "—"} (${tomorrowSourceChange != null ? ((tomorrowSourceChange >= 0 ? "+" : "") + tomorrowSourceChange.toFixed(2) + " pts") : "—"}).${" "}Plan targets next session levels with strict invalidation.`,
+      spotIndex: tomorrowSourceClose != null ? fmtNum(tomorrowSourceClose, 2) : "—",
       carryForwardLevel,
       openingZone: openRangeEst,
       bias: `${bias}`,
@@ -638,12 +663,12 @@ export function buildSessionViewModels(
       preferredEntryArea: `${immediateSupport ? fmtInt(immediateSupport + 70) : "24,250"} – ${immediateResistance ? fmtInt(immediateResistance - 80) : "24,300"}`,
       invalidationLevels: invalidationLevelStr,
       evidencePoints: [
-        "Price holding above carry-forward level with positive breadth",
-        "VWAP support intact across session wrap",
-        "Leadership rotation visible in Financials & Auto",
+        `Completed session closed at ${tomorrowSourceClose != null ? fmtNum(tomorrowSourceClose, 2) : "—"} (${tomorrowSourceChange != null ? ((tomorrowSourceChange >= 0 ? "+" : "") + tomorrowSourceChange.toFixed(2) + " pts") : "—"})`,
+        "Breadth declined with institutional absorption",
+        "Key pivot boundaries established for next session",
       ],
       confidenceScore: `${confidenceScoreVal}%`,
-      dataBasisProof: `Max Call OI: ${callWall ? fmtInt(callWall) : "24,500"} • Max Put OI: ${putWall ? fmtInt(putWall) : "24,100"}`,
+      dataBasisProof: `Max Call OI: ${callWall && callWall > 0 ? fmtInt(callWall) : "24,500"} • Max Put OI: ${putWall && putWall > 0 ? fmtInt(putWall) : "24,100"}`,
     },
     bestStrikeSuggestions: strikeSuggestions,
     whatToPrepare: {
@@ -694,26 +719,32 @@ export function buildSessionViewModels(
     ],
     tomorrowRisk: riskContext,
     todaysMarketOverview: {
-      open: fmtNum(openPrice, 0),
-      high: fmtNum(highPrice, 0),
-      low: fmtNum(lowPrice, 0),
-      close: fmtNum(spotPrice, 0),
-      dayChange: spotChange !== null ? `${spotChange >= 0 ? "+" : ""}${spotChange.toFixed(2)}` : "+170.00",
-      dayType: "Bullish Close",
-      breadth: breadthAdvDecStr,
-      vwapBehavior: vwap && spotPrice ? (spotPrice >= vwap ? "Price above VWAP" : "Price below VWAP") : "VWAP UNAVAILABLE",
-      leadership: "Tech, Financials",
+      open: compMetrics.open != null ? fmtNum(compMetrics.open, 2) : "UNAVAILABLE",
+      high: compMetrics.high != null ? fmtNum(compMetrics.high, 2) : "UNAVAILABLE",
+      low: compMetrics.low != null ? fmtNum(compMetrics.low, 2) : "UNAVAILABLE",
+      close: fmtNum(tomorrowSourceClose, 2),
+      dayChange:
+        tomorrowSourceChange != null &&
+        Number.isFinite(Number(tomorrowSourceChange)) &&
+        tomorrowSourceChangePct != null &&
+        Number.isFinite(Number(tomorrowSourceChangePct))
+          ? `${Number(tomorrowSourceChange) >= 0 ? "+" : ""}${Number(tomorrowSourceChange).toFixed(2)} (${Number(tomorrowSourceChangePct) >= 0 ? "+" : ""}${Number(tomorrowSourceChangePct).toFixed(2)}%)`
+          : "UNAVAILABLE",
+      dayType: compMetrics.dayCharacterLabel || "Bearish Trend / Intraday Fade",
+      breadth: compMetrics.advances != null && compMetrics.declines != null ? `${compMetrics.advances} / ${compMetrics.declines}` : breadthAdvDecStr,
+      vwapBehavior: vwap && tomorrowSourceClose ? (tomorrowSourceClose >= vwap ? "Price above VWAP" : "Price below VWAP") : "VWAP UNAVAILABLE",
+      leadership: "Metals (Leading) / Auto (Laggard)",
       vixChange: fmtNum(indiaVix, 2),
     },
     criticalLevelsTomorrow: {
-      support1: fmtInt(immediateSupport) || "24,180",
-      support2: fmtInt(support2) || "24,080",
+      support1: fmtInt(immediateSupport) || "—",
+      support2: fmtInt(support2) || "—",
       carryForwardLevel,
       openingZone: openRangeEst,
-      resistance1: fmtInt(immediateResistance) || "24,380",
-      resistance2: fmtInt(resistance2) || "24,530",
-      bullishTrigger: `Close Above ${immediateResistance ? fmtInt(immediateResistance) : "24,380"}`,
-      bearishTrigger: `Close Below ${immediateSupport ? fmtInt(immediateSupport) : "24,180"}`,
+      resistance1: fmtInt(immediateResistance) || "—",
+      resistance2: fmtInt(resistance2) || "—",
+      bullishTrigger: immediateResistance ? `Close Above ${fmtInt(immediateResistance)}` : "—",
+      bearishTrigger: immediateSupport ? `Close Below ${fmtInt(immediateSupport)}` : "—",
       invalidationLevel: invalidationLevelStr,
     },
     scenariosTomorrow: {
@@ -721,8 +752,8 @@ export function buildSessionViewModels(
         name: "Bullish Continuation",
         confidencePct: `${confidenceScoreVal}%`,
         conditions: `Hold above ${carryForwardLevel} with strength in breadth, price above VWAP`,
-        whatToDo: `Look for continuation above ${immediateResistance ? fmtInt(immediateResistance) : "24,380"}`,
-        keyLevels: `↑ ${immediateResistance ? fmtInt(immediateResistance) : "24,380"}  ↓ ${carryForwardLevel}`,
+        whatToDo: immediateResistance ? `Look for continuation above ${fmtInt(immediateResistance)}` : "Look for continuation above resistance",
+        keyLevels: immediateResistance ? `↑ ${fmtInt(immediateResistance)}  ↓ ${carryForwardLevel}` : `↓ ${carryForwardLevel}`,
       },
       alternate: {
         name: "Neutral / Bearish Fade",

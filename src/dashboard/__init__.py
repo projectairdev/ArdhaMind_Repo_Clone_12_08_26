@@ -15,7 +15,6 @@ from src.dashboard.broker_panel import BrokerPanel
 from src.dashboard.execution_panel import ExecutionPanel
 from src.dashboard.operations_panel import OperationsPanel
 from src.dashboard.configuration_panel import ConfigurationPanel
-from src.dashboard.order_lifecycle_panel import OrderLifecyclePanel
 from src.dashboard.dashboard_builder import TradingWorkstationDashboard
 
 __all__ = [
@@ -34,6 +33,5 @@ __all__ = [
     "ExecutionPanel",
     "OperationsPanel",
     "ConfigurationPanel",
-    "OrderLifecyclePanel",
     "TradingWorkstationDashboard",
 ]

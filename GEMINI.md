@@ -78,6 +78,8 @@ A refresh may update checked_at without changing observed_at.
 
 Missing numeric data is NOT zero.
 
+Fallback values in frontend code must never be plausible market data — always null/undefined so the UI can render an explicit awaiting-data state.
+
 Off-market historical data must be labeled as previous/last-valid session with exact dates/times.
 
 ## WORKING METHOD

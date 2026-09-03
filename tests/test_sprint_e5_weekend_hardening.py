@@ -36,7 +36,7 @@ class DummyOrchestrator:
                 "last_price": 24366.00,
                 "volume": 1000,
                 "oi": 5000,
-                "timestamp": "2026-08-14T15:30:02Z",
+                "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "ohlc": {
                     "open": 24361.90,
                     "high": 24404.05,
@@ -45,6 +45,9 @@ class DummyOrchestrator:
                 }
             }
         }
+
+    def is_connected(self):
+        return True
 
 
 def test_forward_outlook_persistence(tmp_path):

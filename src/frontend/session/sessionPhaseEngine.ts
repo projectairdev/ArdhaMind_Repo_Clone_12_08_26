@@ -53,18 +53,26 @@ export interface CanonicalSessionIdentity {
 }
 
 // 2026 Scheduled NSE Exchange Holidays
+// 2026 NSE equity/derivatives trading holidays — weekday closures only.
+// Kept in sync with src/market_data/session/exchange_calendar.py and
+// src/broker/services/market_status_service.py. Movable-feast names are
+// indicative; the date is authoritative. (Aug 15 falls on a Saturday in 2026
+// and is not a trading-day closure.)
 export const NSE_HOLIDAYS_2026 = new Set<string>([
   "2026-01-26", // Republic Day
   "2026-03-03", // Holi
-  "2026-03-20", // Id-Ul-Fitr
+  "2026-03-26", // NSE trading holiday (movable feast)
+  "2026-03-31", // Id-Ul-Fitr (Ramzan Id)
   "2026-04-03", // Good Friday
-  "2026-04-14", // Ambedkar Jayanti
+  "2026-04-14", // Dr. Baba Saheb Ambedkar Jayanti
   "2026-05-01", // Maharashtra Day
-  "2026-08-15", // Independence Day
-  "2026-10-02", // Gandhi Jayanti
-  "2026-10-20", // Dussehra
-  "2026-11-08", // Diwali Balipratipada
-  "2026-11-23", // Guru Nanak Jayanti
+  "2026-05-28", // Bakri Id (Id-ul-Zuha)
+  "2026-06-26", // Muharram
+  "2026-09-14", // Ganesh Chaturthi
+  "2026-10-02", // Mahatma Gandhi Jayanti
+  "2026-10-20", // Dussehra (Vijaya Dashami)
+  "2026-11-10", // Diwali - Laxmi Pujan
+  "2026-11-24", // Guru Nanak Jayanti
   "2026-12-25", // Christmas
 ]);
 

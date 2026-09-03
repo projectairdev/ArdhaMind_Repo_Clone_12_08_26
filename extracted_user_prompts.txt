@@ -1,0 +1,570 @@
+<USER_REQUEST>
+You are working in the AIR ArdhaMind trading workstation repo (/opt/ArdhaMind). A prior
+read-only forensic audit identified the following defects, which you are now implementing
+fixes for. Work only within the files listed. Do not touch execution-safety code
+(FORBIDDEN_EXECUTION_ACTIONS, ControlledBrokerExecutionService, reject_execution_action)
+or the atomic_store.py write protocol — both were audited clean and are out of scope.
+
+FIX 1 — Single clock authority
+Files: WorkstationTopBar.tsx (51-77), CanonicalStateContext.tsx (109-126),
+sessionPhaseEngine.ts (199-247)
+Problem: Four independent clocks run unsynchronized (browser wall clock, phase-engine
+setInterval, backend datetime.utcnow(), exchange tick timestamp).
+Fix: Bind TopBar display time and Phase Engine evaluation to canonicalState.generated_at /
+market_data.observed_at. Fall back to client new Date() ONLY when the WebSocket is
+disconnected, and visibly label the display as "CLIENT TIME (DISCONNECTED)" in that case.
+
+FIX 2 — Off-market phase hijacking
+Files: CanonicalStateContext.tsx (114-126, 149-153)
+Problem: At >=15:40 IST or on weekends, autoFixture silently swaps live/last-known state
+for a hardcoded 28 Aug 2026 fixture tree while the TopBar keeps showing today's real date.
+Fix: Decouple "which time window are we in" from "which data source to render." Any time
+historical/fixture data is substituted for live state, render a persistent, high-contrast
+banner stating the fixture data's actual date and that it is not live.
+
+FIX 3 — Time-of-day-only phase gate
+Files: sessionPhaseEngine.ts (199-247)
+Problem: Phase resolution (resolveSessionPhase, resolveIntelligenceMode) is pure string
+comparison against hardcoded HH:MM:SS boundaries; ignores actual broker/exchange session
+status (e.g. Muhurat trading, disaster-recovery sessions).
+Fix: Incorporate market_session.status from Kite's MarketStatusService as an input to both
+resolver functions, alongside (not instead of) the existing time-of-day bounds.
+
+FIX 4 — Stale pre-market briefing date
+Files: server_bridge.py (lines 554, 573, 589)
+Problem: Three separate hardcoded "session_date": "2026-08-17" strings anchor every
+pre-market briefing to a stale reference session.
+Fix: Replace all three with a call to a dynamic getPreviousNseTradingDay() resolver
+(implement if it does not exist) that accounts for weekends and exchange holidays.
+
+FIX 5 — Redundant 1-second REST poll
+Files: CanonicalStateContext.tsx (224-229)
+Problem: setInterval(fetchCanonicalState, 1000) re-subscribes on every revision increment,
+generating ~60 extra HTTP calls/minute redundant to the WebSocket stream.
+Fix: Only run this poll while WebSocket connection status is NOT "CONNECTED". Disable it
+entirely once the socket is live.
+
+CONSTRAINTS:
+- Preserve existing component/function signatures where other code depends on them; if you
+  must change a signature, grep the repo and update all call sites.
+- Do not remove the CANONICAL_UI / Legacy UI toggle itself — only fix the data-truth
+  behavior underneath it.
+- Add/update unit tests for resolveSessionPhase and resolveIntelligenceMode covering the
+  new market_session.status input, including the previously-untested Muhurat/DR case.
+- Run the existing test suite and type-check (tsc / mypy, whichever the repo uses) before
+  declaring the sprint done. Fix any breaks you introduce.
+
+DELIVERABLE: A summary of each fix, the files changed, and confirmation that tests/
+type-checks pass. Flag anything you could not fix as specified and why.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T03:54:02+05:30.
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from None to Gemini 3.7 Flash (Medium). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>
+
+====================
+
+<USER_REQUEST>
+Continuing remediation on the AIR ArdhaMind repo (/opt/ArdhaMind), building on Sprint 1
+(clock authority is now unified — use canonicalState.generated_at as the time source for
+any of the below that need "now"). Work only within the files listed.
+
+FIX 6 — ΔOI resets to 0.00 on server restart
+Files: option_chain_aggregator.py (39, 158-166)
+Problem: _opening_oi_baseline is an in-memory class dict. Any mid-session restart wipes it;
+the next tick re-seeds baseline from current OI, so ΔOI silently reports +0.00 instead of
+the true change or an explicit "unavailable" state.
+Fix: On service boot, seed _opening_oi_baseline from SessionStore.load_options_baseline()
+(disk-persisted) rather than waiting for the first live tick. If no disk baseline exists
+for the current session date, mark ΔOI as "PENDING BASELINE" rather than defaulting to 0.
+
+FIX 7 — 09:15 baseline gap
+Files: option_chain_aggregator.py (158-161)
+Problem: Baseline is only captured on the first REST quote (09:15:15-09:15:59), missing OI
+from the opening bell itself. Strikes NIFTY trends into intraday get their baseline set to
+"now," making their ΔOI always read 0.
+Fix: Snapshot the opening baseline via a scheduled task fired at exactly 09:15:00 IST,
+independent of tick arrival timing. For strikes that enter range mid-day, mark ΔOI as
+"NO BASELINE (NEW STRIKE)" instead of silently computing against a same-moment baseline.
+
+FIX 8 — Hardcoded 3-day Greeks DTE
+Files: option_chain_aggregator.py (132)
+Problem: dte_years = max(1/365, 3/365) — every Greek is computed as if 3+ days remain to
+expiry, including on expiry day.
+Fix: Compute dte_years = (expiry_timestamp - now) / (365 * 86400) using the actual contract
+expiry. Handle the same-day-expiry edge case explicitly (do not divide toward zero/negative
+DTE — clamp to a small positive epsilon and document why).
+
+FIX 9 — NSE broader breadth hardcoded
+Files: canonicalIntelligenceAdapter.ts (332-336)
+Fix: Replace unconditional `?? 1120` / `?? 1450` fallb
+<truncated 1176 bytes>
+iss,
+matching Bloomberg/TT-class disconnect handling described in the audit.
+
+FIX 13 — Sector table false zero-flat
+Files: SectorPerformanceChart.tsx (85-88)
+Problem: Renders +0.00% / "Flat" for all sectors when change_pct is missing, indistinguishable
+from an actually flat market.
+Fix: Render an explicit "Feed Offline" badge per sector when the underlying quote record is
+uninitialized, instead of a numeric zero.
+
+CONSTRAINTS:
+- Every "fallback to hardcoded number" fix in this sprint follows the same principle:
+  prefer an explicit unavailable/pending state over a fabricated plausible-looking value.
+  Apply that principle consistently even if you find additional instances of the same
+  pattern while working in these files.
+- Do not change the option chain aggregation math itself beyond what's specified (DTE and
+  baseline seeding only) — Greeks formulas otherwise stay as audited.
+- Add unit tests for: DTE calculation on expiry day, ΔOI baseline restore-from-disk on
+  simulated restart, and the new-strike-mid-day baseline case.
+- Run the test suite / type-check before declaring done.
+
+DELIVERABLE: Summary of each fix, files changed, test results, and any fallback-pattern
+instances you found beyond the ones listed (flag, don't silently fix, if it's ambiguous
+whether the pattern applies).
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T04:03:53+05:30.
+
+The user's current state is as follows:
+Active Document: p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\WorkstationTopBar.tsx (LANGUAGE_TSX)
+Cursor is on line: 26
+Other open documents:
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\WorkstationTopBar.tsx (LANGUAGE_TSX)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\session\sessionPhaseEngine.ts (LANGUAGE_TYPESCRIPT)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\context\CanonicalStateContext.tsx (LANGUAGE_TSX)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\layout\DashboardLayout.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>
+
+====================
+
+<USER_REQUEST>
+Continuing remediation on the AIR ArdhaMind repo (/opt/ArdhaMind), following up on Sprint 2
+(FIX 6-13). This is a small patch, not a new sprint — two items were flagged during Sprint 2
+review and need closing out before Sprint 3 starts.
+
+PATCH 1 — VIX fallback in news catalyst threshold math
+File: src/frontend/components/news/LiveNewsFeedView.tsx (line 166)
+Problem: safeNumber(state?.vix ?? state?.volatility?.vix ?? marketContext?.vix, 10.68) still
+uses a hardcoded 10.68 as the VIX value for catalyst threshold computations when the real
+VIX is missing. This is the same fabrication pattern FIX 11 eliminated elsewhere
+(canonicalIntelligenceAdapter.ts, NiftyHeader.tsx) — FIX 11's "single VIX source of truth"
+claim isn't actually true while this instance remains.
+Fix: Read VIX from the same single source of truth established in FIX 11
+(CanonicalStateContext / envelope.market.vix). When VIX is null/unavailable, do not run the
+threshold computation against a fabricated value — either skip the VIX-dependent threshold
+check entirely for that catalyst (treat as "insufficient data," not "VIX = 10.68") or
+suppress that specific catalyst signal with a visible "VIX Unavailable" state, consistent
+with how NiftyHeader now handles the same condition. Do not invent a new fallback number.
+
+PATCH 2 — Verify FIX 9 (NSE breadth) has UI-level test coverage
+File: src/frontend/utils/canonicalIntelligenceAdapter.ts + whichever component(s) render
+broader breadth (grep for consumers of the breadth fields this file exports)
+Problem: Sprint 2's tests confirm the adapter purges the 1120/1450 hardcoded fallback and
+returns null, but there is no test confirming a component actually renders "Breadth
+Unavailable" (or equivalent) when that null reaches the UI — only FIX 10/11/13 have that
+level of test coverage. It's possible a null just renders blank/undefined instead of the
+intended message.
+Fix: Check what the consuming component currently does when broader breadth is null. If it
+already renders an "Unavailable" message, add a test asserting that (matching the pattern
+used for FIX 10/11/13). If it does NOT render a message (e.g. shows blank, "null", or
+"undefined"), fix the component to show "Breadth Unavailable" and then add the test.
+
+CONSTRAINTS:
+- Do not touch any other file or reopen any other FIX from Sprint 1/2 — this is scoped to
+  exactly these two items.
+- Follow the same "explicit unavailable state over fabricated fallback" principle used
+  throughout Sprint 2.
+- Run the full test suite and type-check before declaring done.
+
+DELIVERABLE: Confirmation both items are closed, the specific fix applied to each, and the
+new/updated test names with pass results. If PATCH 2 finds the UI already handled this
+correctly and only the test was missing, say so explicitly.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T04:18:41+05:30.
+
+The user's current state is as follows:
+Active Document: p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\session\sessionPhaseEngine.ts (LANGUAGE_TYPESCRIPT)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\NiftyLiveWorkspace.tsx (LANGUAGE_TSX)
+- p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\WorkstationTopBar.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>
+
+====================
+
+<USER_REQUEST>
+Continuing remediation on the AIR ArdhaMind repo (/opt/ArdhaMind), building on Sprints 1-2.
+Work only within the files listed.
+
+FIX 14 — Missing VWAP / 15m ORH-ORL in carry-forward schema
+Files: SessionCloseCore schema (storage/schemas.py)
+Problem: Cumulative session VWAP and 15m Opening Range High/Low are computed live but never
+written into SessionCloseCore — they exist only in the 3-second-overwritten recovery
+snapshot, so they're lost at session boundary.
+Fix: Add session_vwap, or_high, or_low fields to SessionCloseCore. Populate them at EOD
+close reconciliation, same as the existing OHLC fields.
+
+FIX 15 — ATR(14) stored as bounds, not scalar
+Files: StructuralLevels schema (storage/schemas.py)
+Problem: Only local_atr_upper/lower (derived price bounds) are stored; the raw ATR-14 point
+value is recomputed at runtime and never persisted.
+Fix: Add and persist the raw scalar ATR-14 value alongside the existing derived bounds.
+
+FIX 16 — Monolithic recovery snapshot bloat
+Files: lightweight_session_store.py (78-98)
+Problem: Full workstation state — including narrative strings, HTML badge text, UI
+presentation blobs — is dumped to disk every 3 seconds (~185 KB/save).
+Fix: Restrict latest_canonical_state.json to lean numerical state (spot, OHLC, strikes,
+VIX, breadth counts, timestamps). Strip narrative/presentation fields from what gets
+persisted. Target ballpark ~12 KB/save per the audit's own estimate — verify with an actual
+size measurement after the change, don't just assume.
+
+FIX 17 — Unbounded version-dict growth
+Files: workstation_state_service.py (42-44)
+Problem: _pre_market_briefing_versions, _forward_outlook_versions, _news_items grow without
+an eviction cap.
+Fix: Add a bounded LRU/FIFO eviction policy (cap at ~50 rolling snapshots per dict, or a
+config value if the repo has a config pattern for this).
+
+FIX 18 — Unthrottled off-market daemon loop
+Files: server_bridge.py (line 2773 area)
+Problem: time.sleep(3.0) cadence runs unconditionally 
+<truncated 1144 bytes>
+vailable at boot.
+
+FIX 21 — Historical candle stitching gap
+Files: candle_engine.py (98-100), market_context_builder.py (8)
+Problem: Startup 1-minute historical candles from Kite REST don't seamlessly merge with the
+live forming candle if the WebSocket drops briefly, creating a gap or discontinuity.
+Fix: Implement a merge step that overlays WebSocket tick high/low directly onto the active
+1m bar so the forming candle stays continuous across brief reconnects.
+
+CONSTRAINTS:
+- These are storage-layer changes on a live trading system — every change must be
+  backward-compatible with existing on-disk files from before this sprint (i.e. reading an
+  old SessionCloseCore without session_vwap/or_high/or_low must not crash; default to null/
+  absent, not a placeholder value).
+- Do not change the atomic write mechanism (temp -> fsync -> os.replace) — only what data
+  goes into it and when.
+- Add tests for: schema backward-compatibility (loading a pre-fix file), the version-dict
+  eviction behavior, and the daemon cadence throttling logic.
+- Measure and report actual before/after disk footprint for Fix 16 rather than assuming the
+  audit's estimate holds.
+
+DELIVERABLE: Summary of each fix, schema migration notes (if any), measured storage
+footprint before/after, and test results.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T04:23:18+05:30.
+
+The user's current state is as follows:
+Active Document: p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\WorkstationTopBar.tsx (LANGUAGE_TSX)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\session\sessionPhaseEngine.ts (LANGUAGE_TYPESCRIPT)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\NiftyLiveWorkspace.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>
+
+====================
+
+<USER_REQUEST>
+Continuing remediation on the AIR ArdhaMind repo (/opt/ArdhaMind), building on Sprints 1-3.
+Work only within the files listed. This sprint is about not overstating confidence in
+numbers that are, by construction, coarse — not about changing the underlying analytics.
+
+FIX 22 — Confidence % presented as calibrated
+Files: canonicalIntelligenceAdapter.ts (381)
+Problem: "65% Path A" renders as if it's a calibrated probability, but it's actually a
+3-tier lookup (HIGH->75, MED->60, else->50).
+Fix: Change the UI presentation to qualitative bands ("High Confidence" / "Medium
+Confidence" / "Low Confidence") instead of a numeric percentage, since the underlying
+computation does not support decimal-level precision. Do not invent a new calibrated model
+in this sprint — that's a separate, larger effort; just stop mislabeling the lookup table
+as a percentage.
+
+FIX 23 — Scenario Bezier curves presented as probability fans
+Files: ScenarioProjectionCanvas.tsx (13), ScenarioProjectionOverlay.tsx
+Problem: Fixed cubic Bezier paths from pre-baked weights are presented as Path 1/Path 2
+probability fans with no Monte Carlo or live IV surface behind them.
+Fix: Replace the Bezier rendering with parametric +/-1sigma / +/-2sigma corridors computed
+from ATM implied volatility (already available from the options pipeline per the audit).
+If a full stochastic model is out of scope for this sprint, at minimum ensure the visual
+language (labels, legend) accurately describes what's being shown — do not label a
+volatility corridor as a "predicted path."
+
+FIX 24 — Uncalibrated accuracy badges
+Files: TomorrowPlanView.tsx (89-100)
+Problem: "ACCURATE (HIT)" / "MISS" shown without sample size or confidence interval.
+Fix: Gate the badge behind a minimum sample threshold (n>=30 per the audit's suggestion) —
+below threshold, show "Insufficient Track Record (n=X)" instead of a hit/miss badge. Above
+threshold, display the sample size alongside the badge.
+
+FIX 25 — Stale multi-year calendar fallbac
+<truncated 1018 bytes>
+ck text shows a stale literal "24500" strike when spot is unpopulated.
+Fix: Replace with "ATM Unavailable" — no numeric placeholder.
+
+FIX 28 — Staleness hidden in a drawer
+Files: wherever age_seconds is currently only surfaced in the inspection drawer
+Problem: Field-level data age is computed but only visible in a secondary drawer, not on
+the hero LTP cards where a trader actually looks.
+Fix: Surface per-field age/staleness directly on the primary price cards (e.g. a small
+"Age: Xs" badge), matching the Bloomberg/TT-style per-field age indicators described in the
+audit's benchmarking comparison.
+
+CONSTRAINTS:
+- This sprint is UI/labeling/presentation-focused — do not change any backend calculation
+  logic (that's Sprints 1-3's job; if you find a calculation issue while here, flag it,
+  don't fix it in this sprint).
+- Keep changes visually consistent with the existing design system/component library.
+- Where you add a new "unavailable/insufficient data" state, make sure it's visually
+  distinct from a loading state (don't reuse a spinner for "will never load").
+
+DELIVERABLE: Summary of each fix with before/after label examples, and a list of any
+additional execution-shaped terminology or false-precision instances found but not fixed
+in this sprint (for a follow-up pass).
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T04:34:40+05:30.
+
+The user's current state is as follows:
+Active Document: p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\WorkstationTopBar.tsx (LANGUAGE_TSX)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\session\sessionPhaseEngine.ts (LANGUAGE_TYPESCRIPT)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\NiftyLiveWorkspace.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>
+
+====================
+
+<USER_REQUEST>
+Continuing remediation on the AIR ArdhaMind repo (/opt/ArdhaMind), building on Sprints 1-4.
+This is the highest-risk sprint from a regression standpoint because it touches large
+surface area — go carefully, and prefer several small verified commits over one large one.
+
+FIX 29 — 3,688-line state service monolith
+Files: workstation_state_service.py
+Problem: Single file mixes state builders, legacy adapters, briefing engines, disk
+persistence, and material-change detection.
+Fix: Split into separate modules: WorkstationStateBuilder, MaterialChangeDetector,
+SessionPersistenceAdapter (names per the audit's suggestion — adjust if the repo's existing
+naming conventions differ, but keep responsibilities separated along those lines). Preserve
+all existing public function signatures used elsewhere in the codebase; grep for every
+caller before moving code and update imports accordingly. Do this as a pure refactor —
+no behavior change in this fix.
+
+FIX 30 — Dual Legacy/Canonical component trees
+Files: src/frontend/components/ vs src/frontend/components/canonical/
+Problem: Two parallel, largely duplicate rendering trees exist (e.g. OptionsWorkspace.tsx
+vs OptionsIntelligenceWorkspace.tsx). This duality is structurally why the fixture-swap
+defect from Sprint 1 was possible in the first place.
+Fix: Now that Sprints 1-4 have fixed the Canonical UI's correctness issues, deprecate and
+remove the Legacy UI tree, redirecting any remaining Legacy-only entry points to the
+Canonical equivalents. Before deleting anything, diff each Legacy component against its
+Canonical counterpart and confirm the Canonical version has full feature parity — if it
+doesn't, flag the gap instead of deleting the Legacy component.
+
+FIX 31 — Dead execution-engine code shipping in a read-only app
+Files: src/paper_trading/, src/controlled_execution/, src/trade_engine/
+Problem: Thousands of lines of order submission / fill reconciliation / paper trading code
+exist despite FORBIDDEN_EXECUTION_ACTIONS blocki
+<truncated 61 bytes>
+y-named archival boundary (e.g. a top-level
+_archived_execution_modules/ directory excluded from the build/import path) rather than
+deleting it outright, so it can't be accidentally re-enabled but remains available for
+reference. Confirm nothing in the active codebase imports from these modules before moving
+them — if something does, flag it rather than breaking the import.
+
+CONSTRAINTS:
+- Do NOT modify FORBIDDEN_EXECUTION_ACTIONS, reject_execution_action(), or
+  ControlledBrokerExecutionService.broker_execution_enabled — moving the surrounding dead
+  code must not touch these safety-critical guards.
+- Run the full test suite after each of the three fixes individually, not just at the end —
+  if Fix 30 breaks something, you want to know before starting Fix 31.
+- For Fix 30 in particular: this is the largest deletion in the whole remediation effort.
+  Do it as a separate commit per removed component, with the parity check noted in each
+  commit message, so it's easy to revert a single component if something was missed.
+
+DELIVERABLE: Summary of the new module structure, a parity checklist for every Legacy
+component removed (or a list of gaps found and left in place), confirmation the archived
+execution code has zero active imports, and full test suite results after each fix.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T04:43:20+05:30.
+
+The user's current state is as follows:
+Active Document: p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\session\sessionPhaseEngine.ts (LANGUAGE_TYPESCRIPT)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\NiftyLiveWorkspace.tsx (LANGUAGE_TSX)
+- p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\WorkstationTopBar.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>
+
+====================
+
+<USER_REQUEST>
+Continuing remediation on the AIR ArdhaMind repo (/opt/ArdhaMind), following up on Sprint 5
+(FIX 29-31). This is a small patch, not a new sprint — FIX 31 only archived
+src/paper_trading/ and left src/controlled_execution/ and src/trade_engine/ unaddressed.
+Close this out before Sprint 6 starts.
+
+BACKGROUND: The original audit categorized all three directories together as "dead
+unreferenced broker mutation modules." That categorization may not be fully accurate for
+controlled_execution/ specifically — ControlledBrokerExecutionService.broker_execution_enabled
+is the actively-enforced safety guard referenced throughout the audit
+(FORBIDDEN_EXECUTION_ACTIONS, reject_execution_action()). Do not assume either directory is
+safe to move — investigate each independently.
+
+TASK 1 — src/controlled_execution/
+Step 1: Grep the entire active codebase (src/, excluding any already-archived paths) for
+every import of anything in src/controlled_execution/. Pay specific attention to whether
+ControlledBrokerExecutionService, broker_execution_enabled, or FrozenTradeApproval are
+imported by any currently-active module (server_bridge.py, the daemon command handler, or
+anything in the live request path).
+Step 2a: If controlled_execution/ contains a mix of (a) the active safety-enforcement class
+that's genuinely imported and used, and (b) genuinely dead/unreferenced code alongside it —
+split them. Leave the actively-imported safety code exactly where it is and untouched.
+Archive only the confirmed-dead portion to _archived_execution_modules/controlled_execution/.
+Step 2b: If the entire directory turns out to be actively imported (i.e. the original
+audit's "dead" categorization was simply wrong for this directory), do NOT move anything.
+Instead, produce a short written correction: which files are actively imported, by what,
+and a one-line note that this directory should be removed from the "dead code" finding in
+future audit passes.
+Step 3: Under no circumstances break or move
+Controlle
+<truncated 546 bytes>
+ocument what imports it and why, and flag this as a discrepancy from the
+original audit's "dead code" categorization for human review.
+
+CONSTRAINTS:
+- Do not touch any other file or reopen any other FIX from Sprint 5.
+- Do not modify FORBIDDEN_EXECUTION_ACTIONS, reject_execution_action(), or
+  ControlledBrokerExecutionService.broker_execution_enabled under any circumstances in this
+  patch.
+- Run the full test suite and type-check after Task 1 and again after Task 2 (separately,
+  not just once at the end) — if Task 1 breaks something, you want to know before starting
+  Task 2.
+
+DELIVERABLE: For each of controlled_execution/ and trade_engine/, state plainly one of:
+(a) archived, confirmed zero active imports, or (b) not archived, with the specific active
+import(s) found and a note that the original audit's categorization needs correcting. Do
+not report a directory as "handled" without picking one of those two outcomes explicitly.
+Include test suite results after each task.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T04:52:14+05:30.
+
+The user's current state is as follows:
+Active Document: p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\WorkstationTopBar.tsx (LANGUAGE_TSX)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\session\sessionPhaseEngine.ts (LANGUAGE_TYPESCRIPT)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\NiftyLiveWorkspace.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>
+<USER_SETTINGS_CHANGE>
+The user changed setting `Model Selection` from Gemini 3.7 Flash (Medium) to Gemini 3.7 Flash (High). No need to comment on this change if the user doesn't ask about it. If reporting what model you are, please use a human readable name instead of the exact string.
+</USER_SETTINGS_CHANGE>
+
+====================
+
+<USER_REQUEST>
+This is a verification sprint, not a fix sprint. Do not make further feature or logic
+changes except to correct a genuine regression you find. Your job is to confirm the prior
+five sprints (plus the two follow-up patches) actually resolved what they claimed to, and
+that nothing else broke.
+
+1. RE-RUN THE ORIGINAL AUDIT METHODOLOGY
+   Re-examine the codebase using the same four perspectives as the original forensic audit
+   (Data Provenance, Clock Authority, Persistence Lifecycle, Terminal Benchmarking). For
+   every issue fixed across Sprints 1-5 and the two follow-up patches (VIX fallback in
+   LiveNewsFeedView, breadth fallback in SupportingPanels, and whatever Task 1/2 resolved
+   in the FIX 31 patch), confirm the specific defect described is actually gone — cite the
+   current file:line as evidence, the way the original audit did. Produce a table: Issue |
+   Original Defect | Fix Sprint/Patch | Verified Status (RESOLVED / PARTIALLY RESOLVED /
+   NOT RESOLVED) | Evidence.
+
+2. REGRESSION CHECK ON WHAT WAS ALREADY SOLID
+   Confirm these are still intact and unmodified in behavior:
+   - FORBIDDEN_EXECUTION_ACTIONS enforcement and reject_execution_action() (server_bridge.py)
+   - ControlledBrokerExecutionService.broker_execution_enabled = False
+   - atomic_store.py's temp-write -> fsync -> os.replace() protocol
+   - Core live pricing path (NIFTY spot, OHLC, VIX, option LTPs streaming via WebSocket)
+   - EOD-anchored persistence (Previous Close, Day OHLC, structural pivots, FII/DII, EOD OI
+     baseline) still writing correctly to SessionCloseCore
+
+3. RESTART-RECOVERY INTEGRATION CHECK
+   Sprint 3's FIX 16 reduced the recovery snapshot from ~325 KB to ~1 KB — well below the
+   ~12 KB target. Confirm this wasn't achieved by stripping something restart-recovery
+   actually needs: simulate a server restart mid-session and confirm the lean snapshot
+   still restores spot/OHLC/VWAP/breadth/levels correctly, not just that the file is small.
+
+4. FULL TEST SUITE + TYPE CHECK
+<truncated 1052 bytes>
+dSessionViewModels.ts:437 "54% Advance" fallback (deferred pending Legacy UI
+     removal — confirm whether FIX 30's removal of the Legacy tree already resolved this
+     as a side effect, since the file may no longer be reachable)
+   - PortfolioWorkspace.tsx / LivePositionDrawer.tsx "Execute Emergency Square-Off" label
+   - TradeApprovalModal.tsx / ExecutionConfirmationModal.tsx "EXECUTE APPROVED TRADE" /
+     onExecute (confirm these are genuinely unmounted/unreferenced, not just assumed to be)
+   - PreMarketWorkspace.tsx / PhaseSpecificPanels.tsx "Execute only on confirmed setup" text
+   For each, state current status and whether it needs a human decision or a trivial fix.
+
+8. SIGN-OFF
+   Based on 1-7, state plainly whether the system meets the "fix before any live trading
+   session" bar the original audit set. If any Wave 0 / Sprint 1-2 item is not fully
+   resolved, say so explicitly and do not soften it — this gate exists to be a genuine
+   go/no-go, not a formality.
+
+DELIVERABLE: The verification table from step 1, regression check from step 2,
+restart-recovery confirmation from step 3, test suite results from step 4, open-question
+writeup from step 5, measured footprint from step 6, the flagged-items sweep from step 7,
+and an explicit go/no-go statement from step 8.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T04:55:15+05:30.
+
+The user's current state is as follows:
+Active Document: p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\WorkstationTopBar.tsx (LANGUAGE_TSX)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\session\sessionPhaseEngine.ts (LANGUAGE_TYPESCRIPT)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\NiftyLiveWorkspace.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>
+
+====================
+
+<USER_REQUEST>
+Before accepting "GO," I'd want:
+A corrected verification table that maps to the actual FIX 1–31 list from the original roadmap (not renumbered/re-described), with explicit confirmation of the real FIX 4 (stale pre-market date) and FIX 5 (redundant REST poll).
+Actual evidence for the restart-recovery claim — a test name or command output, not a narrative description.
+A decision from you on the Kite margin API question before calling this fully closed.
+</USER_REQUEST>
+<ADDITIONAL_METADATA>
+The current local time is: 2026-09-01T05:08:31+05:30.
+
+The user's current state is as follows:
+Active Document: p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+Cursor is on line: 1
+Other open documents:
+- p:\ArdhaMind-Local\ardhamind\staging\tests\unit\test_option_chain_baseline_and_dte.py (LANGUAGE_PYTHON)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\WorkstationTopBar.tsx (LANGUAGE_TSX)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\session\sessionPhaseEngine.ts (LANGUAGE_TYPESCRIPT)
+- p:\ArdhaMind-Local\ardhamind\staging\src\frontend\components\NiftyLiveWorkspace.tsx (LANGUAGE_TSX)
+</ADDITIONAL_METADATA>

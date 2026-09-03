@@ -1,12 +1,9 @@
 // src/frontend/components/WorkstationTopBar.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Menu, X, Settings as SettingsIcon, Clock, Sparkles } from "lucide-react";
 import { useBrokerStatus, useWorkstationState } from "../context/WorkstationStateContext";
+import { useCanonicalState } from "../context/CanonicalStateContext";
 import { useNavigation } from "../context/NavigationContext";
-import {
-  resolveMarketSessionState,
-  getMarketSessionBadge,
-} from "../utils/canonicalSemanticContract";
 import { ArdhaMindBrandMark } from "./ui/VisualAssets";
 
 interface WorkstationTopBarProps {
@@ -17,15 +14,21 @@ interface WorkstationTopBarProps {
 }
 
 export function WorkstationTopBar({
-  mobileOpen,
   onToggleMobile,
   onOpenSettings,
+  mobileOpen = false,
   settingsOpen = false,
 }: WorkstationTopBarProps) {
-  const { canonicalState, lastValidState } = useWorkstationState();
+  const { canonicalState, lastValidState, marketConnection } = useWorkstationState() as any;
+  const {
+    isFixtureData,
+    isReplayMode,
+    sessionIdentity,
+    sessionPhase,
+    isConnected,
+  } = useCanonicalState();
   const { data: broker } = useBrokerStatus();
   const { navigateTo, assistantOpen, toggleAssistant } = useNavigation();
-  const [clockIst, setClockIst] = useState({ dateStr: "", timeStr: "" });
 
   useEffect(() => {
     if ((import.meta as any).env?.VITE_STAGING_MODE === "true") {
@@ -33,80 +36,97 @@ export function WorkstationTopBar({
     }
   }, []);
 
-  // Live IST Clock (1-second tick)
-  useEffect(() => {
-    const updateClock = () => {
-      const now = new Date();
-      const dateStr = new Intl.DateTimeFormat("en-GB", {
-        timeZone: "Asia/Kolkata",
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      }).format(now);
-
-      const timeStr = new Intl.DateTimeFormat("en-IN", {
-        timeZone: "Asia/Kolkata",
-        hour: "numeric",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: true,
-      })
-        .format(now)
-        .toUpperCase();
-
-      setClockIst({ dateStr, timeStr });
-    };
-
-    updateClock();
-    const interval = setInterval(updateClock, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
   const state = canonicalState ?? lastValidState;
-  const canonicalSession = resolveMarketSessionState(state);
-  const sessionBadge = getMarketSessionBadge(canonicalSession);
+  const authoritativeTs =
+    state?.generated_at ||
+    state?.data_quality?.market_data?.observed_at ||
+    state?.market_data?.observed_at;
+
+  const isDisconnected = marketConnection === "DISCONNECTED" || !isConnected;
+
+  // Single authoritative continuous ticking IST clock sourced from unified sessionIdentity
+  const { displayDate, displayTime } = useMemo(() => {
+    return {
+      displayDate: sessionIdentity.calendar_date_formatted,
+      displayTime: sessionIdentity.wall_clock_ist,
+    };
+  }, [sessionIdentity]);
 
   // Authoritative Normalized Broker Health Contract
   const rawBroker = state?.broker_status || broker;
-  const rawStatus = String((rawBroker as any)?.status || (rawBroker as any)?.connection_status || "").toUpperCase();
-  const normalizedStatus: string = (rawBroker as any)?.normalized_status || (
-    rawStatus === "CONNECTED_VERIFIED" || (rawBroker as any)?.execution_verified === true ? "CONNECTED_VERIFIED" :
-    rawStatus === "CONNECTED_AUTH_REQUIRED" || rawStatus === "SESSION_EXPIRED" || rawStatus === "TOKEN_EXPIRED" || rawStatus === "AUTH_REQUIRED" || (rawBroker as any)?.blocker_code === "AUTH_REQUIRED" || (rawBroker as any)?.authenticated === false ? "CONNECTED_AUTH_REQUIRED" :
-    rawStatus === "RECONNECTING" ? "RECONNECTING" :
-    rawStatus === "BROKER_STATE_UNVERIFIED" || rawStatus === "UNVERIFIED" || rawStatus === "CONNECTED" || (rawBroker as any)?.reconciliation_complete === false ? "BROKER_STATE_UNVERIFIED" :
-    "DISCONNECTED"
-  );
+  const rawStatus = String((rawBroker as any)?.status || (rawBroker as any)?.connection_status || (rawBroker as any)?.normalized_status || "").toUpperCase();
+  const isBrokerConnected =
+    rawStatus === "CONNECTED_VERIFIED" ||
+    rawStatus === "CONNECTED" ||
+    rawStatus === "HEALTHY" ||
+    rawStatus === "READY" ||
+    (rawBroker as any)?.execution_verified === true ||
+    (rawBroker as any)?.socket_connected === true ||
+    isConnected;
 
-  const isVerified = normalizedStatus === "CONNECTED_VERIFIED";
-  const isAuthRequired = normalizedStatus === "CONNECTED_AUTH_REQUIRED";
-  const isReconnecting = normalizedStatus === "RECONNECTING";
-  const isUnverified = normalizedStatus === "BROKER_STATE_UNVERIFIED";
+  const isAuthRequired =
+    rawStatus === "CONNECTED_AUTH_REQUIRED" ||
+    rawStatus === "SESSION_EXPIRED" ||
+    rawStatus === "TOKEN_EXPIRED" ||
+    rawStatus === "AUTH_REQUIRED" ||
+    (rawBroker as any)?.blocker_code === "AUTH_REQUIRED" ||
+    (rawBroker as any)?.authenticated === false;
 
-  const brokerLabel = isVerified
+  const isReconnecting = rawStatus === "RECONNECTING" || rawStatus === "CONNECTING";
+  const isUnverified = (rawStatus === "BROKER_STATE_UNVERIFIED" || rawStatus === "UNVERIFIED") && !isBrokerConnected;
+
+  const brokerLabel = isBrokerConnected
     ? "CONNECTED"
     : isAuthRequired
-    ? "AUTH REQUIRED"
-    : isReconnecting
-    ? "RECONNECTING"
-    : isUnverified
-    ? "VERIFYING"
-    : "DISCONNECTED";
+      ? "AUTH REQUIRED"
+      : isReconnecting
+        ? "RECONNECTING"
+        : isUnverified
+          ? "VERIFYING"
+          : "DISCONNECTED";
 
-  const brokerTextClass = isVerified
+  const brokerTextClass = isBrokerConnected
     ? "text-[#00C896]"
     : isAuthRequired
-    ? "text-[#E59700]"
-    : isReconnecting
-    ? "text-[#E59700]"
-    : isUnverified
-    ? "text-[#8B5CF6]"
-    : "text-[#E5484D]";
+      ? "text-[#E59700]"
+      : isReconnecting
+        ? "text-[#E59700]"
+        : isUnverified
+          ? "text-[#8B5CF6]"
+          : "text-[#E5484D]";
 
-  const marketTextClass = sessionBadge.isOpen
-    ? "text-[#00C896]"
-    : sessionBadge.isPreMarket
-    ? "text-[#38BDF8]"
-    : "text-[#E59700]";
+  const isFixture = isFixtureData || isReplayMode;
+
+  const isLiveActual = sessionPhase === "LIVE" && !isFixture;
+  const isLiveReplay = sessionPhase === "LIVE" && isFixture;
+  const isNearCloseActual = sessionPhase === "NEAR_CLOSE" && !isFixture;
+  const isNearCloseReplay = sessionPhase === "NEAR_CLOSE" && isFixture;
+
+  const marketTextClass =
+    isLiveActual
+      ? "text-[#00C896]"
+      : isLiveReplay
+        ? "text-[#E59700]"
+        : sessionPhase === "PRE_MARKET" || sessionPhase === "PRE_OPEN"
+          ? "text-[#38BDF8]"
+          : isNearCloseActual
+            ? "text-[#F59E0B]"
+            : "text-[#E59700]";
+
+  const marketStatusLabel =
+    isLiveActual
+      ? "LIVE"
+      : isLiveReplay
+        ? "LIVE (REPLAY DATA)"
+        : sessionPhase === "PRE_MARKET"
+          ? "PRE-MARKET"
+          : sessionPhase === "PRE_OPEN"
+            ? "PRE-OPEN"
+            : isNearCloseActual
+              ? "CLOSING"
+              : isNearCloseReplay
+                ? "CLOSING (REPLAY DATA)"
+                : "CLOSED (POST)";
 
   const staging = (import.meta as any).env?.VITE_STAGING_MODE === "true";
 
@@ -139,18 +159,25 @@ export function WorkstationTopBar({
 
       {/* ── RIGHT: STATUS + ACTIONS + CLOCK CLUSTER ── */}
       <div className="flex items-center gap-3 sm:gap-3.5 shrink-0 text-[#A5ABB4]">
-        {/* 1. Market Status (Text-only, no icon, no large box) */}
+        {/* 1. Market Status */}
         <button
           onClick={() => navigateTo({ workspace: "market", tab: "nifty", section: "market-nifty-session-summary" })}
-          title="View Market Command (NIFTY)"
+          title={`Market Phase: ${sessionIdentity.phase_label}`}
           aria-label="Market Status"
           className="hidden sm:flex items-center gap-1.5 text-[10.5px] hover:opacity-80 transition cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#38BDF8] rounded px-1"
         >
           <span className="text-[#707987]">Market:</span>
           <span className={`font-bold uppercase tracking-tight ${marketTextClass}`}>
-            {sessionBadge.label}
+            {marketStatusLabel}
           </span>
         </button>
+
+        {/* Replay Mode Badge (When in explicit replay mode only) */}
+        {isReplayMode && (
+          <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40">
+            REPLAY MODE
+          </span>
+        )}
 
         {/* Separator */}
         <span className="hidden sm:inline text-[#242830] select-none text-[12px]">|</span>
@@ -176,11 +203,10 @@ export function WorkstationTopBar({
           <button
             onClick={toggleAssistant}
             aria-label="Live Assistant"
-            className={`flex h-8 w-8 items-center justify-center rounded-[3px] border transition cursor-pointer ${
-              assistantOpen
+            className={`flex h-8 w-8 items-center justify-center rounded-[3px] border transition cursor-pointer ${assistantOpen
                 ? "border-[#8B5CF6] bg-[#8B5CF6]/20 text-[#C084FC] shadow-[0_0_8px_rgba(139,92,246,0.25)]"
                 : "border-[#242830] bg-[#0B0D10] text-[#707987] hover:border-[#8B5CF6]/50 hover:text-[#C084FC] hover:bg-[#13161A]"
-            }`}
+              }`}
           >
             <Sparkles size={15} />
           </button>
@@ -197,11 +223,10 @@ export function WorkstationTopBar({
           <button
             onClick={onOpenSettings}
             aria-label="Settings"
-            className={`flex h-8 w-8 items-center justify-center rounded-[3px] border transition cursor-pointer ${
-              settingsOpen
+            className={`flex h-8 w-8 items-center justify-center rounded-[3px] border transition cursor-pointer ${settingsOpen
                 ? "border-[#38BDF8] bg-[#38BDF8]/20 text-[#38BDF8] shadow-[0_0_8px_rgba(56,189,248,0.25)]"
                 : "border-[#242830] bg-[#0B0D10] text-[#707987] hover:border-[#38BDF8]/50 hover:text-[#E6E8EB] hover:bg-[#13161A]"
-            }`}
+              }`}
           >
             <SettingsIcon size={15} />
           </button>
@@ -218,10 +243,15 @@ export function WorkstationTopBar({
 
         {/* 5. Clock / Date Region (Clock icon followed by date & time, NO calendar icon) */}
         <div className="hidden md:flex items-center gap-1.5 text-[10px] font-mono shrink-0">
-          <Clock size={13} className="text-[#38BDF8]" />
-          <span className="text-[#707987]">{clockIst.dateStr}</span>
+          <Clock size={13} className={isDisconnected ? "text-[#E5484D]" : "text-[#38BDF8]"} />
+          {isDisconnected && (
+            <span className="rounded border border-[#E5484D]/40 bg-[#E5484D]/10 px-1 py-0.2 text-[8.5px] font-bold text-[#E5484D] uppercase tracking-wider">
+              CLIENT TIME (DISCONNECTED)
+            </span>
+          )}
+          <span className="text-[#707987]">{displayDate}</span>
           <span className="text-[#333942] select-none">·</span>
-          <span className="text-[#38BDF8] font-bold">{clockIst.timeStr} IST</span>
+          <span className={`font-bold ${isDisconnected ? "text-[#E5484D]" : "text-[#38BDF8]"}`}>{displayTime}</span>
         </div>
       </div>
     </header>

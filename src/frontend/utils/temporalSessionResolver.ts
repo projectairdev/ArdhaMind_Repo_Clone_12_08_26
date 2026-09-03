@@ -21,18 +21,26 @@ export interface TemporalSessionContext {
 }
 
 // 2026 Scheduled NSE Exchange Holidays
+// 2026 NSE equity/derivatives trading holidays — weekday closures only.
+// Kept in sync with src/market_data/session/exchange_calendar.py and
+// src/broker/services/market_status_service.py. Movable-feast names are
+// indicative; the date is authoritative. (Aug 15 falls on a Saturday in 2026
+// and is not a trading-day closure.)
 const NSE_HOLIDAYS_2026 = new Set<string>([
   "2026-01-26", // Republic Day
   "2026-03-03", // Holi
-  "2026-03-20", // Id-Ul-Fitr
+  "2026-03-26", // NSE trading holiday (movable feast)
+  "2026-03-31", // Id-Ul-Fitr (Ramzan Id)
   "2026-04-03", // Good Friday
-  "2026-04-14", // Ambedkar Jayanti
+  "2026-04-14", // Dr. Baba Saheb Ambedkar Jayanti
   "2026-05-01", // Maharashtra Day
-  "2026-08-15", // Independence Day
-  "2026-10-02", // Gandhi Jayanti
-  "2026-10-20", // Dussehra
-  "2026-11-08", // Diwali Balipratipada
-  "2026-11-23", // Guru Nanak Jayanti
+  "2026-05-28", // Bakri Id (Id-ul-Zuha)
+  "2026-06-26", // Muharram
+  "2026-09-14", // Ganesh Chaturthi
+  "2026-10-02", // Mahatma Gandhi Jayanti
+  "2026-10-20", // Dussehra (Vijaya Dashami)
+  "2026-11-10", // Diwali - Laxmi Pujan
+  "2026-11-24", // Guru Nanak Jayanti
   "2026-12-25", // Christmas
 ]);
 
@@ -132,6 +140,8 @@ export function getPreviousTradingDay(startDate: Date = new Date()): string {
   }
 }
 
+import { resolveSessionIdentity } from "./canonicalSemanticContract";
+
 /**
  * Authoritative temporal resolver for active workstation state
  */
@@ -141,40 +151,52 @@ export function getTemporalSessionContext(
 ): TemporalSessionContext {
   const now = new Date();
   const isWeekend = isWeekendDay(now);
+  const istStr = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(now);
+  const match = istStr.match(/(\d+)\/(\d+)\/(\d+),\s*(\d+):(\d+):(\d+)/);
+  const hhmmss = match ? `${match[4]}:${match[5]}:${match[6]}` : "09:15:00";
+  const isWeekday = !isWeekend;
 
   // Extract canonical session properties
   const sessionObj = canonicalState?.market_session || {};
   const statusStr = String(sessionObj.status || "").toLowerCase();
-  const isClosed = sessionObj.is_closed ?? (statusStr !== "open");
+  const isExplicitHoliday = statusStr === "holiday" || (match && isNseHoliday(`${match[3]}-${match[1]}-${match[2]}`));
 
   // Determine active display status
   let displayStatus: TemporalSessionContext["displayStatus"] = "LAST VALID SESSION";
   let statusColor = "text-[#707987]"; // neutral gray
 
-  if (statusStr === "open") {
-    displayStatus = "LIVE";
-    statusColor = "text-[#00C896]";
+  if (isExplicitHoliday) {
+    displayStatus = "HOLIDAY";
+    statusColor = "text-[#E59700]";
   } else if (isWeekend) {
     displayStatus = "WEEKEND";
     statusColor = "text-[#38BDF8]";
-  } else if (statusStr === "holiday") {
-    displayStatus = "HOLIDAY";
-    statusColor = "text-[#E59700]";
-  } else if (statusStr === "pre_market") {
+  } else if (statusStr === "open" || (hhmmss >= "09:15:00" && hhmmss < "15:30:00")) {
+    displayStatus = "LIVE";
+    statusColor = "text-[#00C896]";
+  } else if (hhmmss < "09:15:00") {
     displayStatus = "PRE-MARKET";
     statusColor = "text-[#38BDF8]";
-  } else if (statusStr === "post_market") {
+  } else {
     displayStatus = "POST-MARKET";
     statusColor = "text-[#8B5CF6]";
   }
 
-  // Resolve session dates
-  let lastValidSessionDate = formatDateIST(canonicalState?.pre_market_report?.critical_levels?.reference_close_date) || "21 Aug 2026";
-  if (lastValidSessionDate === "Unavailable" || !lastValidSessionDate) {
-    lastValidSessionDate = getPreviousTradingDay(now);
-  }
+  const isClosed = displayStatus !== "LIVE";
 
-  let nextSessionDate = sessionObj.next_session_date ? formatDateIST(sessionObj.next_session_date) : getNextTradingDay(now);
+  // Resolve single authoritative session identity
+  const sessionIdentity = resolveSessionIdentity(canonicalState);
+  const lastValidSessionDate = sessionIdentity.completedSessionDateFormatted;
+  const nextSessionDate = sessionIdentity.nextPlanningTargetDateFormatted;
 
   // Resolve canonical validation time
   const valTime = canonicalState?.last_updated_ist || canonicalState?.lastUpdatedIst || canonicalState?.canonical_committed_at;
@@ -184,21 +206,21 @@ export function getTemporalSessionContext(
   let previewNotice: string | undefined = undefined;
   if (isClosed) {
     if (previewMode === "PRE") {
-      previewNotice = `STAGING PREVIEW · NEXT SESSION PREVIEW (${nextSessionDate})`;
+      previewNotice = `STAGING PREVIEW · PRE-MARKET REPLAY (${sessionIdentity.currentSessionDateFormatted})`;
     } else if (previewMode === "POST") {
-      previewNotice = `STAGING PREVIEW · LAST SESSION REVIEW (${lastValidSessionDate})`;
+      previewNotice = `STAGING PREVIEW · COMPLETED SESSION REVIEW (${lastValidSessionDate})`;
     } else if (previewMode === "LIVE") {
-      previewNotice = `STAGING PREVIEW · MARKET CLOSED (${displayStatus})`;
+      previewNotice = `STAGING PREVIEW · HISTORICAL LIVE REPLAY (${sessionIdentity.currentSessionDateFormatted})`;
     }
   }
 
-  const freshness: TemporalSessionContext["freshness"] = statusStr === "open" ? "LIVE" : "FRESH";
+  const freshness: TemporalSessionContext["freshness"] = displayStatus === "LIVE" ? "LIVE" : "FRESH";
 
   return {
     wallClockIst: formatTimeIST(now, true),
     isWeekend,
     isMarketClosed: isClosed,
-    isLiveSession: statusStr === "open",
+    isLiveSession: displayStatus === "LIVE",
     displayStatus,
     statusColor,
     lastValidSessionDate,

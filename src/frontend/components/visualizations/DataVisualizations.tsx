@@ -346,7 +346,7 @@ export function VixGauge({ value, regime }: VixGaugeProps) {
             fill={color}
             fontFamily="monospace"
           >
-            {vix.toFixed(2)}
+            {vix != null ? Number(vix).toFixed(2) : "—"}
           </text>
         </svg>
       </div>
@@ -392,11 +392,11 @@ export function InstitutionalFlowBars({ fiiNet, diiNet, label }: FlowBarProps) {
   const maxAbs = Math.max(Math.abs(Number(fiiNet) || 0), Math.abs(Number(diiNet) || 0), 1);
 
   function FlowRow({ label, value }: { label: string; value: number | null }) {
-    if (value == null) {
+    if (value == null || isNaN(Number(value))) {
       return (
-        <div className="flex items-center gap-2 text-[11px]">
-          <span className="w-8 text-right font-mono text-slate-400">{label}</span>
-          <span className="flex-1 text-slate-500 font-mono text-[10px]">Not observed</span>
+        <div className="flex justify-between text-[10px] font-mono text-slate-500 py-1">
+          <span>{label}</span>
+          <span>Awaiting Data</span>
         </div>
       );
     }

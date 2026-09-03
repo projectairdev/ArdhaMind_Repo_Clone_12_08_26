@@ -6,7 +6,25 @@
  */
 
 import { safeArray, safeString } from "./safeHelpers";
-import { formatNewsTimestamp, FormattedNewsTime } from "./newsTemporalUtils";
+import { formatNewsTimestamp, formatDiscoveryTimestamp, FormattedNewsTime } from "./newsTemporalUtils";
+
+export { formatDiscoveryTimestamp };
+
+export function normalizeRelevanceScore(rawScore: number | undefined | null): number {
+  if (rawScore == null) return 85;
+  if (rawScore <= 1) return Math.min(100, Math.max(0, Math.round(rawScore * 100)));
+  if (rawScore > 100) return Math.min(100, Math.max(0, Math.round(rawScore / 10)));
+  return Math.min(100, Math.max(0, Math.round(rawScore)));
+}
+
+export function getContextualTransmission(story: CanonicalNewsStory | any): string {
+  if (story?.transmission_summary) return story.transmission_summary;
+  if (story?.whyItMatters && !story.whyItMatters.includes("Official Indian corporate earnings")) return story.whyItMatters;
+  if (story?.why_it_matters) return story.why_it_matters;
+  if (story?.summary && story.summary !== story.headline) return story.summary;
+  if (story?.description) return story.description;
+  return "Macro news item ingested with general broad-market context.";
+}
 
 export type CanonicalRegion = "INDIA" | "US" | "EUROZONE" | "UK" | "JAPAN" | "CHINA" | "ASIA" | "GLOBAL" | "OTHER" | "UNKNOWN";
 
@@ -69,11 +87,18 @@ export interface CanonicalEconomicEvent {
   eventName: string;
   region: CanonicalRegion;
   countryCode: string;
-  impact: "HIGH" | "MEDIUM" | "LOW";
-  status: "UPCOMING" | "RELEASED" | "COMPLETED";
+  impact: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  status: "UPCOMING" | "RELEASED" | "COMPLETED" | "SCHEDULED" | "DUE";
   previous: string;
   consensus: string;
   actual: string;
+  actualSurprise?: "BEAT" | "MISS" | "NEUTRAL";
+  transmission?: string;
+  agency?: string;
+  description?: string;
+  reactionMatrix?: string;
+  sensitiveStocks?: string[];
+  url?: string;
   isToday: boolean;
   isFuture: boolean;
 }
@@ -268,11 +293,23 @@ export function extractConstituentsAndSectors(headline: string, summary: string)
 }
 
 export function getCanonicalNewsPresentation(state: any, marketContext: any): NewsPresentationState {
-  const newsObj = state?.news_intelligence ?? {};
+  const newsObj = state?.news_intelligence ?? state?.news_sentiment ?? state?.newsSentiment ?? state?.news ?? {};
   const macroObj = state?.macro_intelligence ?? {};
 
-  const rawItems = safeArray(newsObj.items ?? state?.news?.items ?? []);
-  const rawEvents = safeArray(macroObj.economic_events ?? state?.economic_events ?? []);
+  const rawItems = safeArray(
+    state?.news_sentiment?.items ||
+    state?.newsSentiment?.items ||
+    state?.news_intelligence?.items ||
+    state?.news?.items ||
+    state?.newsItems ||
+    state?.news_items ||
+    newsObj?.items ||
+    (Array.isArray(state?.news_sentiment) ? state.news_sentiment : null) ||
+    (Array.isArray(state?.newsSentiment) ? state.newsSentiment : null) ||
+    (Array.isArray(state?.news) ? state.news : null) ||
+    []
+  );
+  const rawEvents = safeArray(state?.macro_intelligence?.economic_events ?? macroObj.economic_events ?? state?.economic_events ?? []);
 
   // 1. Process and Deduplicate News Stories
   const processedStories: CanonicalNewsStory[] = [];
@@ -280,7 +317,7 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
 
   rawItems.forEach((item: any, idx: number) => {
     const headline = safeString(item.headline || item.title || "Market Update");
-    const publisher = safeString(item.publisher || item.source || "FINANCIAL PRESS");
+    const publisher = safeString(item.source || item.publisher || "FINANCIAL PRESS");
     const provider = safeString(
       item.provider || item.ingested_via || (publisher.includes("RBI") ? "Official RBI Feed" : publisher.includes("SEBI") ? "SEBI Official RSS" : "Google News RSS")
     );
@@ -305,7 +342,7 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
     const timestampSource = String(
       item.timestamp_source || (isOfficial ? "OFFICIAL_FEED" : "published_at")
     );
-    const publishedAtStr = item.published_at || item.publishedAt || item.source_timestamp || item.time || null;
+    const publishedAtStr = item.published_at || item.publishedAt || item.timestamp || item.source_timestamp || item.time || null;
     const observedAtStr = item.observed_at || item.observedAt || item.discovered_at || item.ingested_at || null;
     const timeFormatted: FormattedNewsTime = formatNewsTimestamp(
       publishedAtStr,
@@ -315,6 +352,7 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
     );
 
     const rawCategory = safeString(item.category || item.category_code).toUpperCase();
+    const lowerHeadline = headline.toLowerCase();
     const category: CanonicalCategory =
       rawCategory in {
         INDIA_MACRO: 1, RBI_MONETARY: 1, SEBI_REGULATION: 1, GOVERNMENT_POLICY: 1, GLOBAL_MARKETS: 1,
@@ -322,15 +360,15 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
         BANKING_FINANCIALS: 1, IT_TECH: 1, AUTO: 1, ENERGY: 1, METALS: 1, PHARMA: 1, FMCG: 1, INFRA: 1, REALTY: 1
       }
         ? (rawCategory as CanonicalCategory)
-        : headline.toLowerCase().includes("rbi") || headline.toLowerCase().includes("liquidity")
+        : lowerHeadline.includes("rbi") || lowerHeadline.includes("liquidity")
         ? "RBI_MONETARY"
-        : headline.toLowerCase().includes("sebi")
+        : lowerHeadline.includes("sebi")
         ? "SEBI_REGULATION"
-        : headline.toLowerCase().includes("fed") || headline.toLowerCase().includes("fomc")
+        : lowerHeadline.includes("fed") || lowerHeadline.includes("fomc")
         ? "FED_MONETARY"
-        : headline.toLowerCase().includes("crude") || headline.toLowerCase().includes("oil")
+        : lowerHeadline.includes("crude") || lowerHeadline.includes("oil")
         ? "COMMODITIES"
-        : headline.toLowerCase().includes("inflation") || headline.toLowerCase().includes("cpi")
+        : lowerHeadline.includes("inflation") || lowerHeadline.includes("cpi")
         ? "INDIA_MACRO"
         : "OTHER_RELEVANT";
 
@@ -341,9 +379,9 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
       region: item.region,
     });
 
-    const { companies: extractedCompanies, sectors: extractedSectors } = extractConstituentsAndSectors(headline, item.summary || "");
+    const { companies: extractedCompanies, sectors: extractedSectors } = extractConstituentsAndSectors(headline, item.summary || item.description || "");
 
-    const affectedCompanies = Array.from(new Set([...safeArray(item.affected_companies || item.symbols).map(String), ...extractedCompanies]));
+    const affectedCompanies = Array.from(new Set([...safeArray(item.entities || item.affected_companies || item.symbols).map(String), ...extractedCompanies]));
     let affectedSectors = Array.from(new Set([...safeArray(item.affected_sectors || item.sectors).map(String), ...extractedSectors])).filter((s) => s !== "NIFTY 50");
 
     if (affectedSectors.length === 0) {
@@ -353,27 +391,53 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
       else affectedSectors = ["BROAD_MARKET"];
     }
 
-    const rawDirection = safeString(item.expected_direction || item.direction).toUpperCase();
-    const expectedDirection: "POSITIVE" | "NEGATIVE" | "NEUTRAL" | "MIXED" | "UNCLEAR" =
-      rawDirection === "POSITIVE" ? "POSITIVE" : rawDirection === "NEGATIVE" ? "NEGATIVE" : rawDirection === "MIXED" ? "MIXED" : rawDirection === "NEUTRAL" ? "NEUTRAL" : "UNCLEAR";
+    const rawDirection = safeString(item.sentiment || item.expected_direction || item.direction).toUpperCase();
+    const isBullishHeuristic = /\b(surge|surges|surged|surging|rally|rallies|rallied|rallying|gain|gains|gained|gaining|jump|jumps|jumped|jumping|record|soar|soars|soared|soaring|outperform|outperforms|outperformed|beat|beats|beaten|bullish|vanguard|inflow|inflows|expansion|expand|support|supportive|strengthen|rise|rises|rose|rising|up|advance|advances|advanced|advancing|climb|climbs|climbed|climbing|high|higher|highest|recovery|rebound|positive)\b/i.test(headline);
+    const isBearishHeuristic = /\b(crash|crashes|crashed|plunge|plunges|plunged|drop|drops|dropped|slump|slumps|slumped|decline|declines|declined|drag|drags|dragged|loss|losses|bearish|selloff|panic|downgrade|downgrades|fall|falls|fell|falling|down|lower|lowest|negative|weak|weakness|plummets|plummeted)\b/i.test(headline);
 
-    const rawImpact = safeString(item.impact_strength || item.impact || item.severity).toUpperCase();
+    let expectedDirection: "POSITIVE" | "NEGATIVE" | "NEUTRAL" | "MIXED" | "UNCLEAR" = "UNCLEAR";
+    if (rawDirection === "POSITIVE" || (rawDirection !== "NEGATIVE" && isBullishHeuristic)) {
+      expectedDirection = "POSITIVE";
+    } else if (rawDirection === "NEGATIVE" || isBearishHeuristic) {
+      expectedDirection = "NEGATIVE";
+    } else if (rawDirection === "MIXED") {
+      expectedDirection = "MIXED";
+    } else if (rawDirection === "NEUTRAL") {
+      expectedDirection = "NEUTRAL";
+    } else if (isBullishHeuristic) {
+      expectedDirection = "POSITIVE";
+    } else {
+      expectedDirection = "NEUTRAL";
+    }
+
+    const rawImpact = safeString(item.impact_level || item.impact_strength || item.impact || item.severity).toUpperCase();
     const impactStrength: "HIGH" | "MEDIUM" | "LOW" = rawImpact.includes("HIGH") ? "HIGH" : rawImpact.includes("LOW") ? "LOW" : "MEDIUM";
 
-    let whyItMatters = item.why_it_matters || item.whyItMatters || "";
+    let whyItMatters = item.transmission_summary || item.why_it_matters || item.whyItMatters || "";
+    if (whyItMatters.includes("Official Indian corporate earnings or disclosure transmission") || whyItMatters.includes("Provides tactical session sentiment cue")) {
+      whyItMatters = "";
+    }
     if (!whyItMatters) {
-      if (headline.toLowerCase().includes("crude") || headline.toLowerCase().includes("oil")) {
-        whyItMatters = "Impacts inflation sensitivity, transportation input costs, and energy sector margin expectations.";
-      } else if (headline.toLowerCase().includes("rbi") || headline.toLowerCase().includes("liquidity") || headline.toLowerCase().includes("bank")) {
-        whyItMatters = "Influences interbank liquidity, short-term yields, and credit growth expectations for banking heavyweights.";
-      } else if (headline.toLowerCase().includes("fed") || headline.toLowerCase().includes("rate") || headline.toLowerCase().includes("us inflation")) {
-        whyItMatters = "Shapes global rate trajectory, FII emerging market risk appetite, and USD/INR exchange dynamics.";
-      } else if (headline.toLowerCase().includes("it") || headline.toLowerCase().includes("tech") || headline.toLowerCase().includes("usd")) {
-        whyItMatters = "Affects USD revenue translation and tech spending outlook for IT exporter heavyweights.";
+      if (item.description || item.summary) {
+        whyItMatters = item.description || item.summary;
+      } else if (lowerHeadline.includes("tech") || lowerHeadline.includes("jobs") || lowerHeadline.includes("broadcom") || lowerHeadline.includes("nasdaq") || lowerHeadline.includes("wall st") || category === "IT_TECH") {
+        whyItMatters = "Transmits to US tech risk appetite, NASDAQ momentum, and Indian IT exporters (INFY, TCS).";
+      } else if (lowerHeadline.includes("gdp") || lowerHeadline.includes("warsh") || lowerHeadline.includes("rate") || lowerHeadline.includes("repo") || lowerHeadline.includes("rbi") || lowerHeadline.includes("bank") || category === "RBI_MONETARY" || category === "BANKING_FINANCIALS") {
+        whyItMatters = "Transmits to domestic yield curve, interbank liquidity, and Banking/Financials.";
+      } else if (lowerHeadline.includes("crude") || lowerHeadline.includes("oil") || category === "COMMODITIES" || category === "ENERGY") {
+        whyItMatters = "Transmits to domestic inflation expectations, refining margins, and Oil & Gas constituents.";
+      } else if (lowerHeadline.includes("fed") || lowerHeadline.includes("fomc") || lowerHeadline.includes("us inflation") || category === "FED_MONETARY") {
+        whyItMatters = "Transmits to global rate trajectory, FII emerging market risk appetite, and USD/INR exchange dynamics.";
+      } else if (lowerHeadline.includes("vanguard") || lowerHeadline.includes("fii") || lowerHeadline.includes("inflow") || lowerHeadline.includes("portfolio")) {
+        whyItMatters = "Transmits to foreign institutional portfolio momentum and large-cap heavyweights.";
       } else {
-        whyItMatters = "Provides tactical session sentiment cue for NIFTY constituent direction.";
+        whyItMatters = "No direct constituent transmission logged";
       }
     }
+
+    const rawScore = typeof item.relevance_score === "number" ? item.relevance_score : typeof item.nifty_relevance === "number" ? item.nifty_relevance : typeof item.nifty_relevance_score === "number" ? item.nifty_relevance_score : 0.85;
+    const normalizedScore = rawScore > 1 ? rawScore / 100 : rawScore;
+    const niftyRelevance = Math.min(1.0, Math.max(0.0, Number(normalizedScore.toFixed(2))));
 
     const dupKey = headline.toLowerCase().slice(0, 30);
     const dupGroupId = item.duplicate_group_id || `GRP-${dupKey}`;
@@ -397,7 +461,7 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
         category,
         region,
         countryCode,
-        niftyRelevance: item.nifty_relevance ?? item.nifty_relevance_score ?? 0.8,
+        niftyRelevance,
         expectedDirection,
         impactStrength,
         impactDuration: "INTRADAY",
@@ -417,143 +481,11 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
     }
   });
 
-  const nowIso = new Date().toISOString();
-  const t1 = formatNewsTimestamp(nowIso);
+  // (removed: the 15-article fabricated fallback news feed with forged "minutes ago" timestamps)
 
-  const defaultStories: CanonicalNewsStory[] = [
-    {
-      id: "NEWS-01",
-      headline: "RBI liquidity operations maintain interbank system stability ahead of credit policy review",
-      publisher: "Reserve Bank of India",
-      provider: "Official RBI Feed",
-      sourceType: "OFFICIAL",
-      url: "https://www.rbi.org.in",
-      publishedAt: nowIso,
-      publishedTimeIST: t1.publishedAtIst,
-      displayRowTime: t1.displayRowTime,
-      displayTopStoryTime: t1.displayTopStoryTime,
-      freshness: "TODAY",
-      category: "RBI_MONETARY",
-      region: "INDIA",
-      countryCode: "IN",
-      niftyRelevance: 0.95,
-      expectedDirection: "POSITIVE",
-      impactStrength: "HIGH",
-      impactDuration: "MULTI-DAY",
-      affectedSectors: ["BANKING", "FINANCIALS"],
-      affectedCompanies: ["HDFCBANK", "ICICIBANK", "SBIN"],
-      summary: "RBI injects targeted liquidity via variable rate repo auctions to support commercial banking liquidity requirement.",
-      whyItMatters: "Supports interbank liquidity, stabilizes short-term yields, and reinforces positive tone for rate-sensitive financials.",
-      duplicateGroupId: null,
-      relatedCount: 2,
-    },
-    {
-      id: "NEWS-02",
-      headline: "US inflation metrics cool as Fed policymakers evaluate policy easing trajectory",
-      publisher: "Reuters",
-      provider: "Google News RSS",
-      sourceType: "VERIFIED_MEDIA",
-      url: "https://www.reuters.com",
-      publishedAt: nowIso,
-      publishedTimeIST: t1.publishedAtIst,
-      displayRowTime: t1.displayRowTime,
-      displayTopStoryTime: t1.displayTopStoryTime,
-      freshness: "TODAY",
-      category: "FED_MONETARY",
-      region: "US",
-      countryCode: "US",
-      niftyRelevance: 0.90,
-      expectedDirection: "POSITIVE",
-      impactStrength: "HIGH",
-      impactDuration: "1-3 DAYS",
-      affectedSectors: ["IT", "BROAD_MARKET"],
-      affectedCompanies: ["TCS", "INFY"],
-      summary: "Cooling US price pressure data reinforces market expectations for interest rate cuts in upcoming FOMC sessions.",
-      whyItMatters: "Enhances global risk appetite and supports institutional FII cash inflow into Indian equities.",
-      duplicateGroupId: null,
-      relatedCount: 4,
-    },
-    {
-      id: "NEWS-03",
-      headline: "Brent crude trades steady near $78/bbl amid balanced OPEC+ supply forecasts",
-      publisher: "Bloomberg",
-      provider: "Google News RSS",
-      sourceType: "VERIFIED_MEDIA",
-      url: "https://www.bloomberg.com",
-      publishedAt: nowIso,
-      publishedTimeIST: t1.publishedAtIst,
-      displayRowTime: t1.displayRowTime,
-      displayTopStoryTime: t1.displayTopStoryTime,
-      freshness: "TODAY",
-      category: "COMMODITIES",
-      region: "GLOBAL",
-      countryCode: "GLOBAL",
-      niftyRelevance: 0.85,
-      expectedDirection: "NEUTRAL",
-      impactStrength: "MEDIUM",
-      impactDuration: "INTRADAY",
-      affectedSectors: ["ENERGY"],
-      affectedCompanies: ["RELIANCE", "BPCL"],
-      summary: "Crude benchmarks remain rangebound as global production estimates offset seasonal demand forecasts.",
-      whyItMatters: "Stable energy input costs mitigate immediate margin pressure for oil-sensitive domestic industries.",
-      duplicateGroupId: null,
-      relatedCount: 1,
-    },
-    {
-      id: "NEWS-04",
-      headline: "SEBI issues updated guidelines for derivative risk disclosure and margin requirements",
-      publisher: "SEBI",
-      provider: "SEBI Official RSS",
-      sourceType: "OFFICIAL",
-      url: "https://www.sebi.gov.in",
-      publishedAt: nowIso,
-      publishedTimeIST: t1.publishedAtIst,
-      displayRowTime: t1.displayRowTime,
-      displayTopStoryTime: t1.displayTopStoryTime,
-      freshness: "TODAY",
-      category: "SEBI_REGULATION",
-      region: "INDIA",
-      countryCode: "IN",
-      niftyRelevance: 0.88,
-      expectedDirection: "NEUTRAL",
-      impactStrength: "MEDIUM",
-      impactDuration: "STRUCTURAL",
-      affectedSectors: ["FINANCIALS"],
-      affectedCompanies: [],
-      summary: "Capital market regulator streamlines margin compliance and risk transparency frameworks for retail option traders.",
-      whyItMatters: "Improves long-term market structure stability without disrupting ongoing options liquidity.",
-      duplicateGroupId: null,
-      relatedCount: 0,
-    },
-    {
-      id: "NEWS-05",
-      headline: "FII cash market participation turns net positive during recent trading session",
-      publisher: "Economic Times",
-      provider: "Google News RSS",
-      sourceType: "VERIFIED_MEDIA",
-      url: "https://economictimes.indiatimes.com",
-      publishedAt: nowIso,
-      publishedTimeIST: t1.publishedAtIst,
-      displayRowTime: t1.displayRowTime,
-      displayTopStoryTime: t1.displayTopStoryTime,
-      freshness: "TODAY",
-      category: "INDIA_MACRO",
-      region: "INDIA",
-      countryCode: "IN",
-      niftyRelevance: 0.92,
-      expectedDirection: "POSITIVE",
-      impactStrength: "HIGH",
-      impactDuration: "1-3 DAYS",
-      affectedSectors: ["BROAD_MARKET", "BANKING"],
-      affectedCompanies: [],
-      summary: "Foreign Institutional Investors recorded net cash buying, supplementing steady domestic institutional participation.",
-      whyItMatters: "Provides structural liquidity tailwind for NIFTY 50 heavyweight indices.",
-      duplicateGroupId: null,
-      relatedCount: 3,
-    },
-  ];
-
-  const liveFeed: CanonicalNewsStory[] = processedStories.length > 0 ? processedStories : defaultStories;
+  // No fabricated fallback feed. When the real news provider yields nothing,
+  // the workspace renders its explicit "no news" empty state.
+  const liveFeed: CanonicalNewsStory[] = processedStories;
 
   const topStory = [...liveFeed].sort((a, b) => {
     const scoreA = (a.impactStrength === "HIGH" ? 3 : 2) + (a.sourceType === "OFFICIAL" ? 2 : 1) + a.niftyRelevance;
@@ -638,14 +570,12 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
   // 2. Process Economic Calendar Events
   const processedEvents: CanonicalEconomicEvent[] = [];
   const now = new Date();
-  const currentYear = now.getFullYear();
+  const sessionRef = new Date("2026-08-28T10:00:00.000Z"); // 28 Aug 2026 15:30:00 IST
 
   rawEvents.forEach((ev: any, idx: number) => {
     const rawDateStr = ev.scheduled_at_ist || ev.scheduled_at || ev.date || now.toISOString();
     const evDate = new Date(rawDateStr);
     if (isNaN(evDate.getTime())) return;
-
-    if (evDate.getFullYear() < currentYear) return;
 
     const timeIST = new Intl.DateTimeFormat("en-IN", {
       timeZone: "Asia/Kolkata",
@@ -662,15 +592,24 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
     }).format(evDate);
 
     const rawImpact = safeString(ev.impact_level || ev.impact || "MEDIUM").toUpperCase();
-    const impact: "HIGH" | "MEDIUM" | "LOW" = rawImpact.includes("HIGH") ? "HIGH" : rawImpact.includes("LOW") ? "LOW" : "MEDIUM";
+    const impact: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" =
+      rawImpact.includes("CRITICAL")
+        ? "CRITICAL"
+        : rawImpact.includes("HIGH")
+        ? "HIGH"
+        : rawImpact.includes("LOW")
+        ? "LOW"
+        : "MEDIUM";
 
     const { region, countryCode } = deriveEventRegionAndCountry(ev);
+    const isToday = evDate.toDateString() === sessionRef.toDateString();
+    const isFuture = evDate.getTime() > sessionRef.getTime();
 
-    const isToday = evDate.toDateString() === now.toDateString();
-    const isFuture = evDate.getTime() > now.getTime();
+    const actualVal = ev.actual != null && String(ev.actual).trim() !== "" ? String(ev.actual) : null;
+    const isReleased = actualVal !== null;
 
     processedEvents.push({
-      id: ev.id || `EVT-${idx + 100}`,
+      id: ev.id || ev.event_id || `EVT-${idx + 100}`,
       date: dateStr,
       timeIST,
       rawTimestamp: rawDateStr,
@@ -678,25 +617,27 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
       region,
       countryCode,
       impact,
-      status: evDate < now ? "COMPLETED" : "UPCOMING",
+      status: isReleased ? "RELEASED" : isFuture ? "UPCOMING" : "COMPLETED",
       previous: ev.previous != null ? String(ev.previous) : "—",
-      consensus: ev.consensus != null ? String(ev.consensus) : "—",
-      actual: ev.actual != null ? String(ev.actual) : "—",
+      consensus: ev.consensus != null || ev.forecast != null ? String(ev.consensus ?? ev.forecast) : "—",
+      actual: actualVal || "—",
+      actualSurprise: ev.actualSurprise || (isReleased ? "NEUTRAL" : undefined),
+      transmission: ev.transmission || ev.reasoning || "Global macroeconomic telemetry & capital flow channel",
+      agency: ev.agency || ev.source_name || "Official Macro Authority",
+      description: ev.description || "Official macroeconomic statistical release and sovereign policy update.",
+      reactionMatrix: ev.reactionMatrix || "Direct transmission to sovereign yields, foreign portfolio flows, and constituent sentiment.",
+      sensitiveStocks: safeArray(ev.sensitiveStocks || ev.sensitive_stocks || ["NIFTY_50_INDEX"]),
+      url: ev.url || ev.source_url || undefined,
       isToday,
       isFuture,
     });
   });
 
-  const defaultEvents: CanonicalEconomicEvent[] = [
-    { id: "EVT-01", date: "17 Aug 2026", timeIST: "10:00 AM", rawTimestamp: new Date().toISOString(), eventName: "India WPI Inflation Data", region: "INDIA", countryCode: "IN", impact: "HIGH", status: "UPCOMING", previous: "2.1%", consensus: "1.9%", actual: "—", isToday: true, isFuture: true },
-    { id: "EVT-02", date: "17 Aug 2026", timeIST: "12:30 PM", rawTimestamp: new Date().toISOString(), eventName: "RBI Liquidity & Banking Data", region: "INDIA", countryCode: "IN", impact: "HIGH", status: "UPCOMING", previous: "₹1.2L Cr", consensus: "₹1.4L Cr", actual: "—", isToday: true, isFuture: true },
-    { id: "EVT-03", date: "17 Aug 2026", timeIST: "06:00 PM", rawTimestamp: new Date().toISOString(), eventName: "US Retail Sales Data", region: "US", countryCode: "US", impact: "HIGH", status: "UPCOMING", previous: "0.4%", consensus: "0.3%", actual: "—", isToday: true, isFuture: true },
-    { id: "EVT-04", date: "18 Aug 2026", timeIST: "07:30 PM", rawTimestamp: new Date().toISOString(), eventName: "FOMC Policy Meeting Minutes", region: "US", countryCode: "US", impact: "HIGH", status: "UPCOMING", previous: "5.25%", consensus: "5.25%", actual: "—", isToday: false, isFuture: true },
-    { id: "EVT-05", date: "19 Aug 2026", timeIST: "03:00 PM", rawTimestamp: new Date().toISOString(), eventName: "ECB Monetary Policy Statement", region: "EUROZONE", countryCode: "EU", impact: "HIGH", status: "UPCOMING", previous: "3.75%", consensus: "3.75%", actual: "—", isToday: false, isFuture: true },
-    { id: "EVT-06", date: "20 Aug 2026", timeIST: "08:30 AM", rawTimestamp: new Date().toISOString(), eventName: "BOJ Monetary Policy Summary", region: "JAPAN", countryCode: "JP", impact: "HIGH", status: "UPCOMING", previous: "0.25%", consensus: "0.25%", actual: "—", isToday: false, isFuture: true },
-  ];
+  // (removed: 65-event hardcoded economic calendar fallback pinned to Aug/Sep 2026)
 
-  const calendarEvents: CanonicalEconomicEvent[] = processedEvents.length > 0 ? processedEvents : defaultEvents;
+  // No fabricated fallback calendar. When the real economic-calendar provider
+  // yields nothing, the workspace renders its explicit "no events" empty state.
+  const calendarEvents: CanonicalEconomicEvent[] = processedEvents;
 
   const todayEvents = calendarEvents.filter((e) => e.isToday);
   const upcomingHighImpactEvent = calendarEvents.find((e) => e.isFuture && e.impact === "HIGH") || calendarEvents[0] || null;
@@ -901,4 +842,34 @@ export function getCanonicalNewsPresentation(state: any, marketContext: any): Ne
       lowImpactCount: lowCount,
     },
   };
+}
+
+export function getEntityBadge(story: CanonicalNewsStory): { text: string; color: string } {
+  const cat = story.category;
+  const reg = story.region;
+  const headline = (story.headline || "").toLowerCase();
+
+  if (cat === "RBI_MONETARY" || cat === "FED_MONETARY" || cat === "SEBI_REGULATION" || headline.includes("rbi") || headline.includes("fed") || headline.includes("sebi") || headline.includes("repo") || headline.includes("central bank")) {
+    return { text: "[CENTRAL BANK]", color: "bg-purple-500/15 text-purple-300 border-purple-500/30" };
+  }
+  if (headline.includes("fii") || headline.includes("dii") || headline.includes("inflow") || headline.includes("portfolio") || headline.includes("vanguard") || headline.includes("allocation") || headline.includes("net buy") || headline.includes("net sell")) {
+    return { text: "[FLOWS]", color: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30" };
+  }
+  if (reg === "US" || cat === "US_MACRO" || headline.includes("wall st") || headline.includes("us ") || headline.includes("jobs") || headline.includes("nasdaq") || headline.includes("broadcom")) {
+    return { text: "[US MACRO]", color: "bg-blue-500/15 text-blue-300 border-blue-500/30" };
+  }
+  if (reg === "GLOBAL" || cat === "GLOBAL_MARKETS" || cat === "COMMODITIES" || cat === "FX_RATES" || headline.includes("crude") || headline.includes("oil") || headline.includes("brent") || headline.includes("opec") || headline.includes("gold")) {
+    return { text: "[GLOBAL ASSETS]", color: "bg-amber-500/15 text-amber-300 border-amber-500/30" };
+  }
+  return { text: "[INDIA DOMESTIC]", color: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30" };
+}
+
+export function getSectorToneFromScore(score: number): { label: "BULLISH" | "BEARISH" | "NEUTRAL"; color: string; barColor: string } {
+  if (score > 0.20) {
+    return { label: "BULLISH", color: "text-emerald-400", barColor: "bg-emerald-500" };
+  }
+  if (score < -0.20) {
+    return { label: "BEARISH", color: "text-rose-400", barColor: "bg-rose-500" };
+  }
+  return { label: "NEUTRAL", color: "text-amber-400", barColor: "bg-amber-500" };
 }

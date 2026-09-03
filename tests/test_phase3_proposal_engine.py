@@ -68,7 +68,8 @@ def test_proposal_models_serialization():
 def test_dynamic_lot_size_resolution():
     with tempfile.TemporaryDirectory() as tmpdir:
         db_file = Path(tmpdir) / "test_instruments.db"
-        with sqlite3.connect(str(db_file)) as conn:
+        conn = sqlite3.connect(str(db_file))
+        try:
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE instruments (
@@ -91,6 +92,8 @@ def test_dynamic_lot_size_resolution():
                 VALUES (101, 'NIFTY', 'NFO', 'CE', '2026-08-27', 65);
             """)
             conn.commit()
+        finally:
+            conn.close()
 
         # Query test DB
         resolved = resolve_lot_size(underlying="NIFTY", default=25, db_path=db_file)
@@ -158,9 +161,93 @@ def test_proposal_builder_no_trade_fallback():
     assert prop.contract_symbol == "NO ACTIVE PROPOSAL"
     assert prop.direction == "NEUTRAL"
     assert prop.entry_price == 0.0
+    assert prop.strike == 0  # Spot is 0, must not fall back to 24500
+
+
+def test_proposal_builder_decision_critical_gating():
+    """
+    Verifies that missing any decision-critical field (strike, entry price,
+    confidence/quality score, risk/reward) yields an honest NO_TRADE proposal
+    with zero fabricated fallbacks (no 24500, no 120/125, no 70/75/80, no 30/55, no 1.8).
+    """
+    valid_base = {
+        "opportunity_id": "OPP-QUAL-1",
+        "setup_type": "PULLBACK",
+        "direction": "BULLISH",
+        "provisional_strike": 24200,
+        "option_type": "CE",
+        "priority_score": 80.0,
+        "quality_score": 78.0,
+        "confidence_score": 82.0,
+        "reward_risk_ratio": 2.0,
+        "estimated_risk": 25.0,
+        "estimated_reward": 50.0,
+        "suggested_levels": {
+            "entry_reference": 110.0,
+            "invalidation_level": 85.0,
+            "target_zone_1": 160.0,
+        },
+    }
+
+    # 1. Missing Strike (provisional_strike None and spot <= 0)
+    opp_no_strike = dict(valid_base)
+    opp_no_strike.pop("provisional_strike")
+    prop = ProposalBuilder.build_proposal(opp_no_strike, context={"market": {"current_spot": 0.0}})
+    assert prop.state == ProposalState.NO_TRADE.value
+    assert prop.strike == 0
+    assert "spot price unavailable" in prop.rationale[0].lower()
+
+    # 2. Missing Entry Price (entry_reference >= 1000 and no option chain quote)
+    opp_no_entry = dict(valid_base)
+    opp_no_entry["suggested_levels"] = {
+        "entry_reference": 24200.0,  # Underlying spot, not option premium
+        "invalidation_level": 24150.0,
+        "target_zone_1": 24300.0,
+    }
+    prop2 = ProposalBuilder.build_proposal(opp_no_entry, context={})
+    assert prop2.state == ProposalState.NO_TRADE.value
+    assert prop2.entry_price == 0.0
+    assert "option premium unavailable" in prop2.rationale[0].lower() or "option chain" in prop2.rationale[0].lower()
+
+    # 3. Missing Quality / Confidence Score
+    opp_no_qual = dict(valid_base)
+    opp_no_qual.pop("quality_score")
+    prop3 = ProposalBuilder.build_proposal(opp_no_qual, context={})
+    assert prop3.state == ProposalState.NO_TRADE.value
+    assert prop3.quality_score == 0.0
+
+    opp_no_conf = dict(valid_base)
+    opp_no_conf.pop("confidence_score")
+    prop4 = ProposalBuilder.build_proposal(opp_no_conf, context={})
+    assert prop4.state == ProposalState.NO_TRADE.value
+    assert prop4.confidence_score == 0.0
+
+    # 4. Missing Risk / Reward Estimates
+    opp_no_risk = dict(valid_base)
+    opp_no_risk.pop("estimated_risk")
+    opp_no_risk["suggested_levels"] = {"entry_reference": 110.0}  # No invalidation level
+    prop5 = ProposalBuilder.build_proposal(opp_no_risk, context={})
+    assert prop5.state == ProposalState.NO_TRADE.value
+    assert "risk or reward boundary unavailable" in prop5.rationale[0].lower()
+
+    # 5. Missing / Unfavorable R:R
+    opp_bad_rr = dict(valid_base)
+    opp_bad_rr.pop("reward_risk_ratio")
+    opp_bad_rr["estimated_risk"] = 50.0
+    opp_bad_rr["estimated_reward"] = 10.0  # R:R = 0.2 < 1.0
+    prop6 = ProposalBuilder.build_proposal(opp_bad_rr, context={})
+    assert prop6.state == ProposalState.NO_TRADE.value
+    assert "unfavorable reward-to-risk ratio" in prop6.rationale[0].lower()
+
+    # 6. Absence of Fabricated Scores in Confluence Calculation
+    bare_opp = {"status": "RAW"}
+    prop7 = ProposalBuilder.build_proposal(bare_opp, context={})
+    assert prop7.state == ProposalState.NO_TRADE.value
+    assert prop7.raw_metadata["confluence_score"] == 0.0
 
 
 def test_audit_storage_lifecycle_with_margin_and_lots():
+    import gc
     with tempfile.TemporaryDirectory() as tmpdir:
         db_file = Path(tmpdir) / "proposals_audit.db"
         storage = ProposalAuditStorage(db_path=db_file)
@@ -219,3 +306,7 @@ def test_audit_storage_lifecycle_with_margin_and_lots():
         rec_updated = storage.get_proposal("PROP-TEST-LOTS-001")
         assert rec_updated["state"] == "DRY_RUN_RECORDED"
         assert rec_updated["approval_timestamp"] == "2026-08-20T04:15:00Z"
+        del storage
+        del rec
+        del rec_updated
+        gc.collect()

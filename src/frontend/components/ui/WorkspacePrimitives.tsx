@@ -106,7 +106,7 @@ export function MarketValue({
   const parsed = value == null || value === "" ? null : Number(value);
   return (
     <span className={`air-data ${className}`}>
-      {parsed != null && Number.isFinite(parsed) ? `${formatNumber(parsed, decimals)}${suffix}` : "Unavailable"}
+      {parsed != null && Number.isFinite(parsed) ? `${formatNumber(parsed, decimals)}${suffix}` : "—"}
     </span>
   );
 }
@@ -140,7 +140,7 @@ export function MetricCell({
     <div className="min-w-0 px-3 py-2 border-r border-[#191D23] last:border-r-0">
       <div className="truncate text-[9px] font-semibold uppercase text-[#707987] tracking-wider">{label}</div>
       <div className={`mt-0.5 truncate text-[12px] font-medium air-data ${toneClass}`}>
-        {children ?? (value == null || value === "" ? "Unavailable" : String(value))}
+        {children ?? (value == null || value === "" ? "—" : String(value))}
       </div>
     </div>
   );
@@ -194,7 +194,7 @@ export function MetricCard({
         </div>
       </div>
       <div className={`air-data mt-1 truncate text-[13px] font-semibold tracking-tight ${color}`}>
-        {value ?? "Unavailable"}
+        {value ?? "—"}
       </div>
       {sparkline && <div className="mt-1">{sparkline}</div>}
       {detail && <div className="mt-0.5 truncate text-[9px] text-[#707987]">{detail}</div>}
@@ -299,7 +299,7 @@ export function CompactRows({ rows }: { rows: Array<[string, React.ReactNode]> }
         >
           <span className="text-[#707987] font-medium truncate max-w-[50%]">{label}</span>
           <span className="air-data max-w-[50%] truncate text-right font-medium text-[#E6E8EB]">
-            {value ?? "Unavailable"}
+            {value ?? "—"}
           </span>
         </div>
       ))}

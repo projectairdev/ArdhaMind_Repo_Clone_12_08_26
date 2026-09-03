@@ -81,11 +81,20 @@ export function SectorPerformanceChart({ embedded = false }: { embedded?: boolea
                 </div>
 
                 <span
-                  className={`w-16 text-right font-bold shrink-0 ${
+                  className={`w-20 text-right font-bold shrink-0 ${
                     numeric == null ? "text-[#707987]" : positive ? "text-[#00C896]" : "text-[#E5484D]"
                   }`}
                 >
-                  {numeric == null ? "—" : `${positive ? "+" : ""}${formatNumber(numeric, 2)}%`}
+                  {numeric == null ? (
+                    <span
+                      data-testid="sector-feed-offline-badge"
+                      className="rounded bg-[#1F242D] px-1.5 py-0.5 text-[9px] text-[#8C95A4] font-medium border border-[#2B333E]"
+                    >
+                      Feed Offline
+                    </span>
+                  ) : (
+                    `${positive ? "+" : ""}${formatNumber(numeric, 2)}%`
+                  )}
                 </span>
               </div>
             );

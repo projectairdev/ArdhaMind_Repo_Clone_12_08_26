@@ -3,16 +3,23 @@ src/intelligence_engine/decision_summary_composer.py
 
 Thin, deterministic composer for the Market Intelligence Trader Decision Summary Layer.
 Distills canonical Unified Nifty Intelligence, Opportunity Engine, Confidence, Risk,
-and Data Quality into a compact, trader-facing decision object without creating any
-new analytical pipelines or modifying existing calculations.
+Strike Strength, and Entry Quality into a compact, trader-facing decision object without
+creating any new analytical pipelines or modifying existing calculations.
 """
 from __future__ import annotations
 
 import hashlib
-import time
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+from src.intelligence_engine.trader_decision_engine import (
+    TraderDecisionEngine,
+    TraderDecision,
+    TradeCandidate,
+)
+from src.intelligence_engine.strike_strength_engine import StrikeStrengthEngine
+from src.intelligence_engine.entry_quality_engine import EntryQualityEngine
 
 
 @dataclass
@@ -82,9 +89,15 @@ class MarketDecisionSummary:
     liquidity: FieldStatus
     data_quality: FieldStatus
     risk: FieldStatus
-    status: str  # WAITING | WATCH | QUALIFYING | READY_FOR_APPROVAL | BLOCKED | INVALIDATED | EXPIRED | UNAVAILABLE | MARKET_CLOSED
+    status: str  # WAITING | WATCH | QUALIFYING | CONDITIONS_PENDING | QUALIFIED | READY_FOR_APPROVAL | BLOCKED | INVALIDATED | EXPIRED | UNAVAILABLE | MARKET_CLOSED
 
     invalidation: Optional[str] = None
+    target: Optional[str] = None
+    risk_reward: Optional[str] = None
+    strike_strength: Optional[Dict[str, Any]] = None
+    entry_quality: Optional[Dict[str, Any]] = None
+    nearby_strikes: List[Dict[str, Any]] = field(default_factory=list)
+    trade_candidate: Optional[Dict[str, Any]] = None
     supporting_evidence: List[str] = field(default_factory=list)
     blocking_reasons: List[str] = field(default_factory=list)
     provenance: Dict[str, Any] = field(default_factory=dict)
@@ -105,6 +118,12 @@ class MarketDecisionSummary:
             "risk": self.risk.to_dict(),
             "status": self.status,
             "invalidation": self.invalidation,
+            "target": self.target,
+            "risk_reward": self.risk_reward,
+            "strike_strength": self.strike_strength,
+            "entry_quality": self.entry_quality,
+            "nearby_strikes": self.nearby_strikes,
+            "trade_candidate": self.trade_candidate,
             "supporting_evidence": list(self.supporting_evidence),
             "blocking_reasons": list(self.blocking_reasons),
             "provenance": dict(self.provenance)
@@ -125,190 +144,64 @@ class MarketDecisionSummaryComposer:
         policy = liquidity_policy or DecisionLiquidityPolicy()
         now_utc = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
-        # 1. Extract context components
+        # 1. Delegate core logic to TraderDecisionEngine
+        trader_dec = TraderDecisionEngine.evaluate_trader_decision(context)
+
+        # 2. Extract context components
         market_ctx = context.get("market_context") or {}
         option_ctx = context.get("option_context") or {}
         breadth = context.get("breadth") or {}
         unified_intel = context.get("unified_intelligence") or {}
-        opp_list = context.get("opportunities") or []
-        opp_intel = opp_list[0] if (opp_list and isinstance(opp_list, list)) else {}
-        session_date = str(context.get("session_date") or datetime.now().strftime("%Y-%m-%d"))
+        session_date = str(context.get("session_date") or trader_dec.trading_date)
         market_state = str(context.get("market_state") or "LIVE").upper()
         market_closed = context.get("market_closed") is True or market_state in ("CLOSED", "MARKET_CLOSED", "POST_CLOSE", "HOLIDAY", "WEEKEND")
         freshness_state = str(context.get("freshness_state") or "FRESH").upper()
-        broker_auth_state = str(context.get("broker_auth_state") or "DISCONNECTED").upper()
         active_subtab = str(context.get("active_subtab") or ("LIVE_GUIDE" if not market_closed else "TOMORROW_PLAN")).upper()
 
-        blocking_reasons: List[str] = []
-        supporting_evidence: List[str] = []
+        # 3. Derive FieldStatus representations
+        bias_field = FieldStatus(value=trader_dec.bias, status="AVAILABLE" if trader_dec.bias != "UNAVAILABLE" else "UNAVAILABLE")
+        setup_field = FieldStatus(value=trader_dec.setup, status="AVAILABLE" if trader_dec.direction != "NO_TRADE" else "NOT_QUALIFIED")
 
-        # 2. Derive BIAS
-        raw_bias = unified_intel.get("market_bias") or unified_intel.get("preferred_bias") or market_ctx.get("trend")
-        if raw_bias and str(raw_bias).upper() in ("BULLISH", "BEARISH", "NEUTRAL", "MIXED"):
-            bias_val = str(raw_bias).upper()
-            bias_field = FieldStatus(value=bias_val, status="AVAILABLE")
-        else:
-            bias_field = FieldStatus(value=None, status="UNAVAILABLE")
-
-        # 3. Derive SETUP
-        raw_setup = opp_intel.get("strategy_name") or opp_intel.get("name")
-        if not raw_setup and unified_intel.get("morning_plan"):
-            raw_setup = (unified_intel.get("morning_plan") or {}).get("primary_scenario_name")
-
-        if raw_setup and str(raw_setup).strip():
-            setup_name = str(raw_setup).strip().upper()
-            setup_field = FieldStatus(value=setup_name, status="AVAILABLE")
-        else:
-            setup_field = FieldStatus(value="NO_VALID_SETUP", status="NOT_QUALIFIED")
-            if not market_closed:
-                blocking_reasons.append("NO_VALID_SETUP")
-
-        # 4. Derive STRIKE & LIQUIDITY
-        target_contract = opp_intel.get("contract") or {}
-        strike_sym = target_contract.get("symbol") or opp_intel.get("target_strike")
-        opt_status = str(option_ctx.get("status") or "AVAILABLE").upper()
-        is_opt_stale = opt_status in ("STALE", "UNAVAILABLE", "DISCONNECTED") or freshness_state == "STALE"
-
+        top_strike = trader_dec.strike_recommendation
         if market_closed:
             strike_field = FieldStatus(value=None, status="REQUIRES_LIVE_OPTIONS")
             liquidity_field = FieldStatus(value="UNAVAILABLE", status="UNAVAILABLE")
-        elif is_opt_stale:
-            strike_field = FieldStatus(value=None, status="WAITING_FOR_OPTIONS_CONFIRMATION")
-            liquidity_field = FieldStatus(value="UNAVAILABLE", status="STALE")
-            blocking_reasons.append("OPTIONS_FEED_STALE")
-        elif strike_sym:
-            strike_field = FieldStatus(value=str(strike_sym), status="AVAILABLE")
-            liq_grade, liq_reasons = policy.evaluate_liquidity(target_contract)
-            liquidity_field = FieldStatus(value=liq_grade, status="AVAILABLE" if liq_grade != "UNAVAILABLE" else "UNAVAILABLE")
-            if liq_grade in ("POOR", "UNAVAILABLE"):
-                blocking_reasons.append("LIQUIDITY_POOR")
+        elif top_strike:
+            strike_field = FieldStatus(value=top_strike.get("symbol"), status="AVAILABLE")
+            liquidity_field = FieldStatus(value=trader_dec.liquidity_quality, status="AVAILABLE")
         else:
             strike_field = FieldStatus(value=None, status="NOT_QUALIFIED")
             liquidity_field = FieldStatus(value="UNAVAILABLE", status="NOT_QUALIFIED")
-            if not market_closed and setup_field.status == "AVAILABLE":
-                blocking_reasons.append("STRIKE_NOT_QUALIFIED")
 
-        # 5. Derive ENTRY CONDITION & INVALIDATION
-        entry_raw = opp_intel.get("entry_trigger_statement") or opp_intel.get("trigger_statement")
-        invalidation_raw = opp_intel.get("invalidation_statement") or opp_intel.get("invalidation_level")
-        if not invalidation_raw and unified_intel.get("decision_zones"):
-            invalidation_raw = (unified_intel.get("decision_zones") or {}).get("invalidation")
+        entry_field = FieldStatus(
+            value={
+                "primary_trigger": trader_dec.entry_condition,
+                "confirmation_conditions": trader_dec.supporting_evidence,
+                "invalidation_condition": str(trader_dec.invalidation) if trader_dec.invalidation else "Structural breach",
+                "formatted_statement": trader_dec.entry_condition
+            },
+            status="AVAILABLE" if trader_dec.direction != "NO_TRADE" else "WAITING"
+        )
 
-        if entry_raw:
-            entry_dict = {
-                "primary_trigger": str(entry_raw),
-                "confirmation_conditions": opp_intel.get("confirmation_conditions") or [],
-                "invalidation_condition": str(invalidation_raw or "Structural breach"),
-                "formatted_statement": str(entry_raw)
-            }
-            entry_field = FieldStatus(value=entry_dict, status="AVAILABLE")
-        else:
-            entry_field = FieldStatus(value=None, status="WAITING_FOR_TRIGGER")
+        conf_field = FieldStatus(
+            value=int(round(float(unified_intel.get("conviction", 60)))) if isinstance(unified_intel.get("conviction"), (int, float)) else (75 if trader_dec.confidence_band == "HIGH" else (60 if trader_dec.confidence_band == "MODERATE" else 35)),
+            status="AVAILABLE"
+        )
 
-        # 6. Derive CONFIDENCE
-        scores = opp_intel.get("scores") or {}
-        conf_val = scores.get("confidence_score") or opp_intel.get("confidence")
-        if conf_val is not None and isinstance(conf_val, (int, float)):
-            conf_int = int(round(float(conf_val)))
-            conf_field = FieldStatus(value=conf_int, status="DEGRADED" if freshness_state == "STALE" else "AVAILABLE")
-        else:
-            conf_field = FieldStatus(value=None, status="UNAVAILABLE")
+        data_quality_field = FieldStatus(value=trader_dec.data_quality, status="AVAILABLE")
+        risk_field = FieldStatus(value=top_strike.get("premium_risk") if top_strike else "MODERATE", status="AVAILABLE")
 
-        # 7. Derive DATA QUALITY
-        dq_status = context.get("data_quality_status") or ("HIGH" if freshness_state == "FRESH" else "DEGRADED")
-        data_quality_field = FieldStatus(value=str(dq_status).upper(), status="AVAILABLE")
-
-        # 8. Derive RISK
-        risk_val = context.get("overall_risk") or opp_intel.get("risk_grade") or "MODERATE"
-        risk_field = FieldStatus(value=str(risk_val).upper(), status="AVAILABLE")
-
-        # 9. Build Supporting Evidence Chips (Max 3-5)
-        spot_val = float(market_ctx.get("current_spot") or market_ctx.get("spot") or 0.0)
-        vwap_val = float(market_ctx.get("vwap") or 0.0)
-        if spot_val > 0 and vwap_val > 0:
-            if spot_val >= vwap_val:
-                supporting_evidence.append(f"Above VWAP ({vwap_val:.1f})")
-            else:
-                supporting_evidence.append(f"Below VWAP ({vwap_val:.1f})")
-
-        adv = breadth.get("advances")
-        dec = breadth.get("declines")
-        if adv is not None and dec is not None:
-            supporting_evidence.append(f"Breadth {adv}A / {dec}D")
-
-        put_wall = option_ctx.get("put_wall")
-        call_wall = option_ctx.get("call_wall")
-        if bias_field.value == "BULLISH" and put_wall:
-            supporting_evidence.append(f"Put Wall Support ({put_wall})")
-        elif bias_field.value == "BEARISH" and call_wall:
-            supporting_evidence.append(f"Call Wall Resistance ({call_wall})")
-
-        vix_val = market_ctx.get("india_vix") or market_ctx.get("vix")
-        if vix_val and isinstance(vix_val, (int, float)):
-            supporting_evidence.append(f"India VIX {vix_val:.2f}")
-
-        # 10. Evaluate STATUS State Machine & Mandatory Safety Contract
-        # Check feed freshness blocking reasons
-        if freshness_state == "STALE":
-            blocking_reasons.append("MARKET_FEED_STALE")
-        if breadth.get("status") == "UNAVAILABLE" or (adv is None and dec is None and not market_closed):
-            blocking_reasons.append("BREADTH_INSUFFICIENT_COVERAGE")
-        if context.get("reconciliation_status") == "PENDING":
-            blocking_reasons.append("RECONCILIATION_PENDING")
-
-        # Mandatory Correction #2: Broker Auth separation
-        broker_auth_ok = (broker_auth_state in ("AUTHENTICATED", "CONNECTED_VERIFIED"))
-        if not broker_auth_ok and not market_closed:
-            blocking_reasons.append("BROKER_AUTH_REQUIRED")
-
-        # Status determination
-        if market_closed:
-            final_status = "MARKET_CLOSED"
-        elif active_subtab == "MORNING_PLAN":
-            final_status = "WATCH"
-        elif active_subtab == "TOMORROW_PLAN":
-            final_status = "MARKET_CLOSED"
-        elif freshness_state == "STALE" or is_opt_stale:
-            final_status = "BLOCKED"
-        elif setup_field.status != "AVAILABLE":
-            final_status = "WAITING"
-        elif strike_field.status != "AVAILABLE" or liquidity_field.value in ("POOR", "UNAVAILABLE"):
-            final_status = "QUALIFYING"
-        elif invalidation_raw is None:
-            final_status = "QUALIFYING"
-            blocking_reasons.append("MISSING_INVALIDATION")
-        elif not broker_auth_ok:
-            # All analytical gates pass, but broker auth is required for execution approval
-            final_status = "QUALIFYING"
-        elif opp_intel.get("status") == "INVALIDATED":
-            final_status = "INVALIDATED"
-        else:
-            # All 8 safety gates passed!
-            final_status = "READY_FOR_APPROVAL"
-
-        # 11. Mandatory Correction #3: Stable Deterministic Decision Identity
-        # Use opportunity_id if available, or hash (session_date, setup, direction, strike, trigger_zone_bin)
-        opp_id = opp_intel.get("opportunity_id") or opp_intel.get("id")
-        if opp_id:
-            decision_id = f"DEC-{opp_id}"
-        else:
-            # Deterministic binning: 50-point price bin to prevent tick churn
-            trigger_bin = int(round(spot_val / 50.0) * 50) if spot_val > 0 else 0
-            hash_input = f"{session_date}:{setup_field.value}:{bias_field.value}:{strike_field.value}:{trigger_bin}"
-            hash_digest = hashlib.sha256(hash_input.encode("utf-8")).hexdigest()[:12]
-            decision_id = f"DEC-{session_date.replace('-', '')}-{hash_digest}"
+        decision_id = f"DEC-{session_date.replace('-', '')}-{hashlib.sha256((session_date + trader_dec.setup + str(trader_dec.spot)).encode('utf-8')).hexdigest()[:10]}"
 
         provenance = {
             "canonical_sequence": context.get("sequence", 0),
             "runtime_id": context.get("runtime_id", "ardha-staging"),
-            "opportunity_id": opp_id,
-            "strategy_id": opp_intel.get("strategy_id"),
             "liquidity_policy_version": policy.policy_version,
-            "evidence_sources": ["UnifiedNiftyIntelligence", "OpportunityRegistry", "OptionChain", "DataQualityService"],
+            "evidence_sources": ["TraderDecisionEngine", "StrikeStrengthEngine", "EntryQualityEngine", "UnifiedNiftyIntelligence"],
             "freshness_summary": {
                 "spot_freshness": "FRESH" if freshness_state == "FRESH" else "STALE",
-                "options_freshness": "FRESH" if not is_opt_stale else "STALE",
-                "breadth_coverage": f"{adv or 0}A / {dec or 0}D"
+                "options_freshness": "FRESH" if not market_closed else "STALE",
+                "breadth_coverage": f"{breadth.get('advances', 0)}A / {breadth.get('declines', 0)}D"
             }
         }
 
@@ -325,9 +218,15 @@ class MarketDecisionSummaryComposer:
             liquidity=liquidity_field,
             data_quality=data_quality_field,
             risk=risk_field,
-            status=final_status,
-            invalidation=str(invalidation_raw) if invalidation_raw else None,
-            supporting_evidence=supporting_evidence[:5],
-            blocking_reasons=list(dict.fromkeys(blocking_reasons)),
+            status=trader_dec.approval_status if not market_closed else "MARKET_CLOSED",
+            invalidation=f"NIFTY {'reclaims' if trader_dec.direction == 'PE' else 'breaks'} {trader_dec.invalidation:,.1f}" if trader_dec.invalidation else None,
+            target=trader_dec.target,
+            risk_reward=trader_dec.risk_reward,
+            strike_strength=top_strike,
+            entry_quality=trader_dec.entry_quality,
+            nearby_strikes=trader_dec.nearby_strikes,
+            trade_candidate=trader_dec.trade_candidate,
+            supporting_evidence=trader_dec.supporting_evidence[:5],
+            blocking_reasons=trader_dec.approval_blockers,
             provenance=provenance
         )

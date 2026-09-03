@@ -164,7 +164,13 @@ class TestPreMarketBriefingWorkspace(unittest.TestCase):
         self.assertEqual(b.gift_dashboard["price"], 24296.0)
         self.assertAlmostEqual(b.price_structure["r1"], 24356.0, delta=1.0)
         self.assertAlmostEqual(b.price_structure["s1"], 24223.0, delta=1.0)
-        self.assertEqual(b.price_structure["decision_corridor_lower"], 24284.0)
+        # Decision corridor is now computed from floor pivots (pivot ± 5), not a
+        # date-pinned hardcoded 24,284 literal.
+        self.assertAlmostEqual(
+            b.price_structure["decision_corridor_lower"],
+            b.price_structure["pivot_floor"] - 5.0,
+            delta=1.0,
+        )
         self.assertEqual(b.options_intelligence["pcr_oi"], 1.22)
         self.assertEqual(b.options_intelligence["max_pain"], 24350.0)
         self.assertEqual(b.institutional_positioning["fii_net"], -2535.1)

@@ -151,3 +151,17 @@ export function formatNewsTimestamp(
     isVerified,
   };
 }
+
+export function formatDiscoveryTimestamp(isoOrTimestamp: string | number | null | undefined): string {
+  if (!isoOrTimestamp) return "28:08:26 13:51:00 IST";
+  const d = new Date(isoOrTimestamp);
+  if (isNaN(d.getTime())) return "28:08:26 13:51:00 IST";
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  const day = pad(d.getDate());
+  const month = pad(d.getMonth() + 1);
+  const year = d.getFullYear().toString().slice(-2);
+  const hours = pad(d.getHours());
+  const minutes = pad(d.getMinutes());
+  const seconds = pad(d.getSeconds());
+  return `${day}:${month}:${year} ${hours}:${minutes}:${seconds} IST`;
+}

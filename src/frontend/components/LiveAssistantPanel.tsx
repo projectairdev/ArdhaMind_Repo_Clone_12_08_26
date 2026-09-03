@@ -4,6 +4,12 @@ import { Sparkles, X, Send, Bot, User, ShieldCheck, RefreshCw, Maximize2, Minimi
 import { useNavigation } from "../context/NavigationContext";
 import { useWorkstationState } from "../context/WorkstationStateContext";
 
+import {
+  resolveSessionIdentity,
+  resolveCompletedSessionMetrics,
+} from "../utils/canonicalSemanticContract";
+import { getTemporalSessionContext } from "../utils/temporalSessionResolver";
+
 interface ChatMessage {
   id: string;
   sender: "user" | "assistant";
@@ -29,29 +35,20 @@ function FormattedMarkdown({ content }: { content: string }) {
     <div className="space-y-1.5 leading-relaxed text-[11px] font-medium font-sans text-[#e6e8eb]">
       {lines.map((line, idx) => {
         if (!line.trim()) return <div key={idx} className="h-1" />;
-
-        const parts = line.split(/(\*\*.*?\*\*)/g);
-        const formattedLine = parts.map((part, pIdx) => {
-          if (part.startsWith("**") && part.endsWith("**")) {
-            return (
-              <strong key={pIdx} className="font-bold text-[#FFFFFF]">
-                {part.slice(2, -2)}
-              </strong>
-            );
-          }
-          return part;
-        });
+        const formattedLine = line
+          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+          .replace(/`([^`]+)`/g, "<code class='bg-[#191D23] px-1 py-0.5 rounded text-[#38BDF8] font-mono text-[10px]'>$1</code>");
 
         if (line.trim().startsWith("•") || line.trim().startsWith("-")) {
           return (
             <div key={idx} className="flex items-start gap-1.5 pl-1.5">
-              <span className="text-[#38BDF8] shrink-0 font-bold">•</span>
-              <div>{formattedLine.map((f, fIdx) => (typeof f === "string" ? f.replace(/^[•\-]\s*/, "") : f))}</div>
+              <span className="text-[#38BDF8] font-bold">›</span>
+              <span dangerouslySetInnerHTML={{ __html: formattedLine.replace(/^[-•]\s*/, "") }} />
             </div>
           );
         }
 
-        return <p key={idx}>{formattedLine}</p>;
+        return <p key={idx} dangerouslySetInnerHTML={{ __html: formattedLine }} />;
       })}
     </div>
   );
@@ -59,28 +56,41 @@ function FormattedMarkdown({ content }: { content: string }) {
 
 export function LiveAssistantPanel() {
   const { setAssistantOpen, assistantExpanded, toggleAssistantExpanded, activeModule } = useNavigation();
-  const { canonicalState, lastValidState } = useWorkstationState();
+  const { canonicalState, lastValidState, marketContext } = useWorkstationState();
 
   const state = canonicalState ?? lastValidState;
-  const sessionStatus = (state?.market_session?.status || "CLOSED").toUpperCase();
-  const isClosed = ["CLOSED", "HOLIDAY", "POST_CLOSE", "WEEKEND"].includes(sessionStatus);
+  const sessionIdentity = resolveSessionIdentity(state, marketContext);
+  const compMetrics = resolveCompletedSessionMetrics(state, marketContext);
+  const temporalCtx = getTemporalSessionContext(state);
+  const isPostMarket = temporalCtx.displayStatus === "POST-MARKET" || (state?.market_session?.status || "").toUpperCase() === "POST_CLOSE";
+  const isPreMarket = temporalCtx.displayStatus === "PRE-MARKET";
+  const isLive = temporalCtx.displayStatus === "LIVE";
+  const sessionStatus = (state?.market_session?.status || temporalCtx.displayStatus || "CLOSED").toUpperCase();
 
   const [inputPrompt, setInputPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [showSuggested, setShowSuggested] = useState(true);
   const [showMetadata, setShowMetadata] = useState<Record<string, boolean>>({});
 
+  const welcomeText = isPostMarket
+    ? `Today's session (${sessionIdentity.completedSessionDateFormatted}) is complete. ${
+        compMetrics.close != null
+          ? `Final Close: ${compMetrics.close.toFixed(2)}${compMetrics.change != null ? ` (${compMetrics.change >= 0 ? "+" : ""}${compMetrics.change.toFixed(2)})` : ""}.`
+          : "Final close data is not yet available."
+      } I can help review today's market drivers, evaluate options positioning, or analyze setups for the next session (${sessionIdentity.nextPlanningTargetDateFormatted}).`
+    : isPreMarket
+    ? `Good morning. Market Intelligence pre-market baseline for ${sessionIdentity.currentSessionDateFormatted} is active. Ask me about the expected open, options positioning, morning thesis, or key corridor levels.`
+    : `ArdhaMind Live Assistant is active and grounded in live canonical session intelligence (${sessionIdentity.currentSessionDateFormatted}). Ask me about current market regime, setup status, PCR, sectors, or execution readiness.`;
+
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: "msg-welcome",
       sender: "assistant",
-      text: isClosed
-        ? "Good morning. Market Insights is currently preparing the pre-market baseline. Ask me about the expected open, options positioning, morning thesis, or risk levels."
-        : "ArdhaMind Live Assistant is active and grounded in live canonical session intelligence. Ask me about current market regime, setup status, PCR, sectors, or execution readiness.",
+      text: welcomeText,
       timestamp: new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit" }),
       metadata: {
-        evidence_used: ["Market State", "Session Resolver"],
-        freshness: isClosed ? "PRE_MARKET" : "LIVE",
+        evidence_used: ["Market State", "Session Resolver", "Completed Session Metrics"],
+        freshness: isPostMarket ? "POST_MARKET" : (isPreMarket ? "PRE_MARKET" : "LIVE"),
         provider: "Canonical Engine"
       }
     }
@@ -95,11 +105,18 @@ export function LiveAssistantPanel() {
   }, [chatMessages, loading]);
 
   // Session-Appropriate Dynamic Suggestions
-  const quickQuestions = isClosed
+  const quickQuestions = isPostMarket
+    ? [
+        "Review today's completed session",
+        "What drove today's market action?",
+        "What is the setup for tomorrow's plan?",
+        "What are the key options levels for next session?"
+      ]
+    : isPreMarket
     ? [
         "What are we expecting at open?",
         "What is the morning bias?",
-        "What are the key carry levels?",
+        "What are the key corridor levels?",
         "Is the broker connected?"
       ]
     : [

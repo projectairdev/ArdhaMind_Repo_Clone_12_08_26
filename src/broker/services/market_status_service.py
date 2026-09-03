@@ -6,20 +6,26 @@ from typing import Optional, List
 
 logger = logging.getLogger("MarketStatusService")
 
-# Simple list of Indian market holidays for 2026 (standard holidays)
+# NSE equity/derivatives trading holidays for 2026 — weekday closures only.
+# Reconciled against the official 2026 exchange holiday circular and kept in sync
+# with src/market_data/session/exchange_calendar.py::DEFAULT_NSE_HOLIDAYS.
+# (Aug 15 / Independence Day is a Saturday in 2026, so it is not a trading-day
+# closure and is intentionally absent.) Movable-feast names are indicative.
 HOLIDAYS_2026 = {
     "2026-01-26",  # Republic Day
-    "2026-03-06",  # Holi
-    "2026-04-02",  # Mahavir Jayanti
+    "2026-03-03",  # Holi
+    "2026-03-26",  # NSE trading holiday (movable feast)
+    "2026-03-31",  # Id-Ul-Fitr (Ramzan Id)
     "2026-04-03",  # Good Friday
-    "2026-04-14",  # Dr. Babasaheb Ambedkar Jayanti
+    "2026-04-14",  # Dr. Baba Saheb Ambedkar Jayanti
     "2026-05-01",  # Maharashtra Day
-    "2026-08-15",  # Independence Day
-    "2026-09-15",  # Eid-e-Milad
+    "2026-05-28",  # Bakri Id (Id-ul-Zuha)
+    "2026-06-26",  # Muharram
+    "2026-09-14",  # Ganesh Chaturthi
     "2026-10-02",  # Mahatma Gandhi Jayanti
-    "2026-10-22",  # Dussehra
-    "2026-11-12",  # Diwali (Laxmi Puja) - Muhurat trading has special hours, standard closed
-    "2026-11-25",  # Guru Nanak Jayanti
+    "2026-10-20",  # Dussehra (Vijaya Dashami)
+    "2026-11-10",  # Diwali - Laxmi Pujan
+    "2026-11-24",  # Guru Nanak Jayanti
     "2026-12-25",  # Christmas
 }
 
@@ -96,6 +102,7 @@ class MarketStatusService:
         is_trading = not is_h
 
         # Session Boundary Times (IST)
+        pre_market_start = dt_time(8, 45, 0)
         pre_open_start = dt_time(9, 0, 0)
         pre_open_end = dt_time(9, 15, 0)
         market_start = dt_time(9, 15, 0)
@@ -124,7 +131,15 @@ class MarketStatusService:
         elif is_h:
             status = "HOLIDAY"
         else:
-            if pre_open_start <= now_time < pre_open_end:
+            if now_time < pre_market_start:
+                status = "EARLY_IDLE"
+                target = datetime.combine(ist_now.date(), pre_market_start)
+                remaining_seconds = (target - ist_now).total_seconds()
+            elif pre_market_start <= now_time < pre_open_start:
+                status = "PRE_MARKET"
+                target = datetime.combine(ist_now.date(), pre_open_start)
+                remaining_seconds = (target - ist_now).total_seconds()
+            elif pre_open_start <= now_time < pre_open_end:
                 status = "PRE_OPEN"
                 target = datetime.combine(ist_now.date(), pre_open_end)
                 remaining_seconds = (target - ist_now).total_seconds()

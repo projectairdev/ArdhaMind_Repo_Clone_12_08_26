@@ -4,18 +4,29 @@ import { formatNumber, safeArray, safeString } from "../utils/safeHelpers";
 import { mapTraderEnum } from "../utils/traderTerminology";
 import { DecisionAreasPanel, DecisionZonesPanel, EvidenceList, ExplicitState, KeyLevelsPanel, ScenarioCard, SemanticBadge, nearestDecisionLevels } from "./intelligence/CanonicalPresentation";
 import { TemporalContextStrip } from "./ui/TemporalContextStrip";
+import {
+  useLiveMarketPresentation
+} from "../context/WorkstationStateContext";
+
 
 function useCanonicalIntelligence() {
-  const { canonicalState } = useWorkstationState();
-  return { canonicalState: canonicalState as any, intelligence: canonicalState?.unified_intelligence as any };
+  const { canonicalState } = useWorkstationState() as any;
+  const livePresentation = useLiveMarketPresentation();
+
+  return {
+    canonicalState: canonicalState as any,
+    intelligence: canonicalState?.unified_intelligence as any,
+    livePresentation,
+  };
 }
+
 
 function UnavailableView({ name }: { name: string }) {
   return <section data-unified-intelligence={name} className="rounded-xl border border-amber-900/50 bg-amber-950/15 p-4 text-left text-xs text-amber-300">Unified canonical intelligence is not yet available.</section>;
 }
 
 function AnalysisScenarioSummary({ scenarios }: { scenarios: any[] }) {
-  return scenarios.length ? <div><div className="mb-2 text-[9px] font-bold uppercase text-slate-500">Primary and alternate scenarios</div><div className="grid gap-3 md:grid-cols-2">{scenarios.map(scenario => <ScenarioCard key={scenario.name} scenario={scenario}/>)}</div></div> : <ExplicitState title="Active scenarios" state="UNAVAILABLE" reason="No canonical scenario is eligible."/>;
+  return scenarios.length ? <div><div className="mb-2 text-[9px] font-bold uppercase text-slate-500">Primary and alternate scenarios</div><div className="grid gap-3 md:grid-cols-2">{scenarios.map(scenario => <ScenarioCard key={scenario.name} scenario={scenario} />)}</div></div> : <ExplicitState title="Active scenarios" state="UNAVAILABLE" reason="No canonical scenario is eligible." />;
 }
 
 function signalEvidence(signal: any) {
@@ -34,16 +45,16 @@ function analysisSessionHeading(value: unknown) {
 
 export function NiftyIntelligenceStrip() {
   const { intelligence } = useCanonicalIntelligence();
-  if (!intelligence) return <UnavailableView name="NIFTY_LIVE"/>;
+  if (!intelligence) return <UnavailableView name="NIFTY_LIVE" />;
   return <section data-unified-intelligence="NIFTY_LIVE" data-intelligence-view="compact-command-center" data-intelligence-engine={intelligence.engine} className="rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2.5 text-left">
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2"><div className="mr-auto text-[9px] font-bold uppercase tracking-[.16em] text-slate-500">Market intelligence</div><SemanticBadge value={intelligence.alignment}/><SemanticBadge value={intelligence.market_regime}/><SemanticBadge value={intelligence.confidence} kind="confidence"/><SemanticBadge value={`${safeString(intelligence.risk?.state)}_RISK`} kind="risk"/></div>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2"><div className="mr-auto text-[9px] font-bold uppercase tracking-[.16em] text-slate-500">Market intelligence</div><SemanticBadge value={intelligence.alignment} /><SemanticBadge value={intelligence.market_regime} /><SemanticBadge value={intelligence.confidence} kind="confidence" /><SemanticBadge value={`${safeString(intelligence.risk?.state)}_RISK`} kind="risk" /></div>
     <div className="mt-2 grid gap-2 text-[10px] sm:grid-cols-2"><div><span className="font-semibold text-emerald-300">Confirming:</span> {safeArray(intelligence.confirming_signals).map(value => safeString(value).replaceAll("_", " ")).join(" · ") || "None eligible"}</div><div><span className="font-semibold text-rose-300">Opposing:</span> {safeArray(intelligence.opposing_signals).map(value => safeString(value).replaceAll("_", " ")).join(" · ") || "None eligible"}</div></div>
   </section>;
 }
 
 export function PreMarketIntelligenceView() {
-  const { canonicalState, intelligence } = useCanonicalIntelligence();
-  if (!intelligence) return <UnavailableView name="PRE_MARKET"/>;
+  const { canonicalState, intelligence, livePresentation } = useCanonicalIntelligence();
+  if (!intelligence) return <UnavailableView name="PRE_MARKET" />;
   const scenarios = safeArray(intelligence.scenarios) as any[];
   const levels = safeArray(intelligence.key_levels) as any[];
   const zones = safeArray(intelligence.decision_zones) as any[];
@@ -63,15 +74,15 @@ export function PreMarketIntelligenceView() {
     ["News & Event Risk", news?.status, `${safeArray(news?.items).length} verified news items`],
   ];
   return <section data-unified-intelligence="PRE_MARKET" data-intelligence-view="next-session-setup" data-intelligence-engine={intelligence.engine} className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-left">
-    <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-400">Tomorrow's Market Setup</div><h3 className="mt-1 text-sm font-bold text-white">Pre-Market Setup</h3></div><SemanticBadge value={intelligence.readiness} kind="readiness"/></div>
-    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{context.map(([title, state, reason]) => <ExplicitState key={String(title)} title={String(title)} state={state} reason={reason}/>)}</div>
-    <AnalysisScenarioSummary scenarios={scenarios}/><div className="grid gap-3 md:grid-cols-2"><EvidenceList title="What Supports the Setup" items={intelligence.confirming_signals} toneClass="text-emerald-300"/><EvidenceList title="What Could Break the Setup" items={[...safeArray(intelligence.opposing_signals), ...safeArray(intelligence.risk?.reasons)]} toneClass="text-rose-300"/></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><div><div className="text-[9px] font-black uppercase tracking-[.18em] text-cyan-400">Tomorrow's Market Setup</div><h3 className="mt-1 text-sm font-bold text-white">Pre-Market Setup</h3></div><SemanticBadge value={intelligence.readiness} kind="readiness" /></div>
+    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{context.map(([title, state, reason]) => <ExplicitState key={String(title)} title={String(title)} state={state} reason={reason} />)}</div>
+    <AnalysisScenarioSummary scenarios={scenarios} /><div className="grid gap-3 md:grid-cols-2"><EvidenceList title="What Supports the Setup" items={intelligence.confirming_signals} toneClass="text-emerald-300" /><EvidenceList title="What Could Break the Setup" items={[...safeArray(intelligence.opposing_signals), ...safeArray(intelligence.risk?.reasons)]} toneClass="text-rose-300" /></div>
   </section>;
 }
 
 export function TodaysAnalysisSynthesis() {
-  const { canonicalState, intelligence } = useCanonicalIntelligence();
-  if (!intelligence) return <UnavailableView name="TODAYS_ANALYSIS"/>;
+  const { canonicalState, intelligence, livePresentation } = useCanonicalIntelligence();
+  if (!intelligence) return <UnavailableView name="TODAYS_ANALYSIS" />;
   const scenarios = safeArray(intelligence.scenarios) as any[];
   const change = intelligence.change_intelligence || {};
   const riskReason = safeArray(intelligence.risk?.reasons).join(" · ") || "No elevated risk factors reported.";
@@ -82,7 +93,8 @@ export function TodaysAnalysisSynthesis() {
   const opposingEv = evidenceItems.filter(e => e.stance === "OPPOSING");
   const neutralEv = evidenceItems.filter(e => e.stance === "NEUTRAL" || e.stance === "UNAVAILABLE");
 
-  const spot = canonicalState?.market_data?.current_spot || null;
+  // Use live-overlaid marketContext.current_spot (liveNiftyTick applied) not raw market_data
+  const spot = livePresentation.currentSpot;
   const { nearestSupport, nearestResistance } = nearestDecisionLevels(zones, spot);
   const primaryScenario = scenarios.find((s: any) => safeString(s.priority).toUpperCase().includes("PRIMARY")) || scenarios[0];
   const primaryScenarioName = primaryScenario ? mapTraderEnum(primaryScenario.name) : "UNAVAILABLE";
@@ -102,11 +114,11 @@ export function TodaysAnalysisSynthesis() {
           <h3 className="mt-1 text-sm font-bold text-white">SESSION INTELLIGENCE — WHAT DROVE THE MARKET AND WHY</h3>
         </div>
         <div className="flex flex-wrap gap-2">
-          <SemanticBadge value={intelligence.readiness} kind="readiness"/>
-          <SemanticBadge value={intelligence.alignment}/>
-          <SemanticBadge value={intelligence.market_regime}/>
-          <SemanticBadge value={intelligence.confidence} kind="confidence"/>
-          <SemanticBadge value={`${safeString(intelligence.risk?.state)}_RISK`} kind="risk"/>
+          <SemanticBadge value={intelligence.readiness} kind="readiness" />
+          <SemanticBadge value={intelligence.alignment} />
+          <SemanticBadge value={intelligence.market_regime} />
+          <SemanticBadge value={intelligence.confidence} kind="confidence" />
+          <SemanticBadge value={`${safeString(intelligence.risk?.state)}_RISK`} kind="risk" />
         </div>
       </div>
 
@@ -134,7 +146,7 @@ export function TodaysAnalysisSynthesis() {
               ))}
             </ul>
           ) : (
-            <EvidenceList title="What Supports This View" items={intelligence.confirming_signals} toneClass="text-emerald-300"/>
+            <EvidenceList title="What Supports This View" items={intelligence.confirming_signals} toneClass="text-emerald-300" />
           )}
         </div>
 
@@ -158,13 +170,13 @@ export function TodaysAnalysisSynthesis() {
               ))}
             </ul>
           ) : (
-            <EvidenceList title="What Goes Against It" items={intelligence.opposing_signals} toneClass="text-rose-300"/>
+            <EvidenceList title="What Goes Against It" items={intelligence.opposing_signals} toneClass="text-rose-300" />
           )}
         </div>
 
         {/* WHAT CHANGED */}
         <div className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-          <ExplicitState title="What Changed Since the Previous View?" state={changeStatus} reason={changeReason}/>
+          <ExplicitState title="What Changed Since the Previous View?" state={changeStatus} reason={changeReason} />
         </div>
       </div>
 
@@ -203,14 +215,14 @@ export function TodaysAnalysisSynthesis() {
           </div>
         </div>
       </div>
-      <ExplicitState title="What Could Change This View" state={intelligence.risk?.state} reason={riskReason}/>
+      <ExplicitState title="What Could Change This View" state={intelligence.risk?.state} reason={riskReason} />
     </section>
   );
 }
 
 export function LiveAssistantExplanationView() {
-  const { canonicalState, intelligence } = useCanonicalIntelligence();
-  if (!intelligence) return <UnavailableView name="LIVE_ASSISTANT"/>;
+  const { canonicalState, intelligence, livePresentation } = useCanonicalIntelligence();
+  if (!intelligence) return <UnavailableView name="LIVE_ASSISTANT" />;
 
   const isClosed = Boolean(canonicalState?.market_session?.is_closed || intelligence.session === "CLOSED" || intelligence.mode === "SESSION_REVIEW");
   const outlook = intelligence.outlook || {};
@@ -228,7 +240,8 @@ export function LiveAssistantExplanationView() {
   const change = intelligence.change_intelligence || {};
   const missing = safeArray(intelligence.evidence_completeness?.critical_missing).join(" · ") || safeArray(intelligence.unavailable_or_ineligible_signals).join(" · ") || "No critical missing data reported for this session mode.";
 
-  const spot = canonicalState?.market_data?.current_spot || null;
+  // Use live-overlaid marketContext.current_spot (liveNiftyTick applied) not raw market_data
+  const spot = livePresentation.currentSpot;
   const { nearestSupport, nearestResistance } = nearestDecisionLevels(zones, spot);
 
   return (
@@ -246,11 +259,11 @@ export function LiveAssistantExplanationView() {
       </div>
 
       <div data-canonical-assistant-answers className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-        <ExplicitState title="Current Market State" state={intelligence.alignment} reason={safeString(intelligence.market_regime).replaceAll("_", " ")}/>
-        <ExplicitState title="Why?" state={intelligence.confidence} reason={safeString(intelligence.explanation)}/>
-        <ExplicitState title="What is the Risk?" state={intelligence.risk?.state} reason={safeArray(intelligence.risk?.reasons).join(" · ") || "No elevated risk factors reported."}/>
-        <ExplicitState title="What Changed?" state={change.status || "UNAVAILABLE"} reason={change.reason || "Previous comparison not available yet."}/>
-        <ExplicitState title="What Data is Missing?" state={missing.startsWith("No critical") ? "READY" : "PARTIAL"} reason={missing}/>
+        <ExplicitState title="Current Market State" state={intelligence.alignment} reason={safeString(intelligence.market_regime).replaceAll("_", " ")} />
+        <ExplicitState title="Why?" state={intelligence.confidence} reason={safeString(intelligence.explanation)} />
+        <ExplicitState title="What is the Risk?" state={intelligence.risk?.state} reason={safeArray(intelligence.risk?.reasons).join(" · ") || "No elevated risk factors reported."} />
+        <ExplicitState title="What Changed?" state={change.status || "UNAVAILABLE"} reason={change.reason || "Previous comparison not available yet."} />
+        <ExplicitState title="What Data is Missing?" state={missing.startsWith("No critical") ? "READY" : "PARTIAL"} reason={missing} />
       </div>
 
       {/* BEST SUPPORTED MARKET BEHAVIOR */}
@@ -294,7 +307,7 @@ export function LiveAssistantExplanationView() {
               ))}
             </ul>
           ) : (
-            <EvidenceList title="What Supports This View?" items={intelligence.confirming_signals} toneClass="text-emerald-300"/>
+            <EvidenceList title="What Supports This View?" items={intelligence.confirming_signals} toneClass="text-emerald-300" />
           )}
         </div>
 
@@ -315,7 +328,7 @@ export function LiveAssistantExplanationView() {
               ))}
             </ul>
           ) : (
-            <EvidenceList title="What Goes Against It?" items={intelligence.opposing_signals} toneClass="text-rose-300"/>
+            <EvidenceList title="What Goes Against It?" items={intelligence.opposing_signals} toneClass="text-rose-300" />
           )}
         </div>
       </div>
@@ -338,7 +351,7 @@ export function LiveAssistantExplanationView() {
         </div>
       </div>
 
-      <AnalysisScenarioSummary scenarios={scenarios}/>
+      <AnalysisScenarioSummary scenarios={scenarios} />
 
       <div className="text-[9px] text-slate-600 border-t border-slate-800/60 pt-2">
         Invalidation conditions remain inside each scenario · Human decision required · Read only decision support

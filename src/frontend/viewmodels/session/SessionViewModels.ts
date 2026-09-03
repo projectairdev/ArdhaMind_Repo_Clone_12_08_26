@@ -93,8 +93,46 @@ export interface MarketDecisionSummaryViewModel {
   liquidity: FieldStatusViewModel<string | null>;
   data_quality: FieldStatusViewModel<string | null>;
   risk: FieldStatusViewModel<string | null>;
-  status: "WAITING" | "WATCH" | "QUALIFYING" | "READY_FOR_APPROVAL" | "BLOCKED" | "INVALIDATED" | "EXPIRED" | "UNAVAILABLE" | "MARKET_CLOSED";
+  status: "WAITING" | "WATCH" | "QUALIFYING" | "CONDITIONS_PENDING" | "QUALIFIED" | "READY_FOR_APPROVAL" | "BLOCKED" | "INVALIDATED" | "EXPIRED" | "UNAVAILABLE" | "MARKET_CLOSED";
   invalidation: string | null;
+  target?: string | null;
+  risk_reward?: string | null;
+  strike_strength?: {
+    score: number;
+    band: string;
+    delta?: number;
+    gamma?: number;
+    theta?: number;
+    iv?: number;
+    required_nifty_move?: number;
+    expected_premium_response?: string;
+    premium_sensitivity?: string;
+    selection_reasons?: string[];
+  } | null;
+  entry_quality?: {
+    score: number;
+    band: string;
+    reason?: string;
+    risk_reward_ratio?: number;
+    chase_distance_pts?: number;
+    is_chase?: boolean;
+  } | null;
+  nearby_strikes?: Array<{
+    strike: number;
+    option_type: string;
+    symbol: string;
+    ltp: number;
+    strength_score: number;
+    strength_band: string;
+    delta?: number;
+    theta?: number;
+    iv?: number;
+    spread_pct?: number;
+    premium_risk?: string;
+    selection_reasons?: string[];
+    rejection_reasons?: string[];
+  }>;
+  trade_candidate?: Record<string, any> | null;
   supporting_evidence: string[];
   blocking_reasons: string[];
   provenance: {
@@ -164,6 +202,8 @@ export interface MorningPlanViewModel {
   };
   todaysOpen: {
     windowLabel: string;
+    isObserved?: boolean;
+    statusBadge?: string;
     open: string;
     high: string;
     low: string;
