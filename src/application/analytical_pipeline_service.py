@@ -50,16 +50,16 @@ class AnalyticalPipelineService:
             expiry_str = market.current_expiry or date.today().isoformat()
             atm_calc = round(market.current_spot / 50.0) * 50 if market.current_spot > 0 else 24000.0
             options = OptionContext(
-                current_spot=market.current_spot,
+                underlying_spot=market.current_spot,
                 atm_strike=atm_calc,
+                strike_step=50.0,
                 current_weekly_expiry=expiry_str,
                 current_monthly_expiry=expiry_str,
                 time_to_expiry=1,
                 pcr=1.0,
                 max_pain=atm_calc,
-                call_wall=atm_calc + 200,
-                put_wall=atm_calc - 200,
-                strike_universe=[],
+                highest_call_oi=atm_calc + 200,
+                highest_put_oi=atm_calc - 200,
                 option_chain_summary={"chain_length": 0, "status": "DEGRADED_SYNTHETIC"},
             )
             stages["options"] = PipelineStageResult("degraded", self._dict(options), source="degraded_synthesizer", warnings=["option context unavailable; analysis operating in price-action degraded mode"])
