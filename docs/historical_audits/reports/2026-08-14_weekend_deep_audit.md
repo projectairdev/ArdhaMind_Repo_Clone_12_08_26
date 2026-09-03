@@ -1,5 +1,8 @@
 # AIR ARDHAMIND — WEEKEND DEEP ARCHITECTURE & DATA AUDIT
 
+> **Archived, redacted copy.** Point-in-time live process PIDs have been replaced
+> with `[redacted]` markers. All engineering findings are preserved verbatim.
+
 **REFERENCE SESSION**: 14-AUG-2026
 **PRODUCTION LOCATION**: `/opt/ArdhaMind`
 **AUDIT MODE**: READ-ONLY DIAGNOSTIC AUDIT FIRST
@@ -165,8 +168,8 @@ Service restart during or after market hours successfully reconstructs workstati
 ## 9. Performance Audit
 
 ### Resource Usage Telemetry
-- **Node.js Memory (PID 49202)**: `278.85 MB`
-- **Python Daemon Memory (PID 49210)**: `519.55 MB`
+- **Node.js Memory (PID `[redacted]`)**: `278.85 MB`
+- **Python Daemon Memory (PID `[redacted]`)**: `519.55 MB`
 - **Total Memory**: `~798.40 MB`
 - **Disk Usage**: `data/`: 996 KB | `cache/`: 3.9 MB | `.cache/`: 6.0 MB | `node_modules/`: 205 MB | `.venv/`: 246 MB
 

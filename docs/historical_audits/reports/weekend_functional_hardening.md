@@ -1,5 +1,8 @@
 # AIR ArdhaMind — Weekend Functional Hardening Sprint Report
 
+> **Archived, redacted copy.** The systemd service name has been replaced with a
+> `[redacted]` marker. All engineering content is preserved verbatim.
+
 **Target Date:** 15-Aug-2026  
 **Repository:** `/opt/ArdhaMind`  
 **Base Commit:** `00640767d2aa188b677c2aefe1c950cb119f7370` (`release/v1.1-production-hardened`)  
@@ -76,4 +79,4 @@ Result:  22 passed, 0 failed in 11.81s
 ---
 
 > [!NOTE]
-> **Production Safety Notice:** All code edits are verified, non-breaking, and preserved on branch `release/v1.1-production-hardened`. Production runtime (`ardhamind.service`) remains operational. No git push or deployment was performed.
+> **Production Safety Notice:** All code edits are verified, non-breaking, and preserved on branch `release/v1.1-production-hardened`. Production runtime (`[redacted-service-name]`) remains operational. No git push or deployment was performed.

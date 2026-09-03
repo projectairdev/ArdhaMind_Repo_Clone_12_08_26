@@ -1,5 +1,9 @@
 # AIR ARDHAMIND — 14-AUG-2026 END-OF-DAY PRODUCTION AUDIT
 
+> **Archived, redacted copy.** Point-in-time live process PIDs and the systemd
+> service name have been replaced with `[redacted]` markers. All engineering
+> findings are preserved verbatim.
+
 ## Executive Summary
 
 - **Kite Session**: **AUTHENTICATED** — Survived the entire trading session without expiry, disconnect, 401/403 errors, or re-authentication events.
@@ -11,7 +15,7 @@
 - **Analytics**: **EFFECTIVE WITH SAMPLING LIMITATIONS** — Today's Analysis Engine classified the session as `MODERATELY BEARISH` (Score -18.9, Conviction 34.4%), driven by 11 Advances / 39 Declines. Forward Outlook classified session outlook as `MODERATELY BEARISH` with `MODERATE` confidence. Live Assistant evaluated 25 15-minute windows; 24 windows registered `INSUFFICIENT_WINDOW_EVIDENCE` due to 15-minute snapshot sampling frequency (`obs_count = 1 < 2`).
 - **Market Pulse**: **HEALTHY** — GIFT Nifty active (`NSEIX:NIFTY_NEAR_MONTH_FUTURE`, status READY), India VIX at 11.26, FII Net -510.69 CR / DII Net +4,353.09 CR (13-Aug-2026 official NSE reports), global indices/FX quotes live.
 - **News**: **OPERATIONAL** — 12 primary Google News / RBI / SEBI / ECB streams active (59 articles, 10 top headlines). 4 peripheral providers degraded (BLS 403, PIB empty, Marketaux unconfigured, Nifty Weights license required).
-- **Infrastructure**: **EXCELLENT** — Systemd service `ardhamind.service` active and running continuously since 09:55:37 IST restart (PID 35205 Node / 35213 Python daemon). Memory usage stable at 831.7 MB (peak 1.0 GB). Zero crashes, zero OOMs.
+- **Infrastructure**: **EXCELLENT** — Systemd service `[redacted-service-name]` active and running continuously since 09:55:37 IST restart (PID `[redacted]` Node / `[redacted]` Python daemon). Memory usage stable at 831.7 MB (peak 1.0 GB). Zero crashes, zero OOMs.
 - **READ_ONLY Compliance**: **VERIFIED 100%** — Absolutely ZERO order placement, modification, cancellation, paper trading, or execution mutation requests were attempted or executed.
 
 ---

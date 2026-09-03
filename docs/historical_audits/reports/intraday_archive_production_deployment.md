@@ -1,5 +1,8 @@
 # AIR ARDHAMIND — INTRADAY ARCHIVE PRODUCTION DEPLOYMENT REPORT
 
+> **Archived, redacted copy.** The systemd service name has been replaced with a
+> `[redacted]` marker. All engineering content is preserved verbatim.
+
 **Date:** 15-Aug-2026  
 **Repository:** `/opt/ArdhaMind`  
 **Deployment Status:** **PRODUCTION ACCEPTED**  
@@ -32,7 +35,7 @@
 ---
 
 ## SERVICE:
-- **Systemd Unit:** `ardhamind.service` (Active: running)
+- **Systemd Unit:** `[redacted-service-name]` (Active: running)
 
 ---
 

@@ -1,15 +1,19 @@
 # AIR ArdhaMind Production Handover
 
+> **Archived, redacted copy.** Live process PIDs, the systemd service name, and the
+> broker account identifier / holder name present in the original operational
+> handover have been redacted. Engineering rationale is preserved verbatim.
+
 ## 1. Current Production State
 - **Timestamp (IST):** 2026-08-14 05:36:00 IST
 - **Deployment Path:** `/opt/ArdhaMind`
-- **Service Status:** `ardhamind.service` ACTIVE (running)
-- **Node Server PID:** `31464` (`node /opt/ArdhaMind/dist/server.cjs`)
-- **Python Bridge Daemon PID:** `31472` (`python src/server_bridge.py`)
+- **Service Status:** `[redacted-service-name]` ACTIVE (running)
+- **Node Server PID:** `[redacted]` (`node /opt/ArdhaMind/dist/server.cjs`)
+- **Python Bridge Daemon PID:** `[redacted]` (`python src/server_bridge.py`)
 - **Public Domain:** `https://ardhamind.projectair.in`
 - **Health Status:** `READY` (`/api/health` 200 OK)
 - **Market Session:** `CLOSED` / Pre-Market (Awaiting 09:15 IST opening bell)
-- **Broker Auth State:** `CONNECTED` (Session valid, Profile `HOM885` validated)
+- **Broker Auth State:** `CONNECTED` (Session valid, Profile `[redacted]` validated)
 - **Feed/Stream State:** `CONNECTED` / Idle Pre-Market (Awaiting first session tick)
 - **KiteTicker Instance Count:** `<= 1` (Single-upstream StreamingOrchestrator invariant enforced)
 - **Subscription State:** Configured for NIFTY 50 basket & constituent indices
@@ -82,7 +86,7 @@ Specifically eliminated synthetic/default behavior:
 ## 5. Current Kite State
 - **Broker:** `CONNECTED`
 - **Session:** `VALID` (`session_valid: true`, authenticated at `2026-08-14T00:00:52Z`)
-- **Profile:** `VALIDATED` (`HOM885` — Pusapati Venkata Praveen Kumar)
+- **Profile:** `VALIDATED` (`[redacted]` — [redacted account holder])
 - **Ticker Instances:** `1` (Single-upstream StreamingOrchestrator invariant enforced)
 - **Feed:** `CONNECTED` (Pre-market idle, awaiting 09:15 IST ticks)
 - **First Authoritative Market Tick:** Awaiting opening session (`tick_age_seconds: None`)
